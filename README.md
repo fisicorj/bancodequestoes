@@ -345,110 +345,17 @@ Data/DbSeeder.cs
 
 e confirme quais seeds devem permanecer habilitados.
 
----
-
-## Segurança
-
-### Nunca envie para o GitHub
-
-- senhas;
-- connection strings com credenciais;
-- tokens;
-- API keys;
-- certificados privados;
-- arquivos `.env`;
-- dumps de banco de dados;
-- dados pessoais ou institucionais reais;
-- banco local;
-- conteúdo de produção.
-
-Use **User Secrets** durante o desenvolvimento e variáveis de ambiente ou um gerenciador de segredos no ambiente de produção.
-
-### Antes do primeiro push
-
-Execute:
-
-```bash
-git status
-```
-
-e confira cuidadosamente tudo que será enviado.
-
-Também é recomendável verificar:
-
-```bash
-git diff --cached
-```
-
-antes de cada commit importante.
-
----
-
-## Primeiro commit
-
-Depois de colocar `.gitignore` e `README.md` na raiz do repositório:
-
-```bash
-git init
-git add .
-git status
-git commit -m "Initial commit"
-```
-
-Depois conecte o repositório local ao GitHub:
-
-```bash
-git branch -M main
-git remote add origin https://github.com/SEU-USUARIO/bancodequestoes.git
-git push -u origin main
-```
-
----
-
-## Fluxo básico de desenvolvimento
-
-Após novas alterações:
-
-```bash
-git status
-git add .
-git commit -m "Descrição da alteração"
-git push
-```
-
-Exemplos de mensagens:
-
-```text
-feat: adiciona matriz de referência curricular
-fix: corrige geração automática de provas
-feat: adiciona exportação de gabarito comentado
-refactor: reorganiza serviço de questões
-docs: atualiza README
-```
-
----
-
-## Próximas evoluções
-
-Entre as evoluções possíveis do projeto estão:
-
-- blueprint curricular na geração de provas;
-- distribuição de questões por competência/conteúdo;
-- diagnóstico de disponibilidade antes da geração;
-- comparação entre cobertura planejada e obtida;
-- dashboards institucionais;
-- melhoria do isolamento entre instituições;
-- importação completa de matrizes oficiais;
-- ampliação de relatórios de cobertura;
-- classificação assistida de questões.
-
----
 
 ## Licença
 
-Ainda não foi definida uma licença para o projeto.
+## Licença
 
-Se o repositório for público, escolha uma licença compatível com a forma como você deseja permitir o uso, modificação e distribuição do código.
+Este projeto é distribuído sob a **MIT License**.
+
+Você pode usar, copiar, modificar, distribuir e sublicenciar o software, inclusive para fins comerciais, desde que o aviso de copyright e os termos da licença sejam preservados.
+
+Consulte o arquivo `LICENSE` para os termos completos.
+
 
 ---
 
