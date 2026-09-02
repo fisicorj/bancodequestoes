@@ -1,0 +1,160 @@
+@page "/cursos"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject CursoService CursoService
+@inject InstituicaoService InstituicaoService
+@inject IJSRuntime JS
+
+<PageTitle>Cursos</PageTitle>
+
+<h1>Cursos</h1>
+
+<p>
+    <a class="btn btn-primary" href="cursos/novo">+ Novo curso</a>
+</p>
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
+    <div class="col-12 col-md-6">
+        <label class="form-label small mb-1">Buscar por nome</label>
+        <input type="text" class="form-control" placeholder="Digite para buscar..."
+               @bind="filtroTexto" @bind:event="oninput" @bind:after="AplicarFiltroAsync" />
+    </div>
+    <div class="col-8 col-md-4">
+        <label class="form-label small mb-1">Instituição</label>
+        <select class="form-select" @bind="filtroInstituicaoId" @bind:after="AplicarFiltroAsync">
+            <option value="0">Todas</option>
+            @foreach (var i in instituicoes)
+            {
+                <option value="@i.Id">@i.Nome</option>
+            }
+        </select>
+    </div>
+    <div class="col-4 col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary w-100" @onclick="LimparFiltrosAsync">Limpar</button>
+    </div>
+</div>
+
+@if (cursos is null)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (cursos.Count == 0)
+{
+    <p><em>Nenhum curso encontrado com os filtros atuais.</em></p>
+}
+else
+{
+    <p class="text-muted small">
+        Mostrando @((pagina - 1) * TamanhoPagina + 1)–@((pagina - 1) * TamanhoPagina + cursos.Count) de @totalRegistros curso(s).
+    </p>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Instituição</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var c in cursos)
+            {
+                <tr>
+                    <td>@c.Nome</td>
+                    <td>@c.Instituicao?.Nome</td>
+                    <td>
+                        <a class="btn btn-sm btn-secondary" href="@($"cursos/editar/{c.Id}")">Editar</a>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(c)">Excluir</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <Paginacao Pagina="pagina" TamanhoPagina="TamanhoPagina" TotalRegistros="totalRegistros" PaginaChanged="MudarPaginaAsync" />
+}
+
+@code {
+    private List<Curso>? cursos;
+    private List<Instituicao> instituicoes = new();
+    private string? erro;
+    private string? sucesso;
+
+    private string filtroTexto = "";
+    private int filtroInstituicaoId;
+
+    private const int TamanhoPagina = 20;
+    private int pagina = 1;
+    private int totalRegistros;
+
+    [SupplyParameterFromQuery(Name = "msg")]
+    private string? Msg { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        sucesso = Msg;
+        instituicoes = await InstituicaoService.ListarTodasAsync();
+        await CarregarAsync();
+    }
+
+    private async Task AplicarFiltroAsync()
+    {
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task LimparFiltrosAsync()
+    {
+        filtroTexto = "";
+        filtroInstituicaoId = 0;
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task MudarPaginaAsync(int novaPagina)
+    {
+        pagina = novaPagina;
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        var resultado = await CursoService.ListarAsync(filtroTexto, filtroInstituicaoId, pagina, TamanhoPagina);
+        cursos = resultado.Itens;
+        totalRegistros = resultado.Total;
+    }
+
+    private async Task ConfirmarExcluirAsync(Curso c)
+    {
+        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir o curso \"{c.Nome}\"? Essa ação não pode ser desfeita.");
+        if (confirmado)
+        {
+            await ExcluirAsync(c);
+        }
+    }
+
+    private async Task ExcluirAsync(Curso c)
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await CursoService.ExcluirAsync(c);
+            sucesso = $"\"{c.Nome}\" excluído com sucesso.";
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

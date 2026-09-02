@@ -1,0 +1,92 @@
+<!--
+    Card "Pontuacao" (item 16), extraido de ProvaForm.razor.
+
+    ModoPontuacao e ValorTotal continuam vivendo em ProvaForm (o campo
+    modoPontuacao e gerador.ValorTotal la), porque AplicarPontuacao e
+    AplicarDistribuicaoValor (metodos que ficam em ProvaForm) precisam deles
+    tambem quando chamados pelo fluxo do gerador automatico, nao so por este
+    card - entao aqui e so bind de mao dupla (parametro + Changed) de volta
+    pro estado que mora no pai.
+
+    ValorTotal tem um "depois" (NotificarMudanca) que ModoPontuacao nao tem:
+    o card Resumo da prova (componente irmao, ver ResumoProva.razor) mostra
+    o Valor da prova, entao precisa ser avisado quando ele muda por aqui.
+    ModoPontuacao so afeta a exibicao deste proprio card (o texto de dica do
+    peso, e trocar o botao Aplicar por uma dica de texto no modo Manual),
+    entao nao precisa de aviso nenhum pro resto da tela.
+-->
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h5 class="card-title">Pontuação</h5>
+        <div class="row g-2 mb-2">
+            <div class="col-4">
+                <label class="form-label">Valor da prova</label>
+                <input type="number" step="0.5" min="0" class="form-control" @bind="ValorTotal" @bind:after="Alterado" placeholder="Ex: 10" />
+            </div>
+        </div>
+        <div class="mb-2">
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="modoPontuacao" id="pontMesmo"
+                       checked="@(ModoPontuacao == ModoPontuacao.MesmoValor)" @onchange="() => DefinirModo(ModoPontuacao.MesmoValor)" />
+                <label class="form-check-label" for="pontMesmo">Todas as questões com o mesmo valor</label>
+            </div>
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="modoPontuacao" id="pontProp"
+                       checked="@(ModoPontuacao == ModoPontuacao.ProporcionalDificuldade)" @onchange="() => DefinirModo(ModoPontuacao.ProporcionalDificuldade)" />
+                <label class="form-check-label" for="pontProp">Valor proporcional à dificuldade</label>
+            </div>
+            @if (ModoPontuacao == ModoPontuacao.ProporcionalDificuldade)
+            {
+                <div class="text-muted small ms-4 mb-1">Fácil = peso 1 · Média = peso 1,5 · Difícil = peso 2</div>
+            }
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="modoPontuacao" id="pontManual"
+                       checked="@(ModoPontuacao == ModoPontuacao.Manual)" @onchange="() => DefinirModo(ModoPontuacao.Manual)" />
+                <label class="form-check-label" for="pontManual">Definir manualmente</label>
+            </div>
+        </div>
+
+        @if (AvisoPontuacao is not null)
+        {
+            <div class="alert alert-warning py-1 small">@AvisoPontuacao</div>
+        }
+
+        @if (ModoPontuacao == ModoPontuacao.Manual)
+        {
+            <p class="text-muted small mb-0">Ajuste o valor de cada questão diretamente na lista "Questões da prova" acima.</p>
+        }
+        else
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="Aplicar">Aplicar</button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public decimal? ValorTotal { get; set; }
+    [Parameter] public EventCallback<decimal?> ValorTotalChanged { get; set; }
+
+    [Parameter] public ModoPontuacao ModoPontuacao { get; set; }
+    [Parameter] public EventCallback<ModoPontuacao> ModoPontuacaoChanged { get; set; }
+
+    [Parameter] public string? AvisoPontuacao { get; set; }
+
+    [Parameter] public EventCallback OnAplicar { get; set; }
+    [Parameter] public EventCallback OnAlterado { get; set; }
+
+    private Task DefinirModo(ModoPontuacao modo) => ModoPontuacaoChanged.InvokeAsync(modo);
+
+    // "@bind:after" só roda DEPOIS que o @bind já escreveu o valor novo em
+    // ValorTotal — por isso dá pra reenviar ValorTotal aqui mesmo (já está
+    // atualizado) pro ProvaForm via ValorTotalChanged (senão o pai nunca
+    // saberia do novo valor: [Parameter] não propaga sozinho pra cima), e
+    // também disparar OnAlterado, pro card Resumo da prova (irmão) refletir.
+    private async Task Alterado()
+    {
+        await ValorTotalChanged.InvokeAsync(ValorTotal);
+        await OnAlterado.InvokeAsync();
+    }
+
+    private Task Aplicar() => OnAplicar.InvokeAsync();
+}

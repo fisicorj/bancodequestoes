@@ -1,0 +1,164 @@
+@page "/admin/usuarios"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Identity
+@using BancoQuestoes.Models
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Usuários</PageTitle>
+
+<h1>Usuários</h1>
+<p class="text-muted">Gerencie quem tem acesso ao sistema e quem é administrador.</p>
+
+<p>
+    <a class="btn btn-primary" href="admin/usuarios/novo">+ Novo usuário</a>
+</p>
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (usuarios is null)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <table class="table align-middle">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Email</th>
+                <th>Papel</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var vm in usuarios)
+            {
+                var euMesmo = vm.Usuario.Id == meuId;
+                <tr>
+                    <td>@(vm.Usuario.NomeCompleto ?? "—") @if (euMesmo) { <span class="badge bg-secondary">Você</span> }</td>
+                    <td>@vm.Usuario.Email</td>
+                    <td><span class="badge @(vm.EhAdmin ? "text-bg-primary" : "text-bg-light")">@(vm.EhAdmin ? "Admin" : "Professor")</span></td>
+                    <td><span class="badge @(vm.Bloqueado ? "text-bg-danger" : "text-bg-success")">@(vm.Bloqueado ? "Bloqueado" : "Ativo")</span></td>
+                    <td>
+                        <a class="btn btn-sm btn-secondary" href="@($"admin/usuarios/editar/{vm.Usuario.Id}")">Editar</a>
+                        <button class="btn btn-sm btn-outline-primary" disabled="@euMesmo" @onclick="() => AlternarAdminAsync(vm)">
+                            @(vm.EhAdmin ? "Remover Admin" : "Promover a Admin")
+                        </button>
+                        <button class="btn btn-sm @(vm.Bloqueado ? "btn-outline-success" : "btn-outline-danger")" disabled="@euMesmo" @onclick="() => AlternarBloqueioAsync(vm)">
+                            @(vm.Bloqueado ? "Desbloquear" : "Bloquear")
+                        </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private sealed class UsuarioVm
+    {
+        public required ApplicationUser Usuario { get; set; }
+        public bool EhAdmin { get; set; }
+        public bool Bloqueado { get; set; }
+    }
+
+    private List<UsuarioVm>? usuarios;
+    private string? meuId;
+    private string? erro;
+    private string? sucesso;
+
+    [SupplyParameterFromQuery(Name = "msg")]
+    private string? Msg { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        sucesso = Msg;
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        var todos = await UserManager.Users.OrderBy(u => u.Email).ToListAsync();
+        var lista = new List<UsuarioVm>();
+
+        foreach (var u in todos)
+        {
+            lista.Add(new UsuarioVm
+            {
+                Usuario = u,
+                EhAdmin = await UserManager.IsInRoleAsync(u, "Admin"),
+                Bloqueado = await UserManager.IsLockedOutAsync(u),
+            });
+        }
+
+        usuarios = lista;
+    }
+
+    private async Task AlternarAdminAsync(UsuarioVm vm)
+    {
+        erro = null;
+        sucesso = null;
+
+        if (vm.Usuario.Id == meuId)
+        {
+            erro = "Você não pode alterar seu próprio papel.";
+            return;
+        }
+
+        if (vm.EhAdmin)
+        {
+            await UserManager.RemoveFromRoleAsync(vm.Usuario, "Admin");
+            sucesso = $"\"{vm.Usuario.Email}\" não é mais Admin.";
+        }
+        else
+        {
+            await UserManager.AddToRoleAsync(vm.Usuario, "Admin");
+            sucesso = $"\"{vm.Usuario.Email}\" agora é Admin.";
+        }
+
+        await CarregarAsync();
+    }
+
+    private async Task AlternarBloqueioAsync(UsuarioVm vm)
+    {
+        erro = null;
+        sucesso = null;
+
+        if (vm.Usuario.Id == meuId)
+        {
+            erro = "Você não pode bloquear a própria conta.";
+            return;
+        }
+
+        if (vm.Bloqueado)
+        {
+            await UserManager.SetLockoutEndDateAsync(vm.Usuario, null);
+            sucesso = $"\"{vm.Usuario.Email}\" desbloqueado(a).";
+        }
+        else
+        {
+            // Bloqueio manual (não é o lockout automático por senha errada):
+            // habilita o lockout pra esse usuário e coloca a data lá longe no
+            // futuro, o suficiente pra funcionar como "bloqueado por tempo indeterminado".
+            await UserManager.SetLockoutEnabledAsync(vm.Usuario, true);
+            await UserManager.SetLockoutEndDateAsync(vm.Usuario, DateTimeOffset.MaxValue);
+            sucesso = $"\"{vm.Usuario.Email}\" bloqueado(a).";
+        }
+
+        await CarregarAsync();
+    }
+}

@@ -1,0 +1,204 @@
+@page "/admin/usuarios/novo"
+@page "/admin/usuarios/editar/{Id}"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BancoQuestoes.Models
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(Id is null ? "Novo usuário" : "Editar usuário")</PageTitle>
+
+<h1>@(Id is null ? "Novo usuário" : "Editar usuário")</h1>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <div class="row">
+    <div class="col-md-6">
+    <div class="form-card">
+    <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" />
+
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="modelo.NomeCompleto" id="NomeCompleto" class="form-control" placeholder="Nome completo" />
+            <label for="NomeCompleto">Nome completo</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="modelo.Email" id="Email" class="form-control" placeholder="Email" autocomplete="username" />
+            <label for="Email">Email</label>
+        </div>
+
+        @if (Id is null)
+        {
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="modelo.Senha" id="Senha" class="form-control" placeholder="Senha" autocomplete="new-password" />
+                <label for="Senha">Senha (mínimo 6 caracteres)</label>
+            </div>
+
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="modelo.EhAdmin" id="EhAdmin" class="form-check-input" />
+                <label class="form-check-label" for="EhAdmin">Cadastrar como Admin</label>
+            </div>
+        }
+        else
+        {
+            <div class="form-floating mb-3">
+                <InputText type="password" @bind-Value="modelo.Senha" id="Senha" class="form-control" placeholder="Nova senha" autocomplete="new-password" />
+                <label for="Senha">Nova senha (deixe em branco pra manter a atual)</label>
+            </div>
+        }
+
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <a href="admin/usuarios" class="btn btn-link">Cancelar</a>
+    </EditForm>
+    </div>
+    </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string? Id { get; set; }
+
+    private UsuarioInput modelo = new();
+    private bool carregando;
+    private string? erro;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id is not null)
+        {
+            carregando = true;
+            var usuario = await UserManager.FindByIdAsync(Id);
+            if (usuario is null)
+            {
+                erro = "Usuário não encontrado.";
+            }
+            else
+            {
+                modelo = new UsuarioInput
+                {
+                    NomeCompleto = usuario.NomeCompleto ?? "",
+                    Email = usuario.Email ?? "",
+                };
+            }
+            carregando = false;
+        }
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+
+        if (Id is null)
+        {
+            if (string.IsNullOrWhiteSpace(modelo.Senha) || modelo.Senha.Length < 6)
+            {
+                erro = "Informe uma senha com pelo menos 6 caracteres.";
+                return;
+            }
+
+            var novo = new ApplicationUser
+            {
+                UserName = modelo.Email,
+                Email = modelo.Email,
+                NomeCompleto = modelo.NomeCompleto,
+                // Cadastro feito pelo admin já entra confirmado — não há envio de
+                // email de confirmação configurado neste sistema pequeno.
+                EmailConfirmed = true,
+            };
+
+            var criarResultado = await UserManager.CreateAsync(novo, modelo.Senha);
+            if (!criarResultado.Succeeded)
+            {
+                erro = string.Join(" ", criarResultado.Errors.Select(e => e.Description));
+                return;
+            }
+
+            await UserManager.AddToRoleAsync(novo, modelo.EhAdmin ? "Admin" : "Professor");
+
+            NavigationManager.NavigateTo($"admin/usuarios?msg={Uri.EscapeDataString($"\"{modelo.Email}\" cadastrado(a) com sucesso.")}");
+        }
+        else
+        {
+            var usuario = await UserManager.FindByIdAsync(Id);
+            if (usuario is null)
+            {
+                erro = "Usuário não encontrado.";
+                return;
+            }
+
+            if (!string.Equals(usuario.Email, modelo.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                var emailResultado = await UserManager.SetEmailAsync(usuario, modelo.Email);
+                if (!emailResultado.Succeeded)
+                {
+                    erro = string.Join(" ", emailResultado.Errors.Select(e => e.Description));
+                    return;
+                }
+
+                // Login é feito com o email — mantém o "username" do Identity em sincronia.
+                await UserManager.SetUserNameAsync(usuario, modelo.Email);
+
+                // SetEmailAsync desmarca a confirmação por padrão; como é o admin
+                // trocando (não um fluxo de verificação por link), já confirma de volta.
+                usuario.EmailConfirmed = true;
+            }
+
+            usuario.NomeCompleto = modelo.NomeCompleto;
+            var atualizarResultado = await UserManager.UpdateAsync(usuario);
+            if (!atualizarResultado.Succeeded)
+            {
+                erro = string.Join(" ", atualizarResultado.Errors.Select(e => e.Description));
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(modelo.Senha))
+            {
+                if (modelo.Senha.Length < 6)
+                {
+                    erro = "A nova senha deve ter pelo menos 6 caracteres.";
+                    return;
+                }
+
+                // Reset via token em vez de Remove+Add: se der errado no meio do
+                // caminho, o usuário não fica sem senha nenhuma.
+                var token = await UserManager.GeneratePasswordResetTokenAsync(usuario);
+                var senhaResultado = await UserManager.ResetPasswordAsync(usuario, token, modelo.Senha);
+                if (!senhaResultado.Succeeded)
+                {
+                    erro = string.Join(" ", senhaResultado.Errors.Select(e => e.Description));
+                    return;
+                }
+            }
+
+            NavigationManager.NavigateTo($"admin/usuarios?msg={Uri.EscapeDataString($"\"{modelo.Email}\" atualizado(a) com sucesso.")}");
+        }
+    }
+
+    private sealed class UsuarioInput
+    {
+        [Required(ErrorMessage = "Informe o nome.")]
+        public string NomeCompleto { get; set; } = "";
+
+        [Required(ErrorMessage = "Informe o email.")]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
+        public string? Senha { get; set; }
+
+        public bool EhAdmin { get; set; }
+    }
+}

@@ -1,0 +1,108 @@
+@* Lista de checkboxes de Item de Matriz de Referência — agrupada por Tipo
+   (Perfil do Concluinte / Competências / Conteúdos...), com filtro por Matriz
+   e busca por código/título (item 31 do pedido: matrizes grandes não devem
+   virar centenas de checkboxes soltos na tela). Reusada tanto por
+   QuestaoForm.razor (vínculo da questão) quanto por GeradorAutomatico.razor
+   (filtro avançado do gerador) — mesmo espírito de outros componentes
+   compartilhados em Components/Pages/Provas/Components. Itens são FLAT (sem
+   hierarquia), então, diferente do antigo DiretrizCheckboxNode.razor, não
+   precisa ser recursivo. *@
+@using BancoQuestoes.Models
+
+<div class="form-floating mb-2" style="max-width: 420px;">
+    <select class="form-select" @bind="matrizFiltro">
+        <option value="0">Todas as matrizes</option>
+        @foreach (var m in Matrizes)
+        {
+            <option value="@m.Id">@m.Nome (@m.Status.Rotulo())</option>
+        }
+    </select>
+    <label>Matriz</label>
+</div>
+
+<input type="text" class="form-control form-control-sm mb-2" placeholder="Buscar por código ou título..." @bind="textoFiltro" @bind:event="oninput" />
+
+@if (Itens.Count == 0)
+{
+    <p class="text-muted small mb-0">Esse curso ainda não tem itens de matriz cadastrados. <a href="matrizes">Cadastrar matrizes</a></p>
+}
+else
+{
+    <div style="max-height: 260px; overflow-y: auto;" class="border rounded p-2">
+        @foreach (var grupo in ItensFiltrados().GroupBy(i => (i.MatrizReferencia!.Id, i.MatrizReferencia!.Nome, i.Tipo)).OrderBy(g => g.Key.Nome).ThenBy(g => g.Key.Tipo))
+        {
+            <div class="small text-muted fw-bold mt-1">@grupo.Key.Nome — @grupo.Key.Tipo.RotuloPlural()</div>
+            @foreach (var item in grupo.OrderBy(i => i.Ordem).ThenBy(i => i.Codigo))
+            {
+                <div class="form-check">
+                    <input type="checkbox" class="form-check-input" id="@($"item-matriz-{item.Id}")"
+                           checked="@Selecionados.Contains(item.Id)" @onchange="@(e => AlternarAsync(item.Id, (bool)e.Value!))" />
+                    <label class="form-check-label small" for="@($"item-matriz-{item.Id}")">
+                        <code>@item.Codigo</code> — @item.Titulo
+                    </label>
+                </div>
+            }
+        }
+        @if (ItensFiltrados().Count == 0)
+        {
+            <p class="text-muted small mb-0">Nenhum item encontrado com esse filtro.</p>
+        }
+    </div>
+    @if (Selecionados.Count > 0)
+    {
+        <p class="text-muted small mt-1 mb-0">@Selecionados.Count item(ns) selecionado(s) no total.</p>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public List<ItemMatrizReferencia> Itens { get; set; } = new();
+
+    [Parameter, EditorRequired]
+    public HashSet<int> Selecionados { get; set; } = new();
+
+    [Parameter]
+    public EventCallback OnAlterado { get; set; }
+
+    private string textoFiltro = "";
+    private int matrizFiltro;
+
+    private List<MatrizReferencia> Matrizes =>
+        Itens.Select(i => i.MatrizReferencia!).DistinctBy(m => m.Id).OrderBy(m => m.Nome).ToList();
+
+    private List<ItemMatrizReferencia> ItensFiltrados()
+    {
+        var query = Itens.AsEnumerable();
+
+        if (matrizFiltro != 0)
+        {
+            query = query.Where(i => i.MatrizReferenciaId == matrizFiltro);
+        }
+
+        if (!string.IsNullOrWhiteSpace(textoFiltro))
+        {
+            query = query.Where(i =>
+                i.Codigo.Contains(textoFiltro, StringComparison.OrdinalIgnoreCase) ||
+                i.Titulo.Contains(textoFiltro, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return query.ToList();
+    }
+
+    private async Task AlternarAsync(int itemId, bool marcado)
+    {
+        if (marcado)
+        {
+            Selecionados.Add(itemId);
+        }
+        else
+        {
+            Selecionados.Remove(itemId);
+        }
+
+        if (OnAlterado.HasDelegate)
+        {
+            await OnAlterado.InvokeAsync();
+        }
+    }
+}

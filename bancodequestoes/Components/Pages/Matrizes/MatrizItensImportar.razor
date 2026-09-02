@@ -1,0 +1,242 @@
+@page "/matrizes/{MatrizId:int}/itens/importar"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BancoQuestoes.Importacao
+@using BancoQuestoes.Models
+@inject MatrizReferenciaService MatrizService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Importar itens da matriz</PageTitle>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (matriz is null)
+{
+    <div class="alert alert-danger">Matriz de referência não encontrada.</div>
+}
+else
+{
+    <h1>Importar itens</h1>
+    <p class="text-muted">@matriz.Nome — @(matriz.Curso?.Nome ?? matriz.AreaCurso?.Nome)</p>
+    <p>
+        <a href="@($"matrizes/{MatrizId}/itens")" class="btn btn-sm btn-link px-0">&laquo; Voltar aos itens da matriz</a>
+    </p>
+
+    @if (erro is not null)
+    {
+        <div class="alert alert-danger">@erro</div>
+    }
+
+    @if (matriz.AreaCursoId is not null && !ehAdmin)
+    {
+        <div class="alert alert-warning">Esta é uma matriz de escopo nacional (ENADE/DCN) — só administradores podem importar itens nela.</div>
+    }
+    else
+    {
+    <div class="form-card mb-3">
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <div class="form-floating">
+                    <select class="form-select" id="Formato" @bind="formato">
+                        <option value="Csv">CSV</option>
+                        <option value="Xlsx">Excel (.xlsx)</option>
+                        <option value="Json">JSON</option>
+                    </select>
+                    <label for="Formato">Formato</label>
+                </div>
+            </div>
+        </div>
+
+        <p class="small text-muted mb-2">
+            CSV/JSON: colunas/campos <code>codigo</code>, <code>titulo</code>, <code>tipo</code> (PerfilConcluinte/Competencia/Conteudo/Habilidade/ObjetoConhecimento/Outro, ou o rótulo em português), <code>descricao</code> e <code>ordem</code> são opcionais.
+            JSON também aceita o formato agrupado <code>{"grupos": {"perfil": [...], "competencias": [...], "conteudos": [...]}}</code>, com <code>codigo</code>/<code>titulo</code>/<code>descricao</code> em cada item.
+        </p>
+
+        <div class="mb-3">
+            <label class="form-label">Arquivo @(formato == "Xlsx" ? "(.xlsx)" : formato == "Json" ? "(.json)" : "(.csv)")</label>
+            <InputFile OnChange="OnArquivoSelecionadoAsync" accept="@ExtensaoAceita()" class="form-control" />
+        </div>
+
+        @if (formato != "Xlsx")
+        {
+            <div class="mb-3">
+                <label class="form-label">Ou cole o conteúdo aqui</label>
+                <textarea class="form-control" style="height: 220px; font-family: monospace;" @bind="textoOriginal" placeholder="@(formato == "Json" ? "Cole aqui o JSON..." : "Cole aqui o CSV...")"></textarea>
+            </div>
+        }
+
+        <button type="button" class="btn btn-primary" @onclick="Analisar" disabled="@(!TemConteudoParaAnalisar())">Analisar</button>
+    </div>
+
+    @if (resultado is not null)
+    {
+        @if (resultado.Erros.Count > 0)
+        {
+            <div class="alert alert-warning">
+                <strong>@resultado.Erros.Count aviso(s)/erro(s):</strong>
+                <ul class="mb-0">
+                    @foreach (var e in resultado.Erros)
+                    {
+                        <li>@e</li>
+                    }
+                </ul>
+            </div>
+        }
+
+        @if (resultado.Itens.Count == 0)
+        {
+            <p><em>Nenhum item importável foi reconhecido.</em></p>
+        }
+        else
+        {
+            <h5>Pré-visualização (@resultado.Itens.Count item(ns) reconhecido(s))</h5>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th style="width:40px;"></th>
+                        <th style="width:90px;">Código</th>
+                        <th>Título</th>
+                        <th style="width:160px;">Tipo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in resultado.Itens)
+                    {
+                        <tr>
+                            <td><input type="checkbox" class="form-check-input" @bind="item.Selecionada" /></td>
+                            <td><code>@item.Codigo</code></td>
+                            <td>
+                                @item.Titulo
+                                @if (item.Aviso is not null)
+                                {
+                                    <div class="text-warning small">⚠ @item.Aviso</div>
+                                }
+                            </td>
+                            <td>@item.Tipo.Rotulo()</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            @if (sucesso is not null)
+            {
+                <div class="alert alert-success">@sucesso</div>
+            }
+
+            <button type="button" class="btn btn-success" @onclick="ImportarAsync" disabled="@(!resultado.Itens.Any(i => i.Selecionada))">
+                Importar selecionados (@resultado.Itens.Count(i => i.Selecionada))
+            </button>
+            <p class="text-muted small mt-1">Itens com um código já existente nessa matriz são atualizados; os demais são criados.</p>
+        }
+    }
+    }
+}
+
+@code {
+    [Parameter]
+    public int MatrizId { get; set; }
+
+    private MatrizReferencia? matriz;
+    private bool carregando = true;
+    private string? erro;
+    private string? sucesso;
+
+    private string formato = "Csv";
+    private string textoOriginal = "";
+    private byte[]? arquivoBinario;
+    private ResultadoImportacaoItens? resultado;
+
+    private string? meuId;
+    private int? minhaInstituicaoId;
+    private bool ehAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        ehAdmin = authState.User.IsInRole("Admin");
+        minhaInstituicaoId = await MatrizService.ObterInstituicaoDoUsuarioAsync(meuId);
+
+        matriz = await MatrizService.ObterAsync(MatrizId, minhaInstituicaoId, ehAdmin);
+        carregando = false;
+    }
+
+    private string ExtensaoAceita() => formato switch
+    {
+        "Xlsx" => ".xlsx",
+        "Json" => ".json",
+        _ => ".csv",
+    };
+
+    private bool TemConteudoParaAnalisar() =>
+        formato == "Xlsx" ? arquivoBinario is not null : !string.IsNullOrWhiteSpace(textoOriginal);
+
+    private async Task OnArquivoSelecionadoAsync(InputFileChangeEventArgs e)
+    {
+        erro = null;
+        try
+        {
+            if (formato == "Xlsx")
+            {
+                using var stream = e.File.OpenReadStream(5 * 1024 * 1024); // até 5 MB
+                using var memoria = new MemoryStream();
+                await stream.CopyToAsync(memoria);
+                arquivoBinario = memoria.ToArray();
+            }
+            else
+            {
+                using var reader = new StreamReader(e.File.OpenReadStream(5 * 1024 * 1024));
+                textoOriginal = await reader.ReadToEndAsync();
+            }
+        }
+        catch (Exception)
+        {
+            erro = "Não foi possível ler o arquivo (verifique o formato e o tamanho, até 5 MB).";
+        }
+    }
+
+    private void Analisar()
+    {
+        erro = null;
+        sucesso = null;
+
+        try
+        {
+            resultado = formato switch
+            {
+                "Xlsx" when arquivoBinario is not null => ItemMatrizImportParser.ParseXlsx(new MemoryStream(arquivoBinario)),
+                "Json" => ItemMatrizImportParser.ParseJson(textoOriginal),
+                _ => ItemMatrizImportParser.ParseCsv(textoOriginal),
+            };
+        }
+        catch (Exception)
+        {
+            erro = "Não foi possível interpretar o arquivo — verifique se o formato selecionado corresponde ao conteúdo.";
+            resultado = null;
+        }
+    }
+
+    private async Task ImportarAsync()
+    {
+        if (resultado is null)
+        {
+            return;
+        }
+
+        erro = null;
+
+        try
+        {
+            var importados = await MatrizService.ImportarItensAsync(MatrizId, resultado.Itens, minhaInstituicaoId, ehAdmin);
+            NavigationManager.NavigateTo($"matrizes/{MatrizId}/itens?msg={Uri.EscapeDataString($"{importados} item(ns) importado(s) com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

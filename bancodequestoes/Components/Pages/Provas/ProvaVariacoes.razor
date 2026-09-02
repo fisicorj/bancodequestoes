@@ -1,0 +1,77 @@
+@page "/provas/{Id:int}/variacoes"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@inject ProvaService ProvaService
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Variações da prova</PageTitle>
+
+<h1>Variações da prova</h1>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+else if (prova is null)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <p class="text-muted">@prova.Titulo</p>
+
+    <div class="card col-md-6">
+        <div class="card-body">
+            <p>
+                Gera várias versões da mesma prova (Versão A, B, C...), embaralhando a
+                ordem das questões e das alternativas de múltipla escolha — útil pra
+                dificultar cola entre alunos vizinhos. No final do documento vem uma
+                página de gabarito com a resposta certa de cada versão.
+            </p>
+
+            <div class="mb-3" style="max-width: 220px;">
+                <label class="form-label" for="qtd">Quantidade de versões</label>
+                <select id="qtd" class="form-select" @bind="quantidade">
+                    @for (var i = 2; i <= 6; i++)
+                    {
+                        <option value="@i">@i versões</option>
+                    }
+                </select>
+            </div>
+
+            <a class="btn btn-outline-primary" href="@($"provas/{Id}/exportar-variacoes.docx?qtd={quantidade}")">Baixar DOCX</a>
+            <a class="btn btn-outline-primary" href="@($"provas/{Id}/exportar-variacoes.pdf?qtd={quantidade}")">Baixar PDF</a>
+        </div>
+    </div>
+
+    <p class="mt-3">
+        <a href="provas">Voltar para provas</a>
+    </p>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private Prova? prova;
+    private string? erro;
+    private int quantidade = 2;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        prova = await ProvaService.ObterPorIdAsync(Id);
+        if (prova is null)
+        {
+            erro = "Prova não encontrada.";
+        }
+        else if (prova.CriadoPorId != meuId)
+        {
+            erro = "Você não tem permissão para acessar esta prova.";
+            prova = null;
+        }
+    }
+}

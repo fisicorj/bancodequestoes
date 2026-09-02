@@ -1,0 +1,186 @@
+@page "/turmas/novo"
+@page "/turmas/editar/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@inject CursoService CursoService
+@inject DisciplinaService DisciplinaService
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(Id is null ? "Nova turma" : "Editar turma")</PageTitle>
+
+<h1>@(Id is null ? "Nova turma" : "Editar turma")</h1>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (cursos.Count == 0)
+{
+    <p><em>Cadastre um curso antes de criar uma turma.</em> <a href="cursos/novo">Criar curso</a></p>
+}
+else if (disciplinas.Count == 0)
+{
+    <p><em>Cadastre uma disciplina antes de criar uma turma.</em> <a href="disciplinas/novo">Criar disciplina</a></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-card">
+                <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Nome" id="Nome" class="form-control" placeholder="Nome" />
+                        <label for="Nome">Nome (ex.: EC3A)</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputSelect @bind-Value="modelo.CursoId" id="CursoId" class="form-select">
+                            <option value="0">Selecione...</option>
+                            @foreach (var c in cursos)
+                            {
+                                <option value="@c.Id">@c.Instituicao?.Nome / @c.Nome</option>
+                            }
+                        </InputSelect>
+                        <label for="CursoId">Curso</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputSelect @bind-Value="modelo.DisciplinaId" id="DisciplinaId" class="form-select">
+                            <option value="0">Selecione...</option>
+                            @foreach (var d in disciplinas)
+                            {
+                                <option value="@d.Id">@d.Nome</option>
+                            }
+                        </InputSelect>
+                        <label for="DisciplinaId">Disciplina</label>
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-6">
+                            <div class="form-floating">
+                                <InputNumber @bind-Value="modelo.Ano" id="Ano" class="form-control" placeholder="Ano" />
+                                <label for="Ano">Ano</label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="form-floating">
+                                <InputSelect @bind-Value="modelo.Semestre" id="Semestre" class="form-select">
+                                    <option value="1">1º semestre</option>
+                                    <option value="2">2º semestre</option>
+                                </InputSelect>
+                                <label for="Semestre">Semestre</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (PrecisaBimestre)
+                    {
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <div class="form-floating">
+                                    <InputSelect @bind-Value="modelo.Bimestre" id="Bimestre" class="form-select">
+                                        <option value="">—</option>
+                                        <option value="1">1º bimestre</option>
+                                        <option value="2">2º bimestre</option>
+                                    </InputSelect>
+                                    <label for="Bimestre">Bimestre</label>
+                                </div>
+                            </div>
+                        </div>
+                        <p class="text-muted small">Essa instituição divide cada semestre em 2 bimestres — escolha qual dos dois.</p>
+                    }
+
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <a href="turmas" class="btn btn-link">Cancelar</a>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private TurmaInput modelo = new();
+    private List<Curso> cursos = new();
+    private List<Disciplina> disciplinas = new();
+    private bool carregando;
+    private string? erro;
+
+    // cursos já vem com .Instituicao incluída (CursoService.ListarTodosAsync)
+    // — dá pra decidir se mostra o campo Bimestre sem consulta extra.
+    private bool PrecisaBimestre =>
+        cursos.FirstOrDefault(c => c.Id == modelo.CursoId)?.Instituicao?.SistemaPeriodos == SistemaPeriodos.SemestralComBimestres;
+
+    protected override async Task OnInitializedAsync()
+    {
+        carregando = true;
+        cursos = await CursoService.ListarTodosAsync();
+        disciplinas = await DisciplinaService.ListarTodasAsync();
+
+        if (Id is not null)
+        {
+            var turma = await CursoService.ObterTurmaAsync(Id.Value);
+            if (turma is null)
+            {
+                erro = "Turma não encontrada.";
+            }
+            else
+            {
+                modelo = new TurmaInput
+                {
+                    Nome = turma.Nome,
+                    CursoId = turma.CursoId,
+                    DisciplinaId = turma.DisciplinaId,
+                    Ano = turma.Ano,
+                    Semestre = turma.Semestre,
+                    Bimestre = turma.Bimestre,
+                };
+            }
+        }
+        else
+        {
+            // Ano atual como ponto de partida — a maioria das turmas criadas
+            // é do período corrente, poupa o professor de digitar toda vez.
+            modelo.Ano = DateTime.UtcNow.Year;
+        }
+
+        carregando = false;
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+
+        try
+        {
+            if (Id is null)
+            {
+                var authState = await AuthProvider.GetAuthenticationStateAsync();
+                var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+                await CursoService.CriarTurmaAsync(modelo, userId);
+            }
+            else
+            {
+                await CursoService.AtualizarTurmaAsync(Id.Value, modelo);
+            }
+
+            NavigationManager.NavigateTo($"turmas?msg={Uri.EscapeDataString($"\"{modelo.Nome}\" salva com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

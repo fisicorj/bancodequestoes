@@ -1,0 +1,62 @@
+@page "/"
+
+@using BancoQuestoes.Components.Account
+
+<PageTitle>Início</PageTitle>
+
+<AuthorizeView>
+    <Authorized>
+        <h1>Banco de Questões</h1>
+        <p class="text-muted">Olá, @context.User.Identity?.Name! O que você quer fazer?</p>
+
+        <div class="row g-3 mt-2">
+            <div class="col-12 col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Conteúdo</h5>
+                        <p class="card-text text-muted">Disciplinas, assuntos e questões cadastradas.</p>
+                        <div class="d-grid gap-2">
+                            <a href="disciplinas" class="btn btn-outline-primary btn-sm">Disciplinas</a>
+                            <a href="assuntos" class="btn btn-outline-primary btn-sm">Assuntos</a>
+                            <a href="questoes" class="btn btn-outline-primary btn-sm">Questões</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Provas</h5>
+                        <p class="card-text text-muted">Monte provas e exporte em DOCX ou PDF.</p>
+                        <div class="d-grid gap-2">
+                            <a href="provas" class="btn btn-primary btn-sm">Ver provas</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title">Configurações</h5>
+                        <p class="card-text text-muted">Instituições e cursos usados no cabeçalho da prova.</p>
+                        <div class="d-grid gap-2">
+                            <a href="instituicoes" class="btn btn-outline-secondary btn-sm">Instituições</a>
+                            <a href="cursos" class="btn btn-outline-secondary btn-sm">Cursos</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </Authorized>
+    <NotAuthorized>
+        <div class="row justify-content-center mt-4">
+            <div class="col-12 col-sm-8 col-md-5 col-lg-4">
+                <h1 class="text-center mb-1">Banco de Questões</h1>
+                <p class="text-center text-muted mb-4">Entre para organizar disciplinas, assuntos, questões e provas.</p>
+                <LoginForm />
+            </div>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>

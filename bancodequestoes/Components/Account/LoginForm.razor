@@ -1,0 +1,87 @@
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BancoQuestoes.Models
+
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<LoginForm> Logger
+@inject IdentityRedirectManager RedirectManager
+
+<div class="login-form">
+    @if (errorMessage is not null)
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    <EditForm Model="Input" method="post" OnValidSubmit="LoginUser" FormName="login">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" role="alert" />
+
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="nome@exemplo.com" />
+            <label for="Input.Email" class="form-label">Email</label>
+            <ValidationMessage For="() => Input.Email" class="text-danger" />
+        </div>
+        <div class="form-floating mb-3">
+            <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="senha" />
+            <label for="Input.Password" class="form-label">Senha</label>
+            <ValidationMessage For="() => Input.Password" class="text-danger" />
+        </div>
+        <div class="checkbox mb-3">
+            <label class="form-label">
+                <InputCheckbox @bind-Value="Input.RememberMe" />
+                Manter conectado
+            </label>
+        </div>
+        <button type="submit" class="w-100 btn btn-lg btn-primary">Entrar</button>
+    </EditForm>
+
+    <hr class="my-4" />
+
+    <p class="text-center mb-2">Ainda não tem cadastro?</p>
+    <a href="Account/Register" class="w-100 btn btn-lg btn-outline-secondary">Criar conta</a>
+</div>
+
+@code {
+    // Componente reaproveitado tanto pela tela inicial (quando o usuário ainda não
+    // está logado) quanto pela rota "/Account/Login" (usada automaticamente pelo
+    // Identity para redirecionar quem tenta acessar uma página protegida).
+    [Parameter]
+    public string? ReturnUrl { get; set; }
+
+    private string? errorMessage;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = new();
+
+    public async Task LoginUser()
+    {
+        var result = await SignInManager.PasswordSignInAsync(Input.Email, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+        if (result.Succeeded)
+        {
+            Logger.LogInformation("Usuário {Email} entrou.", Input.Email);
+            RedirectManager.RedirectTo(ReturnUrl ?? "/");
+        }
+        else if (result.IsLockedOut)
+        {
+            errorMessage = "Esta conta está bloqueada. Fale com um administrador do sistema.";
+        }
+        else
+        {
+            errorMessage = "Email ou senha inválidos.";
+        }
+    }
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Informe o email.")]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Informe a senha.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        [Display(Name = "Manter conectado?")]
+        public bool RememberMe { get; set; }
+    }
+}

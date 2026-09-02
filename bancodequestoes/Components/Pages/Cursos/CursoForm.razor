@@ -1,0 +1,167 @@
+@page "/cursos/novo"
+@page "/cursos/editar/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject CursoService CursoService
+@inject InstituicaoService InstituicaoService
+@inject AreaCursoService AreaCursoService
+@inject MatrizReferenciaService MatrizService
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(Id is null ? "Novo curso" : "Editar curso")</PageTitle>
+
+<h1>@(Id is null ? "Novo curso" : "Editar curso")</h1>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (instituicoes.Count == 0)
+{
+    <p><em>Cadastre uma instituição antes de criar um curso.</em> <a href="instituicoes/novo">Criar instituição</a></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-5">
+            <div class="form-card">
+                <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Nome" id="Nome" class="form-control" placeholder="Nome" />
+                        <label for="Nome">Nome</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputSelect @bind-Value="modelo.InstituicaoId" id="InstituicaoId" class="form-select">
+                            <option value="0">Selecione...</option>
+                            @foreach (var i in instituicoes)
+                            {
+                                <option value="@i.Id">@i.Nome</option>
+                            }
+                        </InputSelect>
+                        <label for="InstituicaoId">Instituição</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputSelect @bind-Value="modelo.AreaCursoId" id="AreaCursoId" class="form-select">
+                            <option value="">Nenhuma / não definida</option>
+                            @foreach (var a in areasCurso)
+                            {
+                                <option value="@a.Id">@a.Nome</option>
+                            }
+                        </InputSelect>
+                        <label for="AreaCursoId">Área de Curso (ENADE/DCN)</label>
+                    </div>
+                    <p class="form-text text-muted mt-n2 mb-3">
+                        Opcional. Define qual Área de Curso nacional (ex.: "Engenharia de Computação") este curso
+                        representa — é o que faz matrizes ENADE/DCN cadastradas pra essa área aparecerem
+                        automaticamente aqui, compartilhadas com outras instituições que usam a mesma área.
+                        <a href="areas-curso">Gerenciar áreas de curso</a>.
+                    </p>
+
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <a href="cursos" class="btn btn-link">Cancelar</a>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+
+    @if (Id is not null)
+    {
+        <div class="row mt-4">
+            <div class="col-md-7">
+                <h5>Matrizes de Referência</h5>
+                @if (matrizesDoCurso.Count == 0)
+                {
+                    <p class="text-muted"><em>Nenhuma matriz de referência cadastrada para esse curso ainda.</em></p>
+                }
+                else
+                {
+                    <ul class="list-group mb-2">
+                        @foreach (var m in matrizesDoCurso)
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span>
+                                    @m.Nome
+                                    @if (!string.IsNullOrWhiteSpace(m.Orgao))
+                                    {
+                                        <span class="text-muted small">(@m.Orgao)</span>
+                                    }
+                                    <span class="badge text-bg-@m.Status.CorBadge()">@m.Status.Rotulo()</span>
+                                </span>
+                                <a class="btn btn-sm btn-outline-primary" href="@($"matrizes/{m.Id}/itens")">Gerenciar</a>
+                            </li>
+                        }
+                    </ul>
+                }
+                <a class="btn btn-sm btn-primary" href="@($"matrizes/novo?cursoId={Id}")">+ Nova Matriz</a>
+                <a class="btn btn-sm btn-link" href="@($"matrizes/{Id}")">Ver todas</a>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private CursoInput modelo = new();
+    private List<Instituicao> instituicoes = new();
+    private List<AreaCurso> areasCurso = new();
+    private List<MatrizReferencia> matrizesDoCurso = new();
+    private bool carregando;
+    private string? erro;
+
+    protected override async Task OnInitializedAsync()
+    {
+        carregando = true;
+        instituicoes = await InstituicaoService.ListarTodasAsync();
+        areasCurso = await AreaCursoService.ListarAtivasAsync();
+
+        if (Id is not null)
+        {
+            var curso = await CursoService.ObterAsync(Id.Value);
+            if (curso is null)
+            {
+                erro = "Curso não encontrado.";
+            }
+            else
+            {
+                modelo = new CursoInput { Nome = curso.Nome, InstituicaoId = curso.InstituicaoId, AreaCursoId = curso.AreaCursoId };
+                matrizesDoCurso = await MatrizService.ListarPorCursoAsync(Id.Value);
+            }
+        }
+        carregando = false;
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+
+        try
+        {
+            if (Id is null)
+            {
+                await CursoService.CriarAsync(modelo);
+            }
+            else
+            {
+                await CursoService.AtualizarAsync(Id.Value, modelo);
+            }
+
+            NavigationManager.NavigateTo($"cursos?msg={Uri.EscapeDataString($"\"{modelo.Nome}\" salvo com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

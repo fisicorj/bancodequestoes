@@ -1,0 +1,708 @@
+@using BancoQuestoes.Components.Pages.Questoes.Components
+<!--
+    Card "Gerar prova automaticamente" inteiro, extraido de ProvaForm.razor -
+    o maior e mais entrelacado pedaco da tela (Diagnostico, Quantidade,
+    tabela de Dificuldade, tabela de Assunto, Tipos + quantidade por tipo,
+    Opcoes avancadas com Bloom/Evitar recentes/Qualidade minima, Resumo da
+    prova, botoes Gerar/Adicionar e o card de Aderencia ao blueprint).
+
+    Continua "burro" no MESMO sentido dos outros componentes desta pasta:
+    toda a logica de calculo (CalcularDiagnostico, QuantidadePorDificuldade,
+    DisponiveisPorAssunto, TiposPermitidosAtuais, CalcularAderenciaBlueprint
+    etc.) continua morando em ProvaForm - inclusive porque varias dessas
+    contas tambem sao usadas pelo sorteio de verdade (SortearQuestoesAsync),
+    que TEM que ficar em ProvaForm (mexe em "selecionadas", que outros
+    componentes irmaos tambem leem). Este componente so recebe os resultados
+    ja prontos via [Parameter] (alguns como Func<>, pra nao precisar
+    pre-calcular uma lista inteira de antemao) e dispara EventCallback pra
+    cada interacao.
+
+    Diferenca importante em relacao aos lotes anteriores: aqui Gerador,
+    PercPorAssuntoGerador, PercPorBloomGerador e QuantidadePorTipoGerador sao
+    passados como a MESMA instancia que ProvaForm guarda (Dictionary/classe
+    sao tipos por referencia), entao os inputs binded direto neles (ex.:
+    Gerador.Quantidade) escrevem no objeto compartilhado sem precisar de
+    EventCallback so pra "salvar o valor". MESMO ASSIM quase todo input abaixo
+    tem um "afterwards" que chama OnAlterado (ou um EventCallback mais
+    especifico) - porque o card de Resumo aqui dentro, a tabela de
+    Dificuldade, a tabela de Assunto etc. dependem de contas feitas em
+    ProvaForm (parametros deste mesmo componente), e ProvaForm só recalcula
+    esses parametros quando ELE re-renderiza - o que só acontece quando um
+    EventCallback que aponta pra um metodo dela é invocado. Sem isso, editar
+    Gerador.Quantidade re-renderizaria só este componente, e os parametros
+    (Diagnostico, FaceisQtd etc.) ficariam com o valor antigo até outra
+    interacao qualquer forcar a atualizacao.
+-->
+
+<div class="card mb-3">
+    <div class="card-body">
+        <h5 class="card-title">✨ Gerar prova automaticamente</h5>
+        <p class="text-muted mb-2">Escolha assuntos, tipos e a distribuição de dificuldade — sorteamos entre as questões ativas dessa disciplina (sem repetir as já adicionadas).</p>
+
+        <div class="card mb-3 border-info-subtle">
+            <div class="card-body py-2">
+                <h6 class="card-subtitle mb-2 text-muted">📊 Diagnóstico do banco</h6>
+                @if (Diagnostico.Total == 0)
+                {
+                    <p class="text-muted small mb-0">Nenhuma questão elegível com os assuntos e tipos marcados abaixo.</p>
+                }
+                else
+                {
+                    <p class="mb-1"><strong>@Diagnostico.Total</strong> questões elegíveis</p>
+                    <ul class="small text-muted mb-2 ps-3">
+                        <li>@Diagnostico.Faceis fáceis</li>
+                        <li>@Diagnostico.Medias médias</li>
+                        <li>@Diagnostico.Dificeis difíceis</li>
+                        <li>@Diagnostico.UsadasRecentemente usadas recentemente</li>
+                        <li>@Diagnostico.SemBloom sem classificação Bloom</li>
+                        <li>@Diagnostico.QualidadeBaixa com qualidade abaixo de 50%</li>
+                    </ul>
+                    @if (Diagnostico.BlueprintAtendivel)
+                    {
+                        <p class="text-success small mb-0">✓ Seu blueprint pode ser atendido.</p>
+                    }
+                    else
+                    {
+                        <p class="text-danger small mb-0">⚠ Não existem questões suficientes para atender exatamente ao blueprint (veja os avisos abaixo, nas tabelas de Assunto/Tipo).</p>
+                    }
+                }
+            </div>
+        </div>
+
+        <div class="row g-2 mb-3">
+            <div class="col-4">
+                <label class="form-label">Quantidade de questões</label>
+                <input type="number" min="0" class="form-control" @bind="Gerador.Quantidade" @bind:event="oninput" @bind:after="Notificar" />
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label small mb-1 d-block">Distribuição por dificuldade</label>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-1" style="max-width: 420px;">
+                    <thead>
+                        <tr>
+                            <th>Dificuldade</th>
+                            <th style="width:110px;">%</th>
+                            <th style="width:100px;">Questões</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Fácil</td>
+                            <td><input type="number" min="0" max="100" class="form-control form-control-sm" @bind="Gerador.PercFacil" @bind:event="oninput" @bind:after="Notificar" /></td>
+                            <td class="text-center">@FaceisQtd</td>
+                        </tr>
+                        <tr>
+                            <td>Média</td>
+                            <td><input type="number" min="0" max="100" class="form-control form-control-sm" @bind="Gerador.PercMedia" @bind:event="oninput" @bind:after="Notificar" /></td>
+                            <td class="text-center">@MediasQtd</td>
+                        </tr>
+                        <tr>
+                            <td>Difícil</td>
+                            <td><input type="number" min="0" max="100" class="form-control form-control-sm" @bind="Gerador.PercDificil" @bind:event="oninput" @bind:after="Notificar" /></td>
+                            <td class="text-center">@DificeisQtd</td>
+                        </tr>
+                    </tbody>
+                    <tfoot>
+                        <tr class="@(TotalPercDificuldade == 100 ? "text-muted" : "text-danger fw-bold")">
+                            <td>Total</td>
+                            <td>@TotalPercDificuldade%</td>
+                            <td class="text-center">@Gerador.Quantidade</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label small mb-1 d-block">Distribuição de conteúdo</label>
+            @if (AssuntosDisponiveis.Count == 0)
+            {
+                <span class="text-muted small">Nenhum assunto cadastrado nessa disciplina.</span>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-1" style="max-width: 640px;">
+                        <thead>
+                            <tr>
+                                <th style="width:36px;"></th>
+                                <th>Assunto</th>
+                                <th style="width:100px;">Disponíveis</th>
+                                <th style="width:100px;">%</th>
+                                <th style="width:100px;">Questões</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var a in AssuntosDisponiveis)
+                            {
+                                var incluido = PercPorAssuntoGerador.ContainsKey(a.Id);
+                                var disponiveis = DisponiveisPorAssunto(a.Id);
+                                var qtd = incluido ? QuantidadePorAssunto(a.Id) : 0;
+                                <tr>
+                                    <td>
+                                        <input class="form-check-input" type="checkbox" checked="@incluido" @onchange="e => AlternarAssunto(a.Id, (bool)e.Value!)" />
+                                    </td>
+                                    <td>@a.Nome</td>
+                                    <td class="@(incluido && qtd > disponiveis ? "text-danger fw-bold" : "text-muted")">@disponiveis</td>
+                                    <td>
+                                        @if (incluido)
+                                        {
+                                            <input type="number" min="0" max="100" class="form-control form-control-sm" style="width:70px;"
+                                                   value="@PercPorAssuntoGerador[a.Id]"
+                                                   @oninput="e => DefinirPercAssunto(a.Id, e)" />
+                                        }
+                                    </td>
+                                    <td class="text-center">@(incluido ? qtd.ToString() : "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="@(TotalPercAssuntos == 100 ? "text-muted" : "text-danger fw-bold")">
+                                <td colspan="3">Total</td>
+                                <td>@TotalPercAssuntos%</td>
+                                <td class="text-center">@Gerador.Quantidade</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            }
+            @if (AvisosDisponibilidade.Count > 0)
+            {
+                <div class="alert alert-warning py-2 small mb-0">
+                    @foreach (var msg in AvisosDisponibilidade)
+                    {
+                        <div>⚠ @msg</div>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="mb-2">
+            <label class="form-label small mb-1 d-block">Tipos</label>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="tipoME" @bind="Gerador.PermiteMultiplaEscolha" @bind:after="SincronizarTipo" />
+                <label class="form-check-label" for="tipoME">Múltipla escolha</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="tipoDI" @bind="Gerador.PermiteDiscursiva" @bind:after="SincronizarTipo" />
+                <label class="form-check-label" for="tipoDI">Discursiva</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="tipoCE" @bind="Gerador.PermiteCertoErrado" @bind:after="SincronizarTipo" />
+                <label class="form-check-label" for="tipoCE">Certo/Errado</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="tipoAS" @bind="Gerador.PermiteAssociacao" @bind:after="SincronizarTipo" />
+                <label class="form-check-label" for="tipoAS">Associação</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="tipoRB" @bind="Gerador.PermiteRespostaBreve" @bind:after="SincronizarTipo" />
+                <label class="form-check-label" for="tipoRB">Resposta breve</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="tipoNU" @bind="Gerador.PermiteNumerica" @bind:after="SincronizarTipo" />
+                <label class="form-check-label" for="tipoNU">Numérica</label>
+            </div>
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" type="checkbox" id="tipoLA" @bind="Gerador.PermiteLacunas" @bind:after="SincronizarTipo" />
+                <label class="form-check-label" for="tipoLA">Lacunas</label>
+            </div>
+
+            <div class="form-check mt-2">
+                <input class="form-check-input" type="checkbox" id="definirQtdPorTipo" @bind="Gerador.DefinirQuantidadePorTipo" @bind:after="AlternarDefinirQtdPorTipo" />
+                <label class="form-check-label" for="definirQtdPorTipo">Definir quantidade por tipo</label>
+            </div>
+            @if (Gerador.DefinirQuantidadePorTipo)
+            {
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm align-middle mb-1" style="max-width: 480px;">
+                        <thead>
+                            <tr>
+                                <th>Tipo</th>
+                                <th style="width:100px;">Disponíveis</th>
+                                <th style="width:100px;">Quantidade</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var tipo in TiposPermitidosAtuais)
+                            {
+                                <tr>
+                                    <td>@tipo.Rotulo()</td>
+                                    <td class="@(QuantidadePorTipoGerador.GetValueOrDefault(tipo) > DisponiveisPorTipo(tipo) ? "text-danger fw-bold" : "text-muted")">@DisponiveisPorTipo(tipo)</td>
+                                    <td>
+                                        <input type="number" min="0" class="form-control form-control-sm" style="width:80px;"
+                                               value="@QuantidadePorTipoGerador.GetValueOrDefault(tipo)"
+                                               @oninput="e => DefinirQuantidadeTipo(tipo, e)" />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                        <tfoot>
+                            <tr class="@(SomaQuantidadePorTipo == Gerador.Quantidade ? "text-muted" : "text-danger fw-bold")">
+                                <td>Total</td>
+                                <td></td>
+                                <td>@SomaQuantidadePorTipo / @Gerador.Quantidade</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                @if (AvisosPorTipo.Count > 0)
+                {
+                    <div class="alert alert-warning py-2 small mb-0">
+                        @foreach (var msg in AvisosPorTipo)
+                        {
+                            <div>⚠ @msg</div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+
+        <details class="mb-2">
+            <summary class="fw-bold" style="cursor: pointer;">▸ Opções avançadas</summary>
+            <div class="mt-2">
+                <div class="mb-2">
+                    <label class="form-label small mb-1 d-block">
+                        Nível de Bloom <span class="text-muted">(opcional — deixe tudo desmarcado pra não filtrar por isso; marcando algum, os % precisam somar 100%)</span>
+                    </label>
+                    <div class="d-flex flex-wrap gap-3">
+                        @foreach (var nivel in niveisBloom)
+                        {
+                            <div class="d-flex align-items-center gap-1">
+                                <div class="form-check mb-0">
+                                    <input class="form-check-input" type="checkbox" id="@($"bloomGerador{nivel}")"
+                                           checked="@PercPorBloomGerador.ContainsKey(nivel)"
+                                           @onchange="e => AlternarBloom(nivel, (bool)e.Value!)" />
+                                    <label class="form-check-label" for="@($"bloomGerador{nivel}")">@nivel.Rotulo()</label>
+                                </div>
+                                @if (PercPorBloomGerador.ContainsKey(nivel))
+                                {
+                                    <input type="number" min="0" max="100" class="form-control form-control-sm" style="width: 65px;"
+                                           value="@PercPorBloomGerador[nivel]"
+                                           @onchange="e => DefinirPercBloom(nivel, e)" />
+                                    <span class="text-muted small">%</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                    @if (PercPorBloomGerador.Count > 0)
+                    {
+                        <span class="small @(TotalPercBloom == 100 ? "text-muted" : "text-danger fw-bold")">Total: @TotalPercBloom%</span>
+                    }
+                </div>
+
+                <div class="mb-2 p-2 border rounded" style="max-width: 750px;">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="evitarRecentes" @bind="Gerador.EvitarRecentes" @bind:after="AtualizarRecentes" />
+                        <label class="form-check-label" for="evitarRecentes">Evitar questões utilizadas recentemente</label>
+                    </div>
+                    @if (Gerador.EvitarRecentes)
+                    {
+                        <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+                            <select class="form-select form-select-sm" style="width: auto;" @bind="Gerador.CriterioRecentes" @bind:after="AtualizarRecentes">
+                                <option value="@CriterioEvitarRecentes.PorMeses">Não usadas nos últimos</option>
+                                <option value="@CriterioEvitarRecentes.PorQuantidadeProvas">Não usadas nas últimas</option>
+                            </select>
+                            <input type="number" min="1" class="form-control form-control-sm" style="width: 90px;" @bind="Gerador.ValorCriterioRecentes" @bind:after="AtualizarRecentes" />
+                            <span class="text-muted small">@(Gerador.CriterioRecentes == CriterioEvitarRecentes.PorMeses ? "mês(es)" : "prova(s) minha(s)")</span>
+                        </div>
+                    }
+                </div>
+
+                <div class="mb-2">
+                    <label class="form-label small mb-1 d-block">Qualidade mínima das questões</label>
+                    <div class="d-flex flex-wrap gap-3">
+                        @foreach (var opcao in Enum.GetValues<QualidadeMinima>())
+                        {
+                            <div class="form-check form-check-inline mb-0">
+                                <input class="form-check-input" type="radio" name="qualidadeMinima" id="@($"qualidade{opcao}")"
+                                       checked="@(Gerador.QualidadeMinima == opcao)" @onchange="() => DefinirQualidadeMinima(opcao)" />
+                                <label class="form-check-label" for="@($"qualidade{opcao}")">@opcao.Rotulo()</label>
+                            </div>
+                        }
+                    </div>
+                    @if (Gerador.QualidadeMinima != QualidadeMinima.Qualquer)
+                    {
+                        <span class="text-muted small">@QuantidadeQualidadeAtende questões atendem aos critérios de qualidade.</span>
+                    }
+                </div>
+
+                @if (ItensCurricular.Count > 0)
+                {
+                    <div class="mb-2 p-2 border rounded">
+                        <label class="form-label small mb-1 d-block">Alinhamento Curricular / ENADE <span class="text-muted">(opcional)</span></label>
+
+                        @* 3 modos mutuamente exclusivos (item 1/2/21/38 da 2ª rodada de
+                           revisão) — "Filtrar" (OU, nunca garante cobrir todos os itens)
+                           e "Definir cobertura curricular" (blueprint, cota por item) são
+                           coisas DIFERENTES, mesmo que os dois usem os mesmos itens de
+                           matriz. *@
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="modoCurricular" id="modoCurricularSem"
+                                   checked="@(Gerador.ModoAlinhamentoCurricular == ModoAlinhamentoCurricular.SemMatriz)"
+                                   @onchange="() => DefinirModoCurricular(ModoAlinhamentoCurricular.SemMatriz)" />
+                            <label class="form-check-label" for="modoCurricularSem">Não utilizar matriz</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="modoCurricular" id="modoCurricularFiltro"
+                                   checked="@(Gerador.ModoAlinhamentoCurricular == ModoAlinhamentoCurricular.FiltroCurricular)"
+                                   @onchange="() => DefinirModoCurricular(ModoAlinhamentoCurricular.FiltroCurricular)" />
+                            <label class="form-check-label" for="modoCurricularFiltro">Filtrar por matriz</label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="modoCurricular" id="modoCurricularBlueprint"
+                                   checked="@(Gerador.ModoAlinhamentoCurricular == ModoAlinhamentoCurricular.BlueprintCurricular)"
+                                   @onchange="() => DefinirModoCurricular(ModoAlinhamentoCurricular.BlueprintCurricular)" />
+                            <label class="form-check-label" for="modoCurricularBlueprint">Definir cobertura curricular (blueprint)</label>
+                        </div>
+
+                        @if (Gerador.ModoAlinhamentoCurricular == ModoAlinhamentoCurricular.FiltroCurricular)
+                        {
+                            <div class="alert alert-info py-2 small">
+                                Utilizar somente questões relacionadas a <strong>pelo menos um</strong> dos itens selecionados abaixo. Isso <strong>não garante</strong> que todos os itens marcados apareçam na prova — pra exigir uma quantidade exata por item, use "Definir cobertura curricular".
+                            </div>
+                            <ItemMatrizChecklist Itens="ItensCurricular" Selecionados="Gerador.ItemMatrizIdsDesejados" OnAlterado="Notificar" />
+                            @if (Gerador.ItemMatrizIdsDesejados.Count > 0)
+                            {
+                                <ul class="small text-muted mb-1 mt-1 ps-3">
+                                    @foreach (var id in Gerador.ItemMatrizIdsDesejados)
+                                    {
+                                        var item = ItemPorId(id);
+                                        var disponiveis = DisponiveisPorItem(id);
+                                        <li>
+                                            <strong>@(item?.Codigo ?? $"#{id}")</strong>@(item is not null ? $" — {item.Titulo}" : "") : @disponiveis questão(ões) disponível(is)
+                                            @if (disponiveis == 0)
+                                            {
+                                                <span class="text-danger" title="Nenhuma questão disponível com esse item nos filtros atuais">⚠</span>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                                <p class="small text-muted mb-0">Questões distintas disponíveis para o conjunto selecionado: <strong>@DisponiveisDistintasSelecionadas</strong></p>
+                            }
+                        }
+                        else if (Gerador.ModoAlinhamentoCurricular == ModoAlinhamentoCurricular.BlueprintCurricular)
+                        {
+                            <div class="alert alert-info py-2 small">
+                                Marque os itens e defina o percentual da prova que cada um deve ocupar — o sistema tenta reservar a quantidade exata por item, sem repetir a mesma questão em duas posições.
+                                <strong>Neste modo, os percentuais de Dificuldade/Assunto/Bloom e "Definir quantidade por tipo" (acima e nas Opções avançadas) são ignorados pelo sorteio</strong> — só Tipo permitido, Qualidade mínima e Evitar recentes continuam valendo, como filtros simples.
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-sm align-middle mb-1" style="max-width: 720px;">
+                                    <thead>
+                                        <tr>
+                                            <th style="width:36px;"></th>
+                                            <th>Item</th>
+                                            <th style="width:90px;">Disponíveis</th>
+                                            <th style="width:90px;">%</th>
+                                            <th style="width:90px;">Questões</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in ItensCurricular)
+                                        {
+                                            var incluido = PercPorItemGerador.ContainsKey(item.Id);
+                                            var disponiveis = DisponiveisPorItem(item.Id);
+                                            var qtd = incluido ? QtdPlanejadaPorItemBlueprint.GetValueOrDefault(item.Id) : 0;
+                                            <tr>
+                                                <td><input class="form-check-input" type="checkbox" checked="@incluido" @onchange="e => AlternarItemBlueprintChecked(item.Id, (bool)e.Value!)" /></td>
+                                                <td><span class="badge text-bg-secondary">@item.Tipo.Rotulo()</span> @item.Codigo — @item.Titulo</td>
+                                                <td class="@(incluido && qtd > disponiveis ? "text-danger fw-bold" : "text-muted")">@disponiveis</td>
+                                                <td>
+                                                    @if (incluido)
+                                                    {
+                                                        <input type="number" min="0" max="100" class="form-control form-control-sm" style="width:70px;"
+                                                               value="@PercPorItemGerador[item.Id]"
+                                                               @oninput="e => DefinirPercItemBlueprint(item.Id, e)" />
+                                                    }
+                                                </td>
+                                                <td class="text-center">@(incluido ? qtd.ToString() : "—")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                    <tfoot>
+                                        <tr class="@(TotalPercItensBlueprint == 100 ? "text-muted" : "text-danger fw-bold")">
+                                            <td colspan="3">Total</td>
+                                            <td>@TotalPercItensBlueprint%</td>
+                                            <td class="text-center">@Gerador.Quantidade</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                            @if (PercPorItemGerador.Count > 0)
+                            {
+                                <p class="small mb-1">
+                                    Questões distintas disponíveis para o conjunto selecionado: <strong>@DisponiveisDistintasSelecionadas</strong>
+                                    @if (BlueprintCurricularViavel)
+                                    {
+                                        <span class="text-success"> · ✓ Seu blueprint curricular pode ser atendido.</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-danger"> · ⚠ Não há questões suficientes pra atender exatamente ao blueprint (veja abaixo).</span>
+                                    }
+                                </p>
+                            }
+                            @if (AvisosBlueprintCurricular.Count > 0)
+                            {
+                                <div class="alert alert-warning py-2 small mb-0">
+                                    @foreach (var msg in AvisosBlueprintCurricular)
+                                    {
+                                        <div>⚠ @msg</div>
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+            </div>
+        </details>
+
+        <ResumoProva Quantidade="Gerador.Quantidade"
+                     ValorTotal="Gerador.ValorTotal"
+                     TempoMinutos="TempoMinutos"
+                     Faceis="FaceisQtd"
+                     Medias="MediasQtd"
+                     Dificeis="DificeisQtd"
+                     ResumoConteudo="ResumoConteudo"
+                     TiposTexto="TiposTexto"
+                     PercPorBloom="PercPorBloomGerador"
+                     EvitarRecentes="Gerador.EvitarRecentes"
+                     CriterioRecentes="Gerador.CriterioRecentes"
+                     ValorCriterioRecentes="Gerador.ValorCriterioRecentes" />
+
+        @if (AvisoGerador is not null)
+        {
+            <div class="alert alert-warning py-1">@AvisoGerador</div>
+        }
+
+        <button type="button" class="btn btn-primary" @onclick="Gerar">🎲 Gerar prova</button>
+        @if (SelecionadasCount > 0)
+        {
+            <button type="button" class="btn btn-outline-primary" @onclick="AdicionarPeloGerador">+ Adicionar questões pelo gerador</button>
+        }
+        <div class="form-text">"Gerar prova" substitui as questões já escolhidas pelo resultado do sorteio; "Adicionar" mantém as atuais e só sorteia o que falta.</div>
+
+        @if (SelecionadasCount > 0 && Aderencia.Count > 0)
+        {
+            <div class="card mt-3">
+                <div class="card-body py-2">
+                    <h6 class="card-subtitle mb-2 text-muted">Resultado: @SelecionadasCount/@Gerador.Quantidade questões geradas</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Critério</th>
+                                    <th>Planejado</th>
+                                    <th>Obtido</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var linha in Aderencia)
+                                {
+                                    <tr class="@(linha.Atende ? "" : "text-danger")">
+                                        <td>@linha.Rotulo</td>
+                                        <td>@linha.PlanejadoPercentual%</td>
+                                        <td>@linha.ObtidoPercentual% (@linha.ObtidoQuantidade) @(linha.Atende ? "✓" : "⚠")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (SelecionadasCount > 0 && AderenciaBlueprintCurricular.Count > 0)
+        {
+            <div class="card mt-3">
+                <div class="card-body py-2">
+                    <h6 class="card-subtitle mb-2 text-muted">Resultado: Planejado × Obtido (Blueprint Curricular) — Aderência: @AderenciaBlueprintCurricularPercentual%</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Item</th>
+                                    <th>Planejado</th>
+                                    <th>Obtido</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var linha in AderenciaBlueprintCurricular)
+                                {
+                                    <tr class="@(linha.Atende ? "" : "text-danger")">
+                                        <td><span class="badge text-bg-secondary">@linha.Item.Tipo.Rotulo()</span> @linha.Item.Codigo — @linha.Item.Titulo</td>
+                                        <td>@linha.PercentualPlanejado% (@linha.QuantidadePlanejada)</td>
+                                        <td>@linha.QuantidadeObtida @(linha.Atende ? "✓" : "⚠")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+
+        @if (SelecionadasCount > 0 && CoberturaCurricular.Count > 0)
+        {
+            <div class="card mt-3">
+                <div class="card-body py-2">
+                    <h6 class="card-subtitle mb-2 text-muted">Cobertura Curricular</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Item da matriz</th>
+                                    <th>Questões</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var linha in CoberturaCurricular)
+                                {
+                                    <tr class="@(linha.Quantidade == 0 ? "text-danger" : "")">
+                                        <td><span class="badge text-bg-secondary">@linha.Item.Tipo.Rotulo()</span> @linha.Item.Codigo — @linha.Item.Titulo</td>
+                                        <td>@linha.Quantidade @(linha.Quantidade == 0 ? "⚠" : "")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private static readonly NivelBloom[] niveisBloom = Enum.GetValues<NivelBloom>();
+
+    [Parameter, EditorRequired] public GeradorInput Gerador { get; set; } = null!;
+    [Parameter] public DiagnosticoBanco Diagnostico { get; set; } = new();
+    [Parameter] public int FaceisQtd { get; set; }
+    [Parameter] public int MediasQtd { get; set; }
+    [Parameter] public int DificeisQtd { get; set; }
+    [Parameter] public int TotalPercDificuldade { get; set; }
+
+    [Parameter] public List<Assunto> AssuntosDisponiveis { get; set; } = new();
+    [Parameter, EditorRequired] public Dictionary<int, int> PercPorAssuntoGerador { get; set; } = new();
+    [Parameter, EditorRequired] public Func<int, int> DisponiveisPorAssunto { get; set; } = _ => 0;
+    [Parameter, EditorRequired] public Func<int, int> QuantidadePorAssunto { get; set; } = _ => 0;
+    [Parameter] public int TotalPercAssuntos { get; set; }
+    [Parameter] public List<string> AvisosDisponibilidade { get; set; } = new();
+
+    [Parameter] public List<TipoQuestao> TiposPermitidosAtuais { get; set; } = new();
+    [Parameter, EditorRequired] public Func<TipoQuestao, int> DisponiveisPorTipo { get; set; } = _ => 0;
+    [Parameter, EditorRequired] public Dictionary<TipoQuestao, int> QuantidadePorTipoGerador { get; set; } = new();
+    [Parameter] public int SomaQuantidadePorTipo { get; set; }
+    [Parameter] public List<string> AvisosPorTipo { get; set; } = new();
+
+    [Parameter, EditorRequired] public Dictionary<NivelBloom, int> PercPorBloomGerador { get; set; } = new();
+    [Parameter] public int TotalPercBloom { get; set; }
+
+    [Parameter] public int QuantidadeQualidadeAtende { get; set; }
+
+    // Alinhamento Curricular / ENADE (opcional/avançado) — itens (flat, de
+    // todas as matrizes vinculáveis) já escopados ao Curso da prova (ver
+    // ProvaForm.CarregarItensDoCursoProvaAsync); vazio quando a prova não tem
+    // Curso escolhido, e a seção some sozinha (ver "@if (ItensCurricular.Count
+    // > 0)" na marcação acima). Gerador.ItemMatrizIdsDesejados (dentro do
+    // parâmetro Gerador já existente) é o HashSet compartilhado que
+    // ItemMatrizChecklist muta direto — mesmo padrão de referência
+    // compartilhada já usado aqui pra PercPorAssuntoGerador/QuantidadePorTipoGerador.
+    [Parameter] public List<ItemMatrizReferencia> ItensCurricular { get; set; } = new();
+    [Parameter, EditorRequired] public Func<int, int> DisponiveisPorItem { get; set; } = _ => 0;
+    [Parameter] public List<LinhaCoberturaItem> CoberturaCurricular { get; set; } = new();
+    [Parameter] public int DisponiveisDistintasSelecionadas { get; set; }
+
+    // Modo Blueprint Curricular (item 2/3/4/5/6 da 2ª rodada de revisão) —
+    // mesmo padrão de referência compartilhada de PercPorAssuntoGerador
+    // acima (Dictionary mutado direto por este componente).
+    [Parameter, EditorRequired] public Dictionary<int, int> PercPorItemGerador { get; set; } = new();
+    [Parameter] public Dictionary<int, int> QtdPlanejadaPorItemBlueprint { get; set; } = new();
+    [Parameter] public bool BlueprintCurricularViavel { get; set; }
+    [Parameter] public List<string> AvisosBlueprintCurricular { get; set; } = new();
+    [Parameter] public List<LinhaBlueprintCurricular> AderenciaBlueprintCurricular { get; set; } = new();
+    [Parameter] public int AderenciaBlueprintCurricularPercentual { get; set; }
+    [Parameter] public EventCallback<(int ItemId, bool Marcado)> OnAlternarItemBlueprint { get; set; }
+
+    private int TotalPercItensBlueprint => PercPorItemGerador.Values.Sum();
+
+    [Parameter] public int? TempoMinutos { get; set; }
+    [Parameter] public string ResumoConteudo { get; set; } = "";
+    [Parameter] public string TiposTexto { get; set; } = "";
+    [Parameter] public string? AvisoGerador { get; set; }
+    [Parameter] public int SelecionadasCount { get; set; }
+    [Parameter] public List<LinhaAderencia> Aderencia { get; set; } = new();
+
+    [Parameter] public EventCallback OnAlterado { get; set; }
+    [Parameter] public EventCallback<(int AssuntoId, bool Marcado)> OnAlternarAssunto { get; set; }
+    [Parameter] public EventCallback OnSincronizarQuantidadePorTipo { get; set; }
+    [Parameter] public EventCallback OnAlternarDefinirQuantidadePorTipo { get; set; }
+    [Parameter] public EventCallback<(NivelBloom Nivel, bool Marcado)> OnAlternarBloom { get; set; }
+    [Parameter] public EventCallback OnAtualizarDiagnosticoRecentes { get; set; }
+    [Parameter] public EventCallback OnGerar { get; set; }
+    [Parameter] public EventCallback OnAdicionarPeloGerador { get; set; }
+
+    private Task Notificar() => OnAlterado.InvokeAsync();
+
+    private Task AlternarAssunto(int assuntoId, bool marcado) => OnAlternarAssunto.InvokeAsync((assuntoId, marcado));
+
+    private async Task DefinirPercAssunto(int assuntoId, ChangeEventArgs e)
+    {
+        PercPorAssuntoGerador[assuntoId] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+        await Notificar();
+    }
+
+    private Task SincronizarTipo() => OnSincronizarQuantidadePorTipo.InvokeAsync();
+
+    private Task AlternarDefinirQtdPorTipo() => OnAlternarDefinirQuantidadePorTipo.InvokeAsync();
+
+    private async Task DefinirQuantidadeTipo(TipoQuestao tipo, ChangeEventArgs e)
+    {
+        QuantidadePorTipoGerador[tipo] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+        await Notificar();
+    }
+
+    private Task AlternarBloom(NivelBloom nivel, bool marcado) => OnAlternarBloom.InvokeAsync((nivel, marcado));
+
+    private async Task DefinirPercBloom(NivelBloom nivel, ChangeEventArgs e)
+    {
+        PercPorBloomGerador[nivel] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+        await Notificar();
+    }
+
+    private Task AtualizarRecentes() => OnAtualizarDiagnosticoRecentes.InvokeAsync();
+
+    // Busca um item marcado (por Id) na lista recebida via parâmetro — usada
+    // só pra exibir código/título no resuminho de disponibilidade abaixo dos
+    // checkboxes.
+    private ItemMatrizReferencia? ItemPorId(int id) =>
+        ItensCurricular.FirstOrDefault(i => i.Id == id);
+
+    private Task DefinirModoCurricular(ModoAlinhamentoCurricular modo)
+    {
+        Gerador.ModoAlinhamentoCurricular = modo;
+        return Notificar();
+    }
+
+    private Task AlternarItemBlueprintChecked(int itemId, bool marcado) =>
+        OnAlternarItemBlueprint.InvokeAsync((itemId, marcado));
+
+    private async Task DefinirPercItemBlueprint(int itemId, ChangeEventArgs e)
+    {
+        PercPorItemGerador[itemId] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+        await Notificar();
+    }
+
+    private async Task DefinirQualidadeMinima(QualidadeMinima opcao)
+    {
+        Gerador.QualidadeMinima = opcao;
+        await Notificar();
+    }
+
+    private Task Gerar() => OnGerar.InvokeAsync();
+
+    private Task AdicionarPeloGerador() => OnAdicionarPeloGerador.InvokeAsync();
+}

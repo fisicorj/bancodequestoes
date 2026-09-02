@@ -1,0 +1,441 @@
+/* =========================================================================
+   Banco de Questões — tema visual
+   Paleta e componentes construídos em cima do Bootstrap 5 (já carregado
+   antes deste arquivo), sobrescrevendo cores/espaçamento/sombras para dar
+   uma cara mais atual ao app sem precisar reescrever cada página.
+   ========================================================================= */
+
+:root {
+    --bq-primary: #4f46e5;
+    --bq-primary-dark: #4338ca;
+    --bq-primary-darker: #362f9c;
+    --bq-primary-light: #eef2ff;
+    --bq-primary-rgb: 79, 70, 229;
+
+    --bq-success: #16a34a;
+    --bq-success-light: #ecfdf3;
+    --bq-danger: #dc2626;
+    --bq-danger-light: #fef2f2;
+    --bq-warning: #d97706;
+    --bq-warning-light: #fffbeb;
+
+    --bq-bg: #f4f5fb;
+    --bq-surface: #ffffff;
+    --bq-border: #e5e7ef;
+    --bq-text: #1f2333;
+    --bq-text-muted: #6b7280;
+
+    --bq-radius-sm: 0.45rem;
+    --bq-radius: 0.65rem;
+    --bq-radius-lg: 0.9rem;
+
+    --bq-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+    --bq-shadow: 0 4px 16px rgba(30, 27, 75, 0.08);
+    --bq-shadow-lg: 0 12px 32px rgba(30, 27, 75, 0.14);
+}
+
+/* ---------- Base ---------------------------------------------------- */
+
+html, body {
+    font-family: 'Inter', 'Segoe UI', Helvetica, Arial, sans-serif;
+    background-color: var(--bq-bg);
+    color: var(--bq-text);
+}
+
+.content {
+    padding-top: 1.6rem;
+    padding-bottom: 3rem;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    color: #16182a;
+    letter-spacing: -0.01em;
+}
+
+h1 {
+    font-size: 1.7rem;
+    margin-bottom: 1.1rem;
+}
+
+h1:focus {
+    outline: none;
+}
+
+h5 {
+    font-size: 1.05rem;
+}
+
+p.text-muted {
+    color: var(--bq-text-muted) !important;
+}
+
+a, .btn-link {
+    color: var(--bq-primary);
+    text-decoration: none;
+}
+
+    a:hover, .btn-link:hover {
+        color: var(--bq-primary-dark);
+    }
+
+/* ---------- Botões ---------------------------------------------------- */
+
+.btn {
+    border-radius: var(--bq-radius-sm);
+    font-weight: 600;
+    font-size: 0.92rem;
+    padding: 0.45rem 1rem;
+    transition: filter 0.12s ease, box-shadow 0.12s ease, transform 0.05s ease;
+}
+
+.btn-sm {
+    border-radius: 0.4rem;
+    font-weight: 500;
+}
+
+.btn:active {
+    transform: translateY(1px);
+}
+
+.btn-primary {
+    color: #fff;
+    background-color: var(--bq-primary);
+    border-color: var(--bq-primary);
+    box-shadow: 0 2px 6px rgba(var(--bq-primary-rgb), 0.35);
+}
+
+    .btn-primary:hover, .btn-primary:focus {
+        background-color: var(--bq-primary-dark);
+        border-color: var(--bq-primary-dark);
+    }
+
+    .btn-primary:disabled, .btn-primary.disabled {
+        background-color: var(--bq-primary);
+        border-color: var(--bq-primary);
+        opacity: 0.55;
+    }
+
+.btn-outline-primary {
+    color: var(--bq-primary);
+    border-color: var(--bq-primary);
+}
+
+    .btn-outline-primary:hover, .btn-outline-primary:focus {
+        background-color: var(--bq-primary);
+        border-color: var(--bq-primary);
+    }
+
+.btn-outline-secondary {
+    color: #475467;
+    border-color: var(--bq-border);
+}
+
+    .btn-outline-secondary:hover {
+        background-color: #475467;
+        border-color: #475467;
+    }
+
+.btn-secondary {
+    background-color: #475467;
+    border-color: #475467;
+}
+
+    .btn-secondary:hover {
+        background-color: #344054;
+        border-color: #344054;
+    }
+
+.btn-danger {
+    background-color: var(--bq-danger);
+    border-color: var(--bq-danger);
+}
+
+.btn-outline-danger {
+    color: var(--bq-danger);
+    border-color: #f3b4b4;
+}
+
+    .btn-outline-danger:hover {
+        background-color: var(--bq-danger);
+        border-color: var(--bq-danger);
+    }
+
+.btn-success {
+    background-color: var(--bq-success);
+    border-color: var(--bq-success);
+}
+
+.btn-warning {
+    color: #7a4a00;
+    background-color: #fde3ab;
+    border-color: #fde3ab;
+}
+
+    .btn-warning:hover {
+        color: #7a4a00;
+        background-color: #fbd487;
+        border-color: #fbd487;
+    }
+
+.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus, .form-select:focus {
+    box-shadow: 0 0 0 0.2rem rgba(var(--bq-primary-rgb), 0.25);
+}
+
+/* ---------- Formulários ------------------------------------------------ */
+
+.form-control, .form-select {
+    border-radius: var(--bq-radius-sm);
+    border-color: var(--bq-border);
+    padding: 0.55rem 0.85rem;
+}
+
+    .form-control:focus, .form-select:focus {
+        border-color: var(--bq-primary);
+    }
+
+.form-floating > .form-control:focus ~ label,
+.form-floating > .form-control:not(:placeholder-shown) ~ label,
+.form-floating > .form-select ~ label {
+    color: var(--bq-text-muted);
+}
+
+.form-floating > .form-control:focus ~ label {
+    color: var(--bq-primary);
+}
+
+.form-check-input:checked {
+    background-color: var(--bq-primary);
+    border-color: var(--bq-primary);
+}
+
+.form-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #344054;
+}
+
+.form-floating > .form-control::placeholder,
+.form-floating > .form-control-plaintext::placeholder {
+    color: var(--bq-text-muted);
+}
+
+.darker-border-checkbox.form-check-input {
+    border-color: #929292;
+}
+
+.form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
+    color: var(--bs-secondary-color);
+    text-align: end;
+}
+
+.form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
+    text-align: start;
+}
+
+/* ---------- Cards ------------------------------------------------------ */
+
+.card {
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius-lg);
+    box-shadow: var(--bq-shadow-sm);
+}
+
+    .card:hover {
+        box-shadow: var(--bq-shadow);
+    }
+
+.card-title {
+    font-weight: 700;
+    color: #16182a;
+}
+
+/* Filtros e outros blocos usados como "caixa de painel" nas listagens */
+.bg-light.border.rounded {
+    background-color: var(--bq-surface) !important;
+    border-color: var(--bq-border) !important;
+    border-radius: var(--bq-radius) !important;
+    box-shadow: var(--bq-shadow-sm);
+}
+
+/* ---------- Tabelas ------------------------------------------------------ */
+
+.table {
+    background-color: var(--bq-surface);
+    border-collapse: separate;
+    border-spacing: 0;
+    border-radius: var(--bq-radius);
+    overflow: hidden;
+    box-shadow: var(--bq-shadow-sm);
+    border: 1px solid var(--bq-border);
+}
+
+    .table thead th {
+        background-color: var(--bq-primary-light);
+        color: #363a8f;
+        font-size: 0.74rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        border-bottom: 1px solid var(--bq-border);
+        padding: 0.75rem 1rem;
+        white-space: nowrap;
+    }
+
+    .table tbody td {
+        padding: 0.7rem 1rem;
+        vertical-align: middle;
+        border-top: 1px solid var(--bq-border);
+        color: var(--bq-text);
+    }
+
+    .table tbody tr:hover td {
+        background-color: #fafaff;
+    }
+
+    .table tbody tr:first-child td {
+        border-top: none;
+    }
+
+/* ---------- Alertas e badges -------------------------------------------- */
+
+.alert {
+    border: none;
+    border-left: 4px solid transparent;
+    border-radius: var(--bq-radius-sm);
+    font-size: 0.92rem;
+}
+
+.alert-success {
+    background-color: var(--bq-success-light);
+    border-left-color: var(--bq-success);
+    color: #14532d;
+}
+
+.alert-danger {
+    background-color: var(--bq-danger-light);
+    border-left-color: var(--bq-danger);
+    color: #7f1d1d;
+}
+
+.alert-warning {
+    background-color: var(--bq-warning-light);
+    border-left-color: var(--bq-warning);
+    color: #7c4a03;
+}
+
+.badge {
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border-radius: 999px;
+    padding: 0.35em 0.7em;
+}
+
+/* ---------- Cartão de formulário ----------------------------------------- */
+/* Usado para envolver os formulários de cadastro/edição (questão, prova,
+   disciplina, etc.), dando a eles o mesmo tratamento visual da tela de login
+   em vez de campos soltos direto no fundo da página. */
+
+.form-card {
+    background-color: var(--bq-surface);
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius-lg);
+    box-shadow: var(--bq-shadow-sm);
+    padding: 1.75rem 1.75rem 1.5rem;
+}
+
+@media (max-width: 640.98px) {
+    .form-card {
+        padding: 1.25rem;
+    }
+}
+
+/* ---------- Preview de Markdown (enunciado) ------------------------------ */
+/* Estiliza o HTML que o Markdig gera na pré-visualização do enunciado — o
+   Markdig não adiciona nenhuma classe Bootstrap sozinho, então código e
+   tabela ficam sem estilo nenhum se não tratarmos aqui. */
+
+.markdown-preview > :last-child {
+    margin-bottom: 0 !important;
+}
+
+.markdown-preview code {
+    background-color: #eef0f5;
+    padding: 0.1em 0.35em;
+    border-radius: 0.3em;
+    font-size: 0.9em;
+    color: #b3261e;
+}
+
+.markdown-preview pre {
+    background-color: #1f2333;
+    color: #e5e7ef;
+    padding: 0.75rem 1rem;
+    border-radius: var(--bq-radius-sm);
+    overflow-x: auto;
+}
+
+    .markdown-preview pre code {
+        background-color: transparent;
+        color: inherit;
+        padding: 0;
+        font-size: 0.85rem;
+    }
+
+.markdown-preview table {
+    width: auto;
+    max-width: 100%;
+    border-collapse: collapse;
+}
+
+.markdown-preview th, .markdown-preview td {
+    border: 1px solid var(--bq-border);
+    padding: 0.4rem 0.7rem;
+}
+
+.markdown-preview th {
+    background-color: var(--bq-primary-light);
+}
+
+/* ---------- Tela de login ------------------------------------------------ */
+
+.login-form {
+    background-color: var(--bq-surface);
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius-lg);
+    box-shadow: var(--bq-shadow);
+    padding: 2rem 2rem 1.6rem;
+}
+
+.login-form .btn-lg {
+    border-radius: var(--bq-radius-sm);
+}
+
+/* ---------- Diversos ----------------------------------------------------- */
+
+.text-danger {
+    color: var(--bq-danger) !important;
+}
+
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid var(--bq-success);
+}
+
+.invalid {
+    outline: 1px solid var(--bq-danger);
+}
+
+.validation-message {
+    color: var(--bq-danger);
+    font-size: 0.85rem;
+}
+
+.blazor-error-boundary {
+    background: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTYiIGhlaWdodD0iNDkiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sbnM6eGxpbms9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGxpbmsiIG92ZXJmbG93PSJoaWRkZW4iPjxkZWZzPjxjbGlwUGF0aCBpZD0iY2xpcDAiPjxyZWN0IHg9IjIzNSIgeT0iNTEiIHdpZHRoPSI1NiIgaGVpZ2h0PSI0OSIvPjwvY2xpcFBhdGg+PC9kZWZzPjxnIGNsaXAtcGF0aD0idXJsKCNjbGlwMCkiIHRyYW5zZm9ybT0idHJhbnNsYXRlKC0yMzUgLTUxKSI+PHBhdGggZD0iTTI2My41MDYgNTFDMjY0LjcxNyA1MSAyNjUuODEzIDUxLjQ4MzcgMjY2LjYwNiA1Mi4yNjU4TDI2Ny4wNTIgNTIuNzk4NyAyNjcuNTM5IDUzLjYyODMgMjkwLjE4NSA5Mi4xODMxIDI5MC41NDUgOTIuNzk1IDI5MC42NTYgOTIuOTk2QzI5MC44NzcgOTMuNTEzIDI5MSA5NC4wODE1IDI5MSA5NC42NzgyIDI5MSA5Ny4wNjUxIDI4OS4wMzggOTkgMjg2LjYxNyA5OUwyNDAuMzgzIDk5QzIzNy45NjMgOTkgMjM2IDk3LjA2NTEgMjM2IDk0LjY3ODIgMjM2IDk0LjM3OTkgMjM2LjAzMSA5NC4wODg2IDIzNi4wODkgOTMuODA3MkwyMzYuMzM4IDkzLjAxNjIgMjM2Ljg1OCA5Mi4xMzE0IDI1OS40NzMgNTMuNjI5NCAyNTkuOTYxIDUyLjc5ODUgMjYwLjQwNyA1Mi4yNjU4QzI2MS4yIDUxLjQ4MzcgMjYyLjI5NiA1MSAyNjMuNTA2IDUxWk0yNjMuNTg2IDY2LjAxODNDMjYwLjczNyA2Ni4wMTgzIDI1OS4zMTMgNjcuMTI0NSAyNTkuMzEzIDY5LjMzNyAyNTkuMzEzIDY5LjYxMDIgMjU5LjMzMiA2OS44NjA4IDI1OS4zNzEgNzAuMDg4N0wyNjEuNzk1IDg0LjAxNjEgMjY1LjM4IDg0LjAxNjEgMjY3LjgyMSA2OS43NDc1QzI2Ny44NiA2OS43MzA5IDI2Ny44NzkgNjkuNTg3NyAyNjcuODc5IDY5LjMxNzkgMjY3Ljg3OSA2Ny4xMTgyIDI2Ni40NDggNjYuMDE4MyAyNjMuNTg2IDY2LjAxODNaTTI2My41NzYgODYuMDU0N0MyNjEuMDQ5IDg2LjA1NDcgMjU5Ljc4NiA4Ny4zMDA1IDI1OS43ODYgODkuNzkyMSAyNTkuNzg2IDkyLjI4MzcgMjYxLjA0OSA5My41Mjk1IDI2My41NzYgOTMuNTI5NSAyNjYuMTE2IDkzLjUyOTUgMjY3LjM4NyA5Mi4yODM3IDI2Ny4zODcgODkuNzkyMSAyNjcuMzg3IDg3LjMwMDUgMjY2LjExNiA4Ni4wNTQ3IDI2My41NzYgODYuMDU0N1oiIGZpbGw9IiNGRkU1MDAiIGZpbGwtcnVsZT0iZXZlbm9kZCIvPjwvZz48L3N2Zz4=) no-repeat 1rem/1.8rem, #b32121;
+    padding: 1rem 1rem 1rem 3.7rem;
+    color: white;
+}
+
+    .blazor-error-boundary::after {
+        content: "An error has occurred."
+    }

@@ -1,0 +1,60 @@
+<!--
+    Card "Resumo da prova" (item 9), extraído de ProvaForm.razor.
+
+    Componente 100% "burro" (só exibição): não guarda estado nenhum, não tem
+    EventCallback nenhum. Todos os valores mostrados aqui são calculados por
+    ProvaForm (que continua dono de TODA a lógica — gerador, blueprint, etc.)
+    e passados prontos via [Parameter]. Isso evita qualquer risco de
+    dessincronia entre esse card e o resto da tela: como ProvaForm recalcula
+    esses parâmetros a cada render seu (que acontece a cada interação, via os
+    handlers de bind/click apontando pra métodos dela), este componente
+    sempre reflete o estado atual sem precisar de nenhuma notificação
+    própria. (Nota: nem em comentário HTML o símbolo de transição do Razor é
+    seguro — o parser processa "arroba" mesmo dentro de um bloco
+    menor-exclamação-hífen-hífen, então evite escrevê-lo solto em comentários
+    deste tipo neste projeto.)
+-->
+
+<div class="card mb-3 bg-body-secondary bg-opacity-25">
+    <div class="card-body py-2">
+        <h6 class="card-subtitle mb-2 text-muted">Resumo da prova</h6>
+        <p class="mb-1">
+            <strong>@Quantidade questões</strong>@(ValorTotal is > 0 ? $" • {ValorTotal:0.##} pontos" : "")@(TempoMinutos is { } tempo ? $" • ~{tempo} minutos" : "")
+        </p>
+        <p class="mb-1 small">
+            <strong>Dificuldade:</strong>
+            🟢 @Faceis fáceis · 🟡 @Medias médias · 🔴 @Dificeis difíceis
+        </p>
+        <p class="mb-1 small">
+            <strong>Conteúdo:</strong> @ResumoConteudo
+        </p>
+        <p class="mb-1 small">
+            <strong>Tipos:</strong> @TiposTexto
+        </p>
+        @if (PercPorBloom.Count > 0)
+        {
+            <p class="mb-1 small">
+                <strong>Bloom:</strong> @string.Join(" · ", PercPorBloom.Select(kv => $"{kv.Key.Rotulo()} {kv.Value}%"))
+            </p>
+        }
+        @if (EvitarRecentes)
+        {
+            <p class="mb-0 small">✓ Não utilizadas @(CriterioRecentes == CriterioEvitarRecentes.PorMeses ? $"nos últimos {ValorCriterioRecentes} mês(es)" : $"nas últimas {ValorCriterioRecentes} prova(s) minha(s)")</p>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public int Quantidade { get; set; }
+    [Parameter] public decimal? ValorTotal { get; set; }
+    [Parameter] public int? TempoMinutos { get; set; }
+    [Parameter] public int Faceis { get; set; }
+    [Parameter] public int Medias { get; set; }
+    [Parameter] public int Dificeis { get; set; }
+    [Parameter] public string ResumoConteudo { get; set; } = "";
+    [Parameter] public string TiposTexto { get; set; } = "";
+    [Parameter] public Dictionary<NivelBloom, int> PercPorBloom { get; set; } = new();
+    [Parameter] public bool EvitarRecentes { get; set; }
+    [Parameter] public CriterioEvitarRecentes CriterioRecentes { get; set; }
+    [Parameter] public int ValorCriterioRecentes { get; set; }
+}

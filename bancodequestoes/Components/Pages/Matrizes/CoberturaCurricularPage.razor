@@ -1,0 +1,236 @@
+@page "/cobertura-curricular"
+@page "/cobertura-curricular/{MatrizId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BancoQuestoes.Models
+@inject MatrizReferenciaService MatrizService
+@inject CursoService CursoService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Cobertura Curricular</PageTitle>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (MatrizId is null)
+{
+    <h1>Cobertura Curricular</h1>
+    <p class="text-muted">Selecione um curso e uma matriz de referência para ver o quanto o banco de questões já cobre dela.</p>
+
+    <div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
+        <div class="col-12 col-md-6">
+            <label class="form-label small mb-1">Curso</label>
+            <select class="form-select" @bind="cursoSelecionadoId" @bind:after="CarregarMatrizesAsync">
+                <option value="0">Selecione um curso...</option>
+                @foreach (var c in cursos)
+                {
+                    <option value="@c.Id">@c.Nome (@c.Instituicao?.Nome)</option>
+                }
+            </select>
+        </div>
+        <div class="col-12 col-md-6">
+            <label class="form-label small mb-1">Matriz de referência</label>
+            <select class="form-select" @bind="matrizSelecionadaId" disabled="@(matrizesDoCurso.Count == 0)">
+                <option value="0">Selecione...</option>
+                @foreach (var m in matrizesDoCurso)
+                {
+                    <option value="@m.Id">@m.Nome (@m.Status.Rotulo())</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <button class="btn btn-primary" disabled="@(matrizSelecionadaId == 0)" @onclick="Ver">Ver cobertura</button>
+}
+else if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (resultado is not null)
+{
+    <h1>Cobertura Curricular</h1>
+    <h5 class="text-muted">@(resultado.Matriz.Curso?.Nome ?? resultado.Matriz.AreaCurso?.Nome) / @resultado.Matriz.Nome</h5>
+    <p>
+        <a href="cobertura-curricular" class="btn btn-sm btn-link px-0">&laquo; Escolher outra matriz</a>
+    </p>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="p-3 border rounded text-center">
+                <div class="fs-3 fw-bold">@resultado.TotalQuestoesDoCurso</div>
+                <div class="text-muted small">Cobertura institucional (questões ativas do curso)</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="p-3 border rounded text-center">
+                <div class="fs-3 fw-bold">@resultado.TotalQuestoesMinhasProvas</div>
+                <div class="text-muted small">Disponíveis para minhas provas (privadas, institucionais ou compartilhadas)</div>
+            </div>
+        </div>
+        @foreach (var grupo in resultado.Grupos)
+        {
+            <div class="col-md-3">
+                <div class="p-3 border rounded text-center">
+                    <div class="fs-3 fw-bold">@grupo.PercentualCobertura%</div>
+                    <div class="text-muted small">@grupo.Tipo.RotuloPlural() cobertos (@grupo.ItensComQuestao/@grupo.TotalItens)</div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @foreach (var grupo in resultado.Grupos)
+    {
+        <h5 class="mt-4">@grupo.Tipo.RotuloPlural() &rarr; Questões</h5>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th style="width:90px">Código</th>
+                    <th>Título</th>
+                    <th style="width:120px">Questões</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var linha in grupo.Linhas.OrderBy(l => l.Item.Ordem).ThenBy(l => l.Item.Codigo))
+                {
+                    <tr>
+                        <td><code>@linha.Item.Codigo</code></td>
+                        <td>@linha.Item.Titulo</td>
+                        <td>
+                            @linha.Quantidade
+                            @if (linha.SemCobertura)
+                            {
+                                <span class="text-danger" title="Nenhuma questão vinculada">&#9888;</span>
+                            }
+                            else if (linha.CoberturaBaixa)
+                            {
+                                <span class="text-warning" title="Cobertura baixa">&#9888;</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (resultado.CrossTabDisciplinas.Count > 0)
+    {
+        <h5 class="mt-4">Cruzamento Item &times; Disciplina</h5>
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        @foreach (var disciplina in DisciplinasDoCrossTab())
+                        {
+                            <th>@disciplina</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var grupo in resultado.Grupos)
+                    {
+                        @foreach (var linha in grupo.Linhas.OrderBy(l => l.Item.Ordem).ThenBy(l => l.Item.Codigo))
+                        {
+                            <tr>
+                                <td><code>@linha.Item.Codigo</code></td>
+                                @foreach (var disciplina in DisciplinasDoCrossTab())
+                                {
+                                    <td>@ContagemCelula(linha.Item.Id, disciplina)</td>
+                                }
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public int? MatrizId { get; set; }
+
+    private List<Curso> cursos = new();
+    private List<MatrizReferencia> matrizesDoCurso = new();
+    private int cursoSelecionadoId;
+    private int matrizSelecionadaId;
+
+    private CoberturaCurricularResultado? resultado;
+    private bool carregando;
+    private string? erro;
+
+    private string? meuId;
+    private int? minhaInstituicaoId;
+    private bool ehAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        ehAdmin = authState.User.IsInRole("Admin");
+        minhaInstituicaoId = await MatrizService.ObterInstituicaoDoUsuarioAsync(meuId);
+
+        if (MatrizId is int id)
+        {
+            carregando = true;
+            try
+            {
+                // Item 8/9: ataque nomeado no pedido —
+                // "/cobertura-curricular/123" de outra instituição.
+                resultado = await MatrizService.ObterCoberturaCurricularAsync(id, meuId, minhaInstituicaoId, ehAdmin);
+            }
+            catch (OperacaoInvalidaException ex)
+            {
+                erro = ex.Message;
+            }
+            carregando = false;
+        }
+        else
+        {
+            cursos = ehAdmin
+                ? await CursoService.ListarTodosAsync()
+                : await CursoService.ListarPorInstituicaoAsync(minhaInstituicaoId);
+        }
+    }
+
+    private async Task CarregarMatrizesAsync()
+    {
+        matrizSelecionadaId = 0;
+
+        if (cursoSelecionadoId == 0)
+        {
+            matrizesDoCurso = new List<MatrizReferencia>();
+            return;
+        }
+
+        // Nunca confia só no seletor (já filtrado por instituição) — revalida
+        // aqui do lado do servidor antes de listar as matrizes do curso.
+        if (!await MatrizService.TemAcessoAoCursoAsync(cursoSelecionadoId, minhaInstituicaoId, ehAdmin))
+        {
+            erro = "Curso não encontrado.";
+            matrizesDoCurso = new List<MatrizReferencia>();
+            cursoSelecionadoId = 0;
+            return;
+        }
+
+        matrizesDoCurso = await MatrizService.ListarPorCursoAsync(cursoSelecionadoId);
+    }
+
+    private void Ver()
+    {
+        if (matrizSelecionadaId != 0)
+        {
+            NavigationManager.NavigateTo($"cobertura-curricular/{matrizSelecionadaId}");
+        }
+    }
+
+    private List<string> DisciplinasDoCrossTab() =>
+        resultado?.CrossTabDisciplinas.Select(c => c.DisciplinaNome).Distinct().OrderBy(n => n).ToList() ?? new();
+
+    private int ContagemCelula(int itemId, string disciplinaNome) =>
+        resultado?.CrossTabDisciplinas.FirstOrDefault(c => c.ItemMatrizReferenciaId == itemId && c.DisciplinaNome == disciplinaNome)?.Quantidade ?? 0;
+}

@@ -1,0 +1,197 @@
+@page "/matrizes"
+@page "/matrizes/{CursoId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BancoQuestoes.Models
+@inject MatrizReferenciaService MatrizService
+@inject CursoService CursoService
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Matrizes de Referência</PageTitle>
+
+<h1>Matrizes de Referência Curricular</h1>
+<p class="text-muted">ENADE, DCN, PPC e outras matrizes oficiais — organizadas por curso, com versionamento (uma matriz antiga nunca é sobrescrita por uma edição nova).</p>
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
+    <div class="col-12 col-md-6">
+        <label class="form-label small mb-1">Curso</label>
+        <select class="form-select" @bind="cursoSelecionadoId" @bind:after="TrocarCursoAsync">
+            <option value="0">Selecione um curso...</option>
+            @foreach (var c in cursos)
+            {
+                <option value="@c.Id">@c.Nome (@c.Instituicao?.Nome)</option>
+            }
+        </select>
+    </div>
+    @if (cursoSelecionadoId != 0)
+    {
+        <div class="col-12 col-md-4 d-flex gap-2">
+            <a class="btn btn-primary" href="@($"matrizes/novo?cursoId={cursoSelecionadoId}")">+ Nova Matriz</a>
+            <a class="btn btn-outline-secondary" href="matrizes/importar-completa">Importar matriz completa (JSON)</a>
+        </div>
+    }
+</div>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (cursoSelecionadoId == 0)
+{
+    <p><em>Selecione um curso para ver suas matrizes de referência.</em></p>
+}
+else if (matrizes.Count == 0)
+{
+    <p><em>Nenhuma matriz cadastrada para esse curso ainda.</em></p>
+}
+else
+{
+    @foreach (var grupoTipo in matrizes.GroupBy(m => m.Tipo))
+    {
+        <h5 class="mt-4">@grupoTipo.Key.Rotulo()</h5>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Nome</th>
+                    <th>Ano / Edição</th>
+                    <th>Órgão</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in grupoTipo)
+                {
+                    <tr>
+                        <td>
+                            @m.Nome
+                            @if (m.AreaCursoId is not null)
+                            {
+                                <span class="badge text-bg-info" title="Matriz nacional — compartilhada entre instituições">Nacional</span>
+                            }
+                        </td>
+                        <td>@(m.Ano?.ToString() ?? "—") @(string.IsNullOrWhiteSpace(m.Edicao) ? "" : $"({m.Edicao})")</td>
+                        <td>@(m.Orgao ?? "—")</td>
+                        <td><span class="badge text-bg-@m.Status.CorBadge()">@m.Status.Rotulo()</span></td>
+                        <td>
+                            <a class="btn btn-sm btn-outline-primary" href="@($"matrizes/{m.Id}/itens")">Gerenciar itens</a>
+                            <a class="btn btn-sm btn-outline-secondary" href="@($"cobertura-curricular/{m.Id}")">Cobertura</a>
+                            @if (m.AreaCursoId is null || ehAdmin)
+                            {
+                                <a class="btn btn-sm btn-secondary" href="@($"matrizes/editar/{m.Id}")">Editar</a>
+                                <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(m)">Excluir</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [Parameter]
+    public int? CursoId { get; set; }
+
+    private List<Curso> cursos = new();
+    private List<MatrizReferencia> matrizes = new();
+    private int cursoSelecionadoId;
+    private bool carregando;
+    private string? erro;
+    private string? sucesso;
+
+    [SupplyParameterFromQuery(Name = "msg")]
+    private string? Msg { get; set; }
+
+    private string? meuId;
+    private int? minhaInstituicaoId;
+    private bool ehAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        sucesso = Msg;
+
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        ehAdmin = authState.User.IsInRole("Admin");
+        minhaInstituicaoId = await MatrizService.ObterInstituicaoDoUsuarioAsync(meuId);
+
+        // Item 8/9/10 do pedido: o seletor de Curso só mostra cursos da
+        // própria instituição (Admin continua vendo todos, mesmo bypass já
+        // usado em outras telas restritas a Admin) — um professor não
+        // consegue nem escolher/adivinhar o id de um curso de outra
+        // instituição por aqui.
+        cursos = ehAdmin
+            ? await CursoService.ListarTodosAsync()
+            : await CursoService.ListarPorInstituicaoAsync(minhaInstituicaoId);
+
+        cursoSelecionadoId = CursoId ?? 0;
+        await CarregarAsync();
+    }
+
+    private async Task TrocarCursoAsync() => await CarregarAsync();
+
+    private async Task CarregarAsync()
+    {
+        carregando = true;
+        erro = null;
+
+        if (cursoSelecionadoId == 0)
+        {
+            matrizes = new List<MatrizReferencia>();
+        }
+        else if (!await MatrizService.TemAcessoAoCursoAsync(cursoSelecionadoId, minhaInstituicaoId, ehAdmin))
+        {
+            // Ataque por manipulação de URL (item 8: "/matrizes/{cursoId}" de
+            // outra instituição) — nunca confia só no seletor já filtrado;
+            // valida de novo aqui, do lado do servidor, antes de listar.
+            erro = "Curso não encontrado.";
+            matrizes = new List<MatrizReferencia>();
+            cursoSelecionadoId = 0;
+        }
+        else
+        {
+            matrizes = await MatrizService.ListarPorCursoAsync(cursoSelecionadoId);
+        }
+
+        carregando = false;
+    }
+
+    private async Task ConfirmarExcluirAsync(MatrizReferencia m)
+    {
+        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir a matriz \"{m.Nome}\"? Essa ação não pode ser desfeita. Se ela já tem itens/questões vinculadas, considere marcá-la como Histórica em vez de excluir.");
+        if (confirmado)
+        {
+            await ExcluirAsync(m);
+        }
+    }
+
+    private async Task ExcluirAsync(MatrizReferencia m)
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await MatrizService.ExcluirAsync(m, minhaInstituicaoId, ehAdmin);
+            sucesso = $"\"{m.Nome}\" excluída com sucesso.";
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

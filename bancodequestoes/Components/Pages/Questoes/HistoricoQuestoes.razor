@@ -1,0 +1,176 @@
+@page "/questoes/historico"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@inject QuestaoService QuestaoService
+@inject DisciplinaService DisciplinaService
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Histórico de alterações</PageTitle>
+
+<h1>Histórico de alterações</h1>
+<p class="text-muted">
+    Auditoria de edições nas questões que você enxerga — inclusive as institucionais/compartilhadas de outros professores.
+</p>
+
+<div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
+    <div class="col-12 col-md-5">
+        <label class="form-label small mb-1">Buscar no enunciado da questão</label>
+        <input type="text" class="form-control" placeholder="Digite para buscar..."
+               @bind="filtroTexto" @bind:event="oninput" @bind:after="AplicarFiltroAsync" />
+    </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Disciplina</label>
+        <select class="form-select" @bind="filtroDisciplinaId" @bind:after="AoMudarDisciplinaAsync">
+            <option value="0">Todas</option>
+            @foreach (var d in disciplinas)
+            {
+                <option value="@d.Id">@d.Nome</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Assunto</label>
+        <select class="form-select" @bind="filtroAssuntoId" @bind:after="AplicarFiltroAsync">
+            <option value="0">Todos</option>
+            @foreach (var a in AssuntosDoFiltro)
+            {
+                <option value="@a.Id">@a.Nome</option>
+            }
+        </select>
+    </div>
+</div>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (itens.Count == 0)
+{
+    <p class="text-muted"><em>Nenhuma alteração registrada com esse filtro ainda.</em></p>
+}
+else
+{
+    <p class="text-muted small">
+        Mostrando @((pagina - 1) * TamanhoPagina + 1)–@((pagina - 1) * TamanhoPagina + itens.Count) de @totalRegistros registro(s).
+    </p>
+
+    <div class="table-responsive">
+        <table class="table table-sm align-middle">
+            <thead>
+                <tr>
+                    <th>Quando</th>
+                    <th>Quem</th>
+                    <th>Questão</th>
+                    <th>O que mudou</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var h in itens)
+                {
+                    <tr>
+                        <td class="text-muted small text-nowrap">@h.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                        <td class="small">@(h.Usuario?.NomeCompleto ?? h.Usuario?.Email ?? "professor removido")</td>
+                        <td class="small">
+                            @if (h.Questao is not null)
+                            {
+                                <a href="@($"questoes/editar/{h.QuestaoId}")">@Truncar(h.Questao.Enunciado)</a>
+                                <div class="text-muted">@h.Questao.Assunto?.Disciplina?.Nome / @h.Questao.Assunto?.Nome</div>
+                            }
+                            else
+                            {
+                                <span class="text-muted">Questão #@h.QuestaoId (excluída)</span>
+                            }
+                        </td>
+                        <td class="small">
+                            @if (h.ValorAnterior is null && h.ValorNovo is null)
+                            {
+                                <text>@h.Campo alterado</text>
+                            }
+                            else
+                            {
+                                <text>@h.Campo: @h.ValorAnterior → @h.ValorNovo</text>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <Paginacao Pagina="pagina" TamanhoPagina="TamanhoPagina" TotalRegistros="totalRegistros" PaginaChanged="MudarPaginaAsync" />
+}
+
+@code {
+    private const int TamanhoPagina = 30;
+
+    private List<Disciplina> disciplinas = new();
+    private List<Assunto> todosAssuntos = new();
+
+    private string filtroTexto = "";
+    private int filtroDisciplinaId;
+    private int filtroAssuntoId;
+
+    private List<QuestaoHistorico> itens = new();
+    private int pagina = 1;
+    private int totalRegistros;
+    private bool carregando = true;
+
+    private string? meuId;
+    private int? minhaInstituicaoId;
+
+    private IEnumerable<Assunto> AssuntosDoFiltro => filtroDisciplinaId == 0
+        ? todosAssuntos
+        : todosAssuntos.Where(a => a.DisciplinaId == filtroDisciplinaId);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        minhaInstituicaoId = await QuestaoService.ObterInstituicaoDoUsuarioAsync(meuId);
+
+        disciplinas = await DisciplinaService.ListarTodasAsync();
+        todosAssuntos = await DisciplinaService.ListarTodosAssuntosAsync();
+
+        await CarregarAsync();
+    }
+
+    private async Task AoMudarDisciplinaAsync()
+    {
+        filtroAssuntoId = 0;
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task AplicarFiltroAsync()
+    {
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task MudarPaginaAsync(int novaPagina)
+    {
+        pagina = novaPagina;
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        carregando = true;
+
+        var filtro = new HistoricoFiltro
+        {
+            Texto = filtroTexto,
+            DisciplinaId = filtroDisciplinaId,
+            AssuntoId = filtroAssuntoId,
+        };
+
+        var resultado = await QuestaoService.ListarHistoricoAsync(filtro, meuId, minhaInstituicaoId, pagina, TamanhoPagina);
+        itens = resultado.Itens;
+        totalRegistros = resultado.Total;
+
+        carregando = false;
+    }
+
+    private static string Truncar(string texto) => texto.Length > 100 ? texto[..100] + "..." : texto;
+}

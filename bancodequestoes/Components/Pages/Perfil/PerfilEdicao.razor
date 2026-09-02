@@ -1,0 +1,174 @@
+@page "/perfil"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using BancoQuestoes.Models
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject InstituicaoService InstituicaoService
+
+<PageTitle>Meu perfil</PageTitle>
+
+<h1>Meu perfil</h1>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (sucesso)
+{
+    <div class="alert alert-success">Dados atualizados com sucesso.</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <div class="card col-md-6 mb-4">
+        <div class="card-body">
+            <h5 class="card-title mb-3">Dados pessoais</h5>
+            <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+                <DataAnnotationsValidator />
+                <ValidationSummary class="text-danger" />
+
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="modelo.NomeCompleto" id="NomeCompleto" class="form-control" placeholder="Nome completo" />
+                    <label for="NomeCompleto">Nome completo</label>
+                </div>
+
+                <div class="form-floating mb-3">
+                    <InputText Value="@email" ValueExpression="() => email" id="Email" class="form-control" disabled />
+                    <label for="Email">Email</label>
+                </div>
+
+                <div class="form-floating mb-3">
+                    <InputSelect @bind-Value="modelo.InstituicaoId" id="InstituicaoId" class="form-select">
+                        <option value="0">Nenhuma</option>
+                        @foreach (var inst in instituicoes)
+                        {
+                            <option value="@inst.Id">@inst.Nome</option>
+                        }
+                    </InputSelect>
+                    <label for="InstituicaoId">Instituição</label>
+                </div>
+                <p class="form-text text-muted mt-n2 mb-3">
+                    Usada para a visibilidade "Institucional" das questões: define quais professores
+                    contam como "da minha instituição" na hora de compartilhar ou enxergar uma questão.
+                </p>
+
+                <button type="submit" class="btn btn-primary">Salvar</button>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@if (SenhaErro is not null)
+{
+    <div class="alert alert-danger col-md-6">@SenhaErro</div>
+}
+
+@if (SenhaOk)
+{
+    <div class="alert alert-success col-md-6">Senha alterada com sucesso.</div>
+}
+
+<div class="card col-md-6 mb-4">
+    <div class="card-body">
+        <h5 class="card-title mb-3">Alterar senha</h5>
+
+        @* Form HTML puro (não é um EditForm do Blazor): a troca de senha precisa
+           renovar o cookie de autenticação, o que exige uma requisição HTTP normal
+           em vez de uma chamada via SignalR — por isso ela é tratada num endpoint
+           minimal API (/Account/TrocarSenha), não aqui no componente. *@
+        <form action="Account/TrocarSenha" method="post"
+              onsubmit="if (this.novaSenha.value !== this.confirmarSenha.value) { alert('A nova senha e a confirmação não coincidem.'); return false; } return true;">
+            <AntiforgeryToken />
+            <div class="form-floating mb-3">
+                <input type="password" name="senhaAtual" id="senhaAtual" class="form-control" placeholder="Senha atual" required autocomplete="current-password" />
+                <label for="senhaAtual">Senha atual</label>
+            </div>
+            <div class="form-floating mb-3">
+                <input type="password" name="novaSenha" id="novaSenha" class="form-control" placeholder="Nova senha" required minlength="6" autocomplete="new-password" />
+                <label for="novaSenha">Nova senha (mínimo 6 caracteres)</label>
+            </div>
+            <div class="form-floating mb-3">
+                <input type="password" name="confirmarSenha" id="confirmarSenha" class="form-control" placeholder="Confirmar nova senha" required minlength="6" autocomplete="new-password" />
+                <label for="confirmarSenha">Confirmar nova senha</label>
+            </div>
+            <button type="submit" class="btn btn-primary">Trocar senha</button>
+        </form>
+    </div>
+</div>
+
+@code {
+    private PerfilInput modelo = new();
+    private string? email;
+    private ApplicationUser? usuario;
+    private bool carregando = true;
+    private bool sucesso;
+    private string? erro;
+    private List<Instituicao> instituicoes = new();
+
+    [SupplyParameterFromQuery(Name = "senhaOk")]
+    private bool SenhaOk { get; set; }
+
+    [SupplyParameterFromQuery(Name = "senhaErro")]
+    private string? SenhaErro { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        usuario = await UserManager.GetUserAsync(authState.User);
+
+        instituicoes = await InstituicaoService.ListarTodasAsync();
+
+        if (usuario is null)
+        {
+            erro = "Não foi possível carregar os dados do usuário.";
+        }
+        else
+        {
+            modelo.NomeCompleto = usuario.NomeCompleto ?? "";
+            modelo.InstituicaoId = usuario.InstituicaoId ?? 0;
+            email = usuario.Email;
+        }
+
+        carregando = false;
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+        sucesso = false;
+
+        if (usuario is null)
+        {
+            erro = "Não foi possível carregar os dados do usuário.";
+            return;
+        }
+
+        usuario.NomeCompleto = modelo.NomeCompleto;
+        usuario.InstituicaoId = modelo.InstituicaoId == 0 ? null : modelo.InstituicaoId;
+        var resultado = await UserManager.UpdateAsync(usuario);
+
+        if (resultado.Succeeded)
+        {
+            sucesso = true;
+        }
+        else
+        {
+            erro = string.Join(" ", resultado.Errors.Select(e => e.Description));
+        }
+    }
+
+    private sealed class PerfilInput
+    {
+        [Required(ErrorMessage = "Informe o nome.")]
+        public string NomeCompleto { get; set; } = "";
+        public int InstituicaoId { get; set; }
+    }
+}

@@ -1,0 +1,365 @@
+@page "/matrizes/{MatrizId:int}/itens"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BancoQuestoes.Models
+@inject MatrizReferenciaService MatrizService
+@inject IJSRuntime JS
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Itens da matriz</PageTitle>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (matriz is null)
+{
+    <div class="alert alert-danger">Matriz de referência não encontrada.</div>
+}
+else
+{
+    <h1>@matriz.Nome</h1>
+    <p class="text-muted">
+        @(matriz.Curso?.Nome ?? matriz.AreaCurso?.Nome) — @matriz.Tipo.Rotulo()
+        @if (matriz.AreaCursoId is not null)
+        {
+            <span class="badge text-bg-info" title="Matriz nacional — compartilhada entre instituições">Nacional</span>
+        }
+        <span class="badge text-bg-@matriz.Status.CorBadge()">@matriz.Status.Rotulo()</span>
+        @if (!string.IsNullOrWhiteSpace(matriz.Documento))
+        {
+            <span> · @matriz.Documento</span>
+        }
+    </p>
+    <p>
+        @if (matriz.CursoId is int cursoId)
+        {
+            <a href="@($"matrizes/{cursoId}")" class="btn btn-sm btn-link px-0">&laquo; Voltar às matrizes do curso</a>
+        }
+        else
+        {
+            <a href="matrizes" class="btn btn-sm btn-link px-0">&laquo; Voltar às matrizes</a>
+        }
+    </p>
+
+    @if (sucesso is not null)
+    {
+        <div class="alert alert-success">@sucesso</div>
+    }
+
+    @if (erro is not null)
+    {
+        <div class="alert alert-danger">@erro</div>
+    }
+
+    <div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
+        <div class="col-12 col-md-6">
+            <label class="form-label small mb-1">Buscar por código ou título</label>
+            <input type="text" class="form-control" placeholder="Digite para buscar..." @bind="filtroTexto" @bind:event="oninput" />
+        </div>
+        <div class="col-8 col-md-4">
+            <label class="form-label small mb-1">Tipo</label>
+            <select class="form-select" @bind="filtroTipo">
+                <option value="">Todos</option>
+                @foreach (var t in Enum.GetValues<TipoItemMatriz>())
+                {
+                    <option value="@t">@t.RotuloPlural()</option>
+                }
+            </select>
+        </div>
+        @if (PodeEditar)
+        {
+            <div class="col-4 col-md-2 d-flex flex-column gap-1">
+                <button type="button" class="btn btn-sm btn-primary w-100" @onclick="AbrirNovoItem">+ Novo item</button>
+                <a class="btn btn-sm btn-outline-secondary w-100" href="@($"matrizes/{MatrizId}/itens/importar")">Importar arquivo</a>
+            </div>
+        }
+    </div>
+
+    @if (mostrarFormNovo)
+    {
+        <div class="form-card mb-4">
+            <h6>Novo item</h6>
+            <EditForm Model="novoItem" OnValidSubmit="CriarItemAsync">
+                <div class="row g-2">
+                    <div class="col-md-2">
+                        <label class="form-label small">Tipo</label>
+                        <InputSelect @bind-Value="novoItem.Tipo" class="form-select">
+                            @foreach (var t in Enum.GetValues<TipoItemMatriz>())
+                            {
+                                <option value="@t">@t.Rotulo()</option>
+                            }
+                        </InputSelect>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small">Código</label>
+                        <InputText @bind-Value="novoItem.Codigo" class="form-control" placeholder="C01" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Título</label>
+                        <InputText @bind-Value="novoItem.Titulo" class="form-control" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small">Descrição (opcional)</label>
+                        <InputText @bind-Value="novoItem.Descricao" class="form-control" />
+                    </div>
+                    <div class="col-md-1">
+                        <label class="form-label small">Ordem</label>
+                        <InputNumber @bind-Value="novoItem.Ordem" class="form-control" />
+                    </div>
+                    <div class="col-md-1 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100">Salvar</button>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-link btn-sm mt-2 px-0" @onclick="() => mostrarFormNovo = false">Cancelar</button>
+            </EditForm>
+        </div>
+    }
+
+    @if (itens.Count == 0)
+    {
+        <p><em>Nenhum item cadastrado nessa matriz ainda.</em></p>
+    }
+    else
+    {
+        @foreach (var grupo in ItensFiltrados().GroupBy(i => i.Tipo).OrderBy(g => g.Key))
+        {
+            <h5 class="mt-4">@grupo.Key.RotuloPlural()</h5>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th style="width:90px">Código</th>
+                        <th>Título</th>
+                        <th>Descrição</th>
+                        <th style="width:90px">Status</th>
+                        <th style="width:220px"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in grupo.OrderBy(i => i.Ordem).ThenBy(i => i.Codigo))
+                    {
+                        @if (editandoId == item.Id)
+                        {
+                            <tr>
+                                <td><InputText @bind-Value="itemEditado!.Codigo" class="form-control form-control-sm" /></td>
+                                <td><InputText @bind-Value="itemEditado!.Titulo" class="form-control form-control-sm" /></td>
+                                <td><InputText @bind-Value="itemEditado!.Descricao" class="form-control form-control-sm" /></td>
+                                <td>
+                                    <select class="form-select form-select-sm" @bind="itemEditado!.Tipo">
+                                        @foreach (var t in Enum.GetValues<TipoItemMatriz>())
+                                        {
+                                            <option value="@t">@t.Rotulo()</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-success" @onclick="SalvarEdicaoAsync">Salvar</button>
+                                    <button class="btn btn-sm btn-link" @onclick="() => editandoId = null">Cancelar</button>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            <tr class="@(item.Ativo ? "" : "text-muted")">
+                                <td><code>@item.Codigo</code></td>
+                                <td>@item.Titulo</td>
+                                <td class="small">@item.Descricao</td>
+                                <td>
+                                    @if (item.Ativo)
+                                    {
+                                        <span class="badge text-bg-success">Ativo</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge text-bg-secondary">Inativo</span>
+                                    }
+                                </td>
+                                <td>
+                                    @if (PodeEditar)
+                                    {
+                                        <button class="btn btn-sm btn-secondary" @onclick="() => AbrirEdicao(item)">Editar</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => AlternarAtivoAsync(item)">@(item.Ativo ? "Desativar" : "Reativar")</button>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(item)">Excluir</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        }
+    }
+}
+
+@code {
+    [Parameter]
+    public int MatrizId { get; set; }
+
+    private MatrizReferencia? matriz;
+    private List<ItemMatrizReferencia> itens = new();
+    private bool carregando = true;
+    private string? erro;
+    private string? sucesso;
+
+    private string filtroTexto = "";
+    private string filtroTipo = "";
+
+    private bool mostrarFormNovo;
+    private ItemMatrizInput novoItem = new();
+
+    private int? editandoId;
+    private ItemMatrizInput? itemEditado;
+
+    [SupplyParameterFromQuery(Name = "msg")]
+    private string? Msg { get; set; }
+
+    private string? meuId;
+    private int? minhaInstituicaoId;
+    private bool ehAdmin;
+
+    // Escrita (novo item/editar/desativar/excluir/importar) numa matriz
+    // nacional (AreaCursoId) é Admin-only — ver
+    // MatrizReferenciaService.GarantirAcessoEscritaArea. Institucional segue
+    // a regra de sempre (quem tem acesso de leitura já validado em
+    // CarregarAsync também tem de escrita). Some os botões em vez de deixar
+    // o servidor recusar — evita um professor clicar "Editar" e só descobrir
+    // que não pode depois de preencher o formulário.
+    private bool PodeEditar => matriz is not null && (matriz.AreaCursoId is null || ehAdmin);
+
+    protected override async Task OnInitializedAsync()
+    {
+        sucesso = Msg;
+
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        ehAdmin = authState.User.IsInRole("Admin");
+        minhaInstituicaoId = await MatrizService.ObterInstituicaoDoUsuarioAsync(meuId);
+
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        carregando = true;
+
+        // Sobrecarga autorizada (item 8/9) — ataque nomeado no pedido:
+        // "/matrizes/123/itens" de outra instituição vira "não encontrada".
+        matriz = await MatrizService.ObterAsync(MatrizId, minhaInstituicaoId, ehAdmin);
+        itens = matriz is null ? new List<ItemMatrizReferencia>() : await MatrizService.ListarItensAsync(MatrizId);
+        carregando = false;
+    }
+
+    private List<ItemMatrizReferencia> ItensFiltrados()
+    {
+        var query = itens.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(filtroTexto))
+        {
+            query = query.Where(i =>
+                i.Codigo.Contains(filtroTexto, StringComparison.OrdinalIgnoreCase) ||
+                i.Titulo.Contains(filtroTexto, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(filtroTipo) && Enum.TryParse<TipoItemMatriz>(filtroTipo, out var tipo))
+        {
+            query = query.Where(i => i.Tipo == tipo);
+        }
+
+        return query.ToList();
+    }
+
+    private void AbrirNovoItem()
+    {
+        novoItem = new ItemMatrizInput { Ordem = itens.Count == 0 ? 0 : itens.Max(i => i.Ordem) + 1 };
+        mostrarFormNovo = true;
+    }
+
+    private async Task CriarItemAsync()
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await MatrizService.CriarItemAsync(MatrizId, novoItem, minhaInstituicaoId, ehAdmin);
+            sucesso = $"Item \"{novoItem.Codigo}\" adicionado com sucesso.";
+            mostrarFormNovo = false;
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private void AbrirEdicao(ItemMatrizReferencia item)
+    {
+        editandoId = item.Id;
+        itemEditado = new ItemMatrizInput
+        {
+            Codigo = item.Codigo,
+            Titulo = item.Titulo,
+            Descricao = item.Descricao,
+            Tipo = item.Tipo,
+            Ordem = item.Ordem,
+            Ativo = item.Ativo,
+        };
+    }
+
+    private async Task SalvarEdicaoAsync()
+    {
+        if (editandoId is null || itemEditado is null)
+        {
+            return;
+        }
+
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await MatrizService.AtualizarItemAsync(editandoId.Value, itemEditado, minhaInstituicaoId, ehAdmin);
+            sucesso = "Item atualizado com sucesso.";
+            editandoId = null;
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private async Task AlternarAtivoAsync(ItemMatrizReferencia item)
+    {
+        erro = null;
+        try
+        {
+            await MatrizService.AlternarAtivoItemAsync(item.Id, minhaInstituicaoId, ehAdmin);
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private async Task ConfirmarExcluirAsync(ItemMatrizReferencia item)
+    {
+        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir o item \"{item.Codigo} — {item.Titulo}\"? Essa ação não pode ser desfeita.");
+        if (confirmado)
+        {
+            erro = null;
+            sucesso = null;
+            try
+            {
+                await MatrizService.ExcluirItemAsync(item, minhaInstituicaoId, ehAdmin);
+                sucesso = "Item excluído com sucesso.";
+                await CarregarAsync();
+            }
+            catch (OperacaoInvalidaException ex)
+            {
+                erro = ex.Message;
+            }
+        }
+    }
+}

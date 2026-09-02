@@ -1,0 +1,101 @@
+@page "/disciplinas/novo"
+@page "/disciplinas/editar/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@inject DisciplinaService DisciplinaService
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(Id is null ? "Nova disciplina" : "Editar disciplina")</PageTitle>
+
+<h1>@(Id is null ? "Nova disciplina" : "Editar disciplina")</h1>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-5">
+            <div class="form-card">
+                <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Nome" id="Nome" class="form-control" placeholder="Nome" />
+                        <label for="Nome">Nome</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <a href="disciplinas" class="btn btn-link">Cancelar</a>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private DisciplinaInput modelo = new();
+    private bool carregando;
+    private string? erro;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id is not null)
+        {
+            carregando = true;
+            var disciplina = await DisciplinaService.ObterAsync(Id.Value);
+            if (disciplina is null)
+            {
+                erro = "Disciplina não encontrada.";
+            }
+            else
+            {
+                modelo = new DisciplinaInput { Nome = disciplina.Nome };
+            }
+            carregando = false;
+        }
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+
+        try
+        {
+            if (Id is null)
+            {
+                var authState = await AuthProvider.GetAuthenticationStateAsync();
+                var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+                await DisciplinaService.CriarAsync(modelo.Nome, userId);
+            }
+            else
+            {
+                await DisciplinaService.AtualizarAsync(Id.Value, modelo.Nome);
+            }
+
+            NavigationManager.NavigateTo($"disciplinas?msg={Uri.EscapeDataString($"\"{modelo.Nome}\" salva com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private sealed class DisciplinaInput
+    {
+        [Required(ErrorMessage = "Informe o nome.")]
+        public string Nome { get; set; } = "";
+    }
+}

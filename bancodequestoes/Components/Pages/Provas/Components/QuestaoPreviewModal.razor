@@ -1,0 +1,198 @@
+<!--
+    Modal "Visualizar" (item 12), extraído de ProvaForm.razor.
+
+    Regra de ouro herdada de ProvaForm.razor (ver comentário lá): NUNCA usar
+    bloco de código explícito (o símbolo de transição do Razor seguido de
+    chave) em lugar nenhum deste arquivo — só chamadas de método diretas ou o
+    padrão "Expressao() is var nome" dentro de uma condição ou expressão já
+    demarcada. Isso evita o bug de parsing de chave inesperada já visto antes
+    nesse projeto. IMPORTANTE: nem em comentário HTML como este o símbolo de
+    transição do Razor é seguro — o parser processa "arroba" mesmo dentro de
+    "menor-exclamação-hífen-hífen", então nunca escreva esse símbolo solto
+    aqui dentro.
+
+    Como o card de preview, este é um componente "burro": recebe a Questao
+    pronta (já com Alternativas/Pares/Lacunas carregadas, ver
+    ObterAssuntosEQuestoesDisponiveisAsync em ProvaForm) e dois números já
+    calculados (JaSelecionada/UsosDaQuestao), e só dispara EventCallback pra
+    Fechar/Adicionar — quem decide o que fazer com isso continua sendo
+    ProvaForm, dona de "selecionadas"/"questoesPorId".
+-->
+@using BancoQuestoes.Exportacao
+
+@if (QuestaoAtual is not null)
+{
+    <div class="modal-backdrop fade show" @onclick="Fechar"></div>
+    <div class="modal fade show" style="display:block;" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-dialog-scrollable modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Questão #@QuestaoAtual.Id</h5>
+                    <button type="button" class="btn-close" aria-label="Fechar" @onclick="Fechar"></button>
+                </div>
+                <div class="modal-body">
+                    @if (QualidadeQuestao.Calcular(QuestaoAtual) is var qualidadePreview)
+                    {
+                        <p class="mb-1">
+                            <span class="badge text-bg-@qualidadePreview.CorFarol">Qualidade: @qualidadePreview.Percentual%</span>
+                            @if (qualidadePreview.CriteriosFaltando.Count > 0)
+                            {
+                                <span class="text-muted small ms-1">Faltando: @string.Join(", ", qualidadePreview.CriteriosFaltando)</span>
+                            }
+                        </p>
+                    }
+                    <p class="text-muted small mb-1">
+                        @QuestaoAtual.TipoQuestao.Rotulo() • @QuestaoAtual.Dificuldade.Rotulo() • @QuestaoAtual.Assunto?.Nome
+                        @(QuestaoAtual.Bloom is { } previaBloom ? $" • {previaBloom.Rotulo()}" : "")
+                    </p>
+                    <p class="text-muted small mb-2">
+                        Origem: @QuestaoAtual.Origem.Rotulo()@(QuestaoAtual.Ano is { } ano ? $" ({ano})" : "")@(string.IsNullOrWhiteSpace(QuestaoAtual.Referencia) ? "" : $" — {QuestaoAtual.Referencia}")
+                    </p>
+                    <p class="text-muted small mb-2">@(UsosDaQuestao > 0 ? $"Utilizada {UsosDaQuestao} vez(es)" : "Nunca utilizada")</p>
+                    @if (QuestaoAtual.Tags.Count > 0)
+                    {
+                        <div class="d-flex flex-wrap gap-1 mb-2">
+                            @foreach (var tag in QuestaoAtual.Tags.OrderBy(t => t.Nome))
+                            {
+                                <span class="badge text-bg-light border">@tag.Nome</span>
+                            }
+                        </div>
+                    }
+
+                    <div class="markdown-preview mb-3">@RenderizarEnunciadoPreview(QuestaoAtual)</div>
+
+                    @if (QuestaoAtual.Imagens.Count > 0)
+                    {
+                        <div class="mb-3">
+                            @foreach (var img in QuestaoAtual.Imagens.OrderBy(i => i.Ordem))
+                            {
+                                <div class="mb-2" style="text-align: @AlinhamentoCss(img.Alinhamento);">
+                                    <img src="@($"questoes/imagem/{img.Id}")" alt="@(img.TextoAlternativo ?? img.NomeArquivo)"
+                                         style="width: @(img.LarguraPercentual ?? 60)%; max-width: 100%;" />
+                                    @if (!string.IsNullOrWhiteSpace(img.Legenda))
+                                    {
+                                        <div class="text-muted small fst-italic">@img.Legenda</div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @switch (QuestaoAtual)
+                    {
+                        case QuestaoMultiplaEscolha me:
+                            <ol type="A" class="mb-0">
+                                @foreach (var alt in me.Alternativas.OrderBy(a => a.Letra))
+                                {
+                                    <li class="@(alt.Letra == me.RespostaCorreta ? "fw-bold text-success" : "")">
+                                        @alt.Texto @(alt.Letra == me.RespostaCorreta ? "✓" : "")
+                                    </li>
+                                }
+                            </ol>
+                            break;
+
+                        case QuestaoCertoErrado ce:
+                            <p class="mb-0">
+                                (@(ce.RespostaCorreta ? "✓" : "  ")) Certo &nbsp;&nbsp;&nbsp; (@(!ce.RespostaCorreta ? "✓" : "  ")) Errado
+                            </p>
+                            break;
+
+                        case QuestaoDiscursiva d:
+                            <p class="mb-1"><strong>Resposta esperada:</strong> @d.RespostaEsperada</p>
+                            @if (!string.IsNullOrWhiteSpace(d.CriterioAvaliacao))
+                            {
+                                <p class="mb-0 text-muted small"><strong>Critério de avaliação:</strong> @d.CriterioAvaliacao</p>
+                            }
+                            break;
+
+                        case QuestaoRespostaBreve rb:
+                            <p class="mb-0"><strong>Resposta esperada:</strong> @rb.RespostaEsperada</p>
+                            break;
+
+                        case QuestaoNumerica num:
+                            <p class="mb-0">
+                                <strong>Resposta esperada:</strong> @num.RespostaEsperada.ToString("0.####")
+                                @(num.Tolerancia > 0 ? $" (± {num.Tolerancia:0.####})" : "")
+                            </p>
+                            break;
+
+                        case QuestaoAssociacao assoc:
+                            var pares = assoc.Pares.OrderBy(p => p.Ordem).ToList();
+                            <div class="row">
+                                <div class="col-6">
+                                    @for (var i = 0; i < pares.Count; i++)
+                                    {
+                                        <p class="mb-1">@(i + 1). @pares[i].Termo</p>
+                                    }
+                                </div>
+                                <div class="col-6">
+                                    @for (var i = 0; i < pares.Count; i++)
+                                    {
+                                        <p class="mb-1">@LetraDe(i)) @pares[i].Correspondente</p>
+                                    }
+                                </div>
+                            </div>
+                            break;
+
+                        case QuestaoLacunas lac:
+                            <p class="mb-0 text-muted small">
+                                <strong>Respostas esperadas:</strong>
+                                @string.Join("; ", lac.Lacunas.OrderBy(l => l.Ordem).Select((l, i) => $"({i + 1}) {l.RespostaEsperada}"))
+                            </p>
+                            break;
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(QuestaoAtual.Explicacao))
+                    {
+                        <hr />
+                        <p class="text-muted small mb-1"><strong>Explicação da resposta:</strong></p>
+                        <div class="markdown-preview">@RenderizarPreview(QuestaoAtual.Explicacao)</div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Fechar">Fechar</button>
+                    @if (!JaSelecionada)
+                    {
+                        <button type="button" class="btn btn-primary" @onclick="Adicionar">Adicionar à prova</button>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public Questao? QuestaoAtual { get; set; }
+    [Parameter] public bool JaSelecionada { get; set; }
+    [Parameter] public int UsosDaQuestao { get; set; }
+    [Parameter] public EventCallback OnFechar { get; set; }
+    [Parameter] public EventCallback<Questao> OnAdicionar { get; set; }
+
+    private Task Fechar() => OnFechar.InvokeAsync();
+
+    private Task Adicionar() => QuestaoAtual is null ? Task.CompletedTask : OnAdicionar.InvokeAsync(QuestaoAtual);
+
+    // Lacunas precisa do mesmo texto com marcadores numerados que sai na
+    // prova exportada (ver ProvaExportLoader.SubstituirMarcadoresDeLacuna) —
+    // senão a prévia mostraria "___" cru em vez de "_____(1)_____". Mesma
+    // técnica usada em QuestaoList.razor / ProvaForm.razor original.
+    private static MarkupString RenderizarEnunciadoPreview(Questao q)
+    {
+        var texto = q.TipoQuestao == TipoQuestao.Lacunas
+            ? ProvaExportLoader.SubstituirMarcadoresDeLacuna(q.Enunciado)
+            : q.Enunciado;
+        return (MarkupString)MarkdownPreview.ParaHtml(texto);
+    }
+
+    private static MarkupString RenderizarPreview(string markdown) => (MarkupString)MarkdownPreview.ParaHtml(markdown);
+
+    private static char LetraDe(int indice) => (char)('A' + indice);
+
+    // Nulo = padrão do sistema (Centralizado) — mesma regra usada nos exportadores.
+    private static string AlinhamentoCss(AlinhamentoImagem? alinhamento) => alinhamento switch
+    {
+        AlinhamentoImagem.Esquerda => "left",
+        AlinhamentoImagem.Direita => "right",
+        _ => "center",
+    };
+}

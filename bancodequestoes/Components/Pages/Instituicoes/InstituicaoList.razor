@@ -1,0 +1,154 @@
+@page "/instituicoes"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject InstituicaoService InstituicaoService
+@inject IJSRuntime JS
+
+<PageTitle>Instituições</PageTitle>
+
+<h1>Instituições</h1>
+
+<p>
+    <a class="btn btn-primary" href="instituicoes/novo">+ Nova instituição</a>
+</p>
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
+    <div class="col-12 col-md-6">
+        <label class="form-label small mb-1">Buscar por nome ou cidade</label>
+        <input type="text" class="form-control" placeholder="Digite para buscar..."
+               @bind="filtroTexto" @bind:event="oninput" @bind:after="AplicarFiltroAsync" />
+    </div>
+    <div class="col-6 col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary w-100" @onclick="LimparFiltroAsync">Limpar</button>
+    </div>
+</div>
+
+@if (instituicoes is null)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (instituicoes.Count == 0)
+{
+    <p><em>Nenhuma instituição encontrada com os filtros atuais.</em></p>
+}
+else
+{
+    <p class="text-muted small">
+        Mostrando @((pagina - 1) * TamanhoPagina + 1)–@((pagina - 1) * TamanhoPagina + instituicoes.Count) de @totalRegistros instituição(ões).
+    </p>
+    <table class="table align-middle">
+        <thead>
+            <tr>
+                <th></th>
+                <th>Nome</th>
+                <th>Cidade</th>
+                <th>Períodos</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var i in instituicoes)
+            {
+                <tr>
+                    <td style="width:60px;">
+                        @if (i.LogoConteudo is not null)
+                        {
+                            <img src="@($"instituicoes/logo/{i.Id}")" style="max-width:50px; max-height:50px;" alt="Logo" />
+                        }
+                    </td>
+                    <td>@i.Nome</td>
+                    <td>@i.Cidade</td>
+                    <td class="text-muted small">@(i.SistemaPeriodos == SistemaPeriodos.SemestralComBimestres ? "Semestral c/ bimestres" : "Semestral")</td>
+                    <td>
+                        <a class="btn btn-sm btn-secondary" href="@($"instituicoes/editar/{i.Id}")">Editar</a>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(i)">Excluir</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <Paginacao Pagina="pagina" TamanhoPagina="TamanhoPagina" TotalRegistros="totalRegistros" PaginaChanged="MudarPaginaAsync" />
+}
+
+@code {
+    private List<Instituicao>? instituicoes;
+    private string? erro;
+    private string? sucesso;
+
+    private string filtroTexto = "";
+
+    private const int TamanhoPagina = 20;
+    private int pagina = 1;
+    private int totalRegistros;
+
+    [SupplyParameterFromQuery(Name = "msg")]
+    private string? Msg { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        sucesso = Msg;
+        await CarregarAsync();
+    }
+
+    private async Task AplicarFiltroAsync()
+    {
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task LimparFiltroAsync()
+    {
+        filtroTexto = "";
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task MudarPaginaAsync(int novaPagina)
+    {
+        pagina = novaPagina;
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        var resultado = await InstituicaoService.ListarAsync(filtroTexto, pagina, TamanhoPagina);
+        instituicoes = resultado.Itens;
+        totalRegistros = resultado.Total;
+    }
+
+    private async Task ConfirmarExcluirAsync(Instituicao i)
+    {
+        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir a instituição \"{i.Nome}\"? Essa ação não pode ser desfeita.");
+        if (confirmado)
+        {
+            await ExcluirAsync(i);
+        }
+    }
+
+    private async Task ExcluirAsync(Instituicao i)
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await InstituicaoService.ExcluirAsync(i);
+            sucesso = $"\"{i.Nome}\" excluída com sucesso.";
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

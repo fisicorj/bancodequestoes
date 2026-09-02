@@ -1,0 +1,257 @@
+@page "/estatisticas"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@inject EstatisticaService EstatisticaService
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Estatísticas</PageTitle>
+
+<h1>Painel</h1>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <div class="display-6 fw-bold">@totalQuestoesAtivas</div>
+                    <div class="text-muted small">Questões ativas</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <div class="display-6 fw-bold">@totalDisciplinas</div>
+                    <div class="text-muted small">Disciplinas</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <div class="display-6 fw-bold">@totalAssuntos</div>
+                    <div class="text-muted small">Assuntos</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <div class="display-6 fw-bold">@minhasProvasTotal</div>
+                    <div class="text-muted small">Minhas provas (@provasEsteMes este mês)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Questões por disciplina</h5>
+                    @if (porDisciplina.Count == 0)
+                    {
+                        <p class="text-muted mb-0"><em>Nenhuma questão cadastrada ainda.</em></p>
+                    }
+                    else
+                    {
+                        @foreach (var item in porDisciplina)
+                        {
+                            <div class="mb-2">
+                                <div class="d-flex justify-content-between small mb-1">
+                                    <span>@item.Rotulo</span>
+                                    <span class="text-muted">@item.Quantidade</span>
+                                </div>
+                                <div class="progress" style="height: 8px;" role="progressbar" aria-valuenow="@item.Quantidade" aria-valuemin="0" aria-valuemax="@maxPorDisciplina">
+                                    <div class="progress-bar" style="width:@(Percentual(item.Quantidade, maxPorDisciplina))%"></div>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Questões por dificuldade</h5>
+                    @foreach (var item in porDificuldade)
+                    {
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span>@item.Rotulo</span>
+                                <span class="text-muted">@item.Quantidade</span>
+                            </div>
+                            <div class="progress" style="height: 8px;" role="progressbar" aria-valuenow="@item.Quantidade" aria-valuemin="0" aria-valuemax="@maxPorDificuldade">
+                                <div class="progress-bar" style="width:@(Percentual(item.Quantidade, maxPorDificuldade))%"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Questões por tipo</h5>
+                    @foreach (var item in porTipo)
+                    {
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span>@item.Rotulo</span>
+                                <span class="text-muted">@item.Quantidade</span>
+                            </div>
+                            <div class="progress" style="height: 8px;" role="progressbar" aria-valuenow="@item.Quantidade" aria-valuemin="0" aria-valuemax="@maxPorTipo">
+                                <div class="progress-bar" style="width:@(Percentual(item.Quantidade, maxPorTipo))%"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">Minhas provas criadas por mês</h5>
+                    <p class="text-muted small">Últimos 6 meses</p>
+                    @foreach (var item in provasPorMes)
+                    {
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between small mb-1">
+                                <span>@item.Rotulo</span>
+                                <span class="text-muted">@item.Quantidade</span>
+                            </div>
+                            <div class="progress" style="height: 8px;" role="progressbar" aria-valuenow="@item.Quantidade" aria-valuemin="0" aria-valuemax="@maxPorMes">
+                                <div class="progress-bar bg-success" style="width:@(Percentual(item.Quantidade, maxPorMes))%"></div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">Cobertura por assunto</h5>
+            <p class="text-muted small mb-2">
+                Quantas questões ativas cada assunto tem, e como elas se distribuem entre os níveis de Bloom.
+                Células em vermelho marcam onde não há nenhuma questão classificada naquele nível — ou nenhuma questão no assunto todo.
+            </p>
+            @if (cobertura.Count == 0)
+            {
+                <p class="text-muted mb-0"><em>Nenhum assunto cadastrado ainda.</em></p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Disciplina</th>
+                                <th>Assunto</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-end">Lembrar</th>
+                                <th class="text-end">Entender</th>
+                                <th class="text-end">Aplicar</th>
+                                <th class="text-end">Analisar</th>
+                                <th class="text-end">Avaliar</th>
+                                <th class="text-end">Criar</th>
+                                <th class="text-end">Sem Bloom</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in cobertura)
+                            {
+                                <tr class="@(item.Total == 0 ? "table-danger" : "")">
+                                    <td class="text-muted small">@item.Disciplina</td>
+                                    <td>@item.Assunto</td>
+                                    <td class="text-end fw-bold">@item.Total</td>
+                                    @foreach (var qtd in new[] { item.Lembrar, item.Entender, item.Aplicar, item.Analisar, item.Avaliar, item.Criar })
+                                    {
+                                        <td class="text-end @(item.Total > 0 && qtd == 0 ? "text-danger fw-bold" : "text-muted")">
+                                            @(item.Total > 0 && qtd == 0 ? "—" : qtd.ToString())
+                                        </td>
+                                    }
+                                    <td class="text-end text-muted">@item.SemClassificacao</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private bool carregando = true;
+
+    private int totalQuestoesAtivas;
+    private int totalDisciplinas;
+    private int totalAssuntos;
+    private int minhasProvasTotal;
+    private int provasEsteMes;
+
+    private List<ItemContagem> porDisciplina = new();
+    private List<ItemContagem> porDificuldade = new();
+    private List<ItemContagem> porTipo = new();
+    private List<ItemContagem> provasPorMes = new();
+    private List<CoberturaAssunto> cobertura = new();
+
+    private int maxPorDisciplina;
+    private int maxPorDificuldade;
+    private int maxPorTipo;
+    private int maxPorMes;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        var painel = await EstatisticaService.ObterPainelAsync(meuId);
+
+        totalQuestoesAtivas = painel.TotalQuestoesAtivas;
+        totalDisciplinas = painel.TotalDisciplinas;
+        totalAssuntos = painel.TotalAssuntos;
+        minhasProvasTotal = painel.MinhasProvasTotal;
+        provasEsteMes = painel.ProvasEsteMes;
+
+        porDisciplina = painel.PorDisciplina;
+        porDificuldade = painel.PorDificuldade;
+        porTipo = painel.PorTipo;
+        provasPorMes = painel.ProvasPorMes;
+
+        maxPorDisciplina = porDisciplina.Count == 0 ? 0 : porDisciplina.Max(i => i.Quantidade);
+        maxPorDificuldade = porDificuldade.Count == 0 ? 0 : porDificuldade.Max(i => i.Quantidade);
+        maxPorTipo = porTipo.Count == 0 ? 0 : porTipo.Max(i => i.Quantidade);
+        maxPorMes = provasPorMes.Count == 0 ? 0 : provasPorMes.Max(i => i.Quantidade);
+
+        cobertura = await EstatisticaService.ObterCoberturaAsync(meuId);
+
+        carregando = false;
+    }
+
+    // O Math.Max(4, ...) é só pra manter uma lasquinha visível de barra quando
+    // a quantidade é pequena perto do máximo — mas só se realmente houver pelo
+    // menos 1 item, senão uma categoria zerada pareceria ter alguma coisa.
+    private static int Percentual(int quantidade, int maximo)
+    {
+        if (maximo <= 0 || quantidade <= 0)
+        {
+            return 0;
+        }
+        return Math.Max(4, (int)Math.Round(100.0 * quantidade / maximo));
+    }
+}

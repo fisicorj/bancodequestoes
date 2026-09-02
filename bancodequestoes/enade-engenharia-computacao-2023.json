@@ -1,0 +1,54 @@
+{
+  "curso": "Engenharia de Computação",
+  "tipo": "ENADE",
+  "ano": 2023,
+  "edicao": "2023",
+  "orgao": "INEP",
+  "documento": "Portaria nº 279, de 26 de junho de 2023",
+  "urlFonte": "https://www.in.gov.br/web/dou/-/portaria-n-279-de-26-de-junho-de-2023-492190066",
+  "descricao": "Dispõe sobre diretrizes de prova e componente específico da área de Engenharia de Computação, no âmbito do Exame Nacional de Desempenho dos Estudantes (Enade), edição 2023.",
+  "grupos": {
+    "perfil": [
+      { "codigo": "P01", "titulo": "Rigoroso científica e metodologicamente, com raciocínio lógico e capacidade de abstração no desenvolvimento e na análise de soluções computacionais, envolvendo a integração hardware e software" },
+      { "codigo": "P02", "titulo": "Colaborativo, propositivo e resiliente no trabalho em contextos transversais e interdisciplinares" },
+      { "codigo": "P03", "titulo": "Criativo e crítico na identificação e na resolução de problemas, considerando aspectos políticos, econômicos, éticos, sociais, humanísticos, ambientais e culturais" },
+      { "codigo": "P04", "titulo": "Organizado, comunicativo, proativo e responsável em sua atuação profissional" },
+      { "codigo": "P05", "titulo": "Comprometido com a sua permanente atualização profissional e atento ao surgimento e ao desenvolvimento de novas tecnologias, com capacidade de integrá-las em seu fazer profissional" },
+      { "codigo": "P06", "titulo": "Inovador e empreendedor na geração e na identificação de novos produtos, processos e serviços" }
+    ],
+    "competencias": [
+      { "codigo": "C01", "titulo": "Conceber, especificar, projetar, construir, testar, verificar e validar soluções computacionais" },
+      { "codigo": "C02", "titulo": "Compreender e explicar as dimensões quantitativas de um problema" },
+      { "codigo": "C03", "titulo": "Interpretar e resolver problemas computacionais, empregando recursos lógicos ou matemáticos" },
+      { "codigo": "C04", "titulo": "Desenvolver sistemas integrados de hardware e software" },
+      { "codigo": "C05", "titulo": "Analisar, avaliar, desenvolver e otimizar software" },
+      { "codigo": "C06", "titulo": "Desenvolver, implantar e configurar aplicações de software ou serviços em plataformas de hardware" },
+      { "codigo": "C07", "titulo": "Projetar, implantar, administrar e gerenciar infraestruturas computacionais" },
+      { "codigo": "C08", "titulo": "Implementar e gerenciar a segurança de sistemas de computação" },
+      { "codigo": "C09", "titulo": "Realizar estudos de viabilidade técnica, social e econômica de projetos, de produtos, de processos ou de serviços na área de computação", "descricao": "Item XIX na numeração original da Portaria (a portaria pula de VIII para XIX)." }
+    ],
+    "conteudos": [
+      { "codigo": "CT01", "titulo": "Matemática e estatística" },
+      { "codigo": "CT02", "titulo": "Física e ciência dos materiais" },
+      { "codigo": "CT03", "titulo": "Matemática discreta e teoria dos grafos" },
+      { "codigo": "CT04", "titulo": "Pesquisa operacional e otimização" },
+      { "codigo": "CT05", "titulo": "Fundamentos de programação e linguagens de programação" },
+      { "codigo": "CT06", "titulo": "Algoritmos e estruturas de dados" },
+      { "codigo": "CT07", "titulo": "Linguagens formais e autômatos" },
+      { "codigo": "CT08", "titulo": "Engenharia de software" },
+      { "codigo": "CT09", "titulo": "Interação humano-computador" },
+      { "codigo": "CT10", "titulo": "Banco de dados" },
+      { "codigo": "CT11", "titulo": "Circuitos elétricos e eletrônicos" },
+      { "codigo": "CT12", "titulo": "Sistemas digitais e sistemas embarcados" },
+      { "codigo": "CT13", "titulo": "Arquitetura de computadores" },
+      { "codigo": "CT14", "titulo": "Sistemas operacionais" },
+      { "codigo": "CT15", "titulo": "Ciência de dados" },
+      { "codigo": "CT16", "titulo": "Processamento de sinais" },
+      { "codigo": "CT17", "titulo": "Inteligência artificial" },
+      { "codigo": "CT18", "titulo": "Automação e sistemas de controle" },
+      { "codigo": "CT19", "titulo": "Sistemas de comunicação e redes de computadores" },
+      { "codigo": "CT20", "titulo": "Segurança de sistemas de computação" },
+      { "codigo": "CT21", "titulo": "Sistemas distribuídos e processamento paralelo" }
+    ]
+  }
+}

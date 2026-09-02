@@ -1,0 +1,62 @@
+<!--
+    Lista "Questoes disponiveis" do modo Manual, extraida de ProvaForm.razor.
+
+    So aparece no modo Manual. Filtra sozinho quem ja esta selecionada (pra
+    nao oferecer a mesma questao duas vezes) usando a lista Selecionadas que
+    vem de ProvaForm - mas quem de fato adiciona ou abre o preview continua
+    sendo ProvaForm (via OnAdicionar/OnVisualizar), porque isso afeta outro
+    componente irmao (QuestoesSelecionadas e o modal de preview).
+-->
+
+<h5>Questões disponíveis</h5>
+@if (QuestoesFiltradas.Count == 0)
+{
+    <p><em>Nenhuma questão ativa encontrada para esse filtro.</em></p>
+}
+<div class="d-flex flex-column gap-2 mb-3" style="max-height: 500px; overflow-y: auto;">
+    @foreach (var q in QuestoesFiltradas.Where(q => !Selecionadas.Any(s => s.QuestaoId == q.Id)))
+    {
+        var qualidadeQ = QualidadeQuestao.Calcular(q);
+        var usosQ = UsosPorQuestao.GetValueOrDefault(q.Id);
+        <div class="card">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div>
+                        <p class="mb-1 small text-muted">Q-@q.Id · @q.TipoQuestao.Rotulo()</p>
+                        <p class="mb-1">@Truncar(q.Enunciado)</p>
+                        <p class="mb-1 small text-muted">@q.Assunto?.Nome@(q.Bloom is { } bloomQ ? $" · {bloomQ.Rotulo()}" : "")</p>
+                        <p class="mb-0 small">
+                            @DificuldadeEmoji(q.Dificuldade) @q.Dificuldade.Rotulo() ·
+                            <span class="badge text-bg-@qualidadeQ.CorFarol">Qualidade @qualidadeQ.Percentual%</span> ·
+                            @(usosQ > 0 ? $"Usada {usosQ} vez(es)" : "Nunca usada")
+                        </p>
+                    </div>
+                    <div class="d-flex flex-column gap-1">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => OnVisualizar.InvokeAsync(q)">
+                            <i class="bi bi-eye" aria-hidden="true"></i> Visualizar
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OnAdicionar.InvokeAsync(q)">Adicionar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public List<Questao> QuestoesFiltradas { get; set; } = new();
+    [Parameter] public List<QuestaoSelecionada> Selecionadas { get; set; } = new();
+    [Parameter] public Dictionary<int, int> UsosPorQuestao { get; set; } = new();
+    [Parameter] public EventCallback<Questao> OnVisualizar { get; set; }
+    [Parameter] public EventCallback<Questao> OnAdicionar { get; set; }
+
+    private static string Truncar(string texto) => texto.Length > 70 ? texto[..70] + "..." : texto;
+
+    private static string DificuldadeEmoji(Dificuldade d) => d switch
+    {
+        Dificuldade.Facil => "🟢",
+        Dificuldade.Media => "🟡",
+        Dificuldade.Dificil => "🔴",
+        _ => "",
+    };
+}

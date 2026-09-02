@@ -1,0 +1,34 @@
+<!--
+    Filtro "Filtrar por assunto" do modo Manual, extraido de ProvaForm.razor.
+
+    So aparece pra escolher um assunto e reduzir a lista de "Questoes
+    disponiveis" (outro componente, BancoQuestoesSelector) - o resultado do
+    filtro (questoesFiltradas) mora em ProvaForm, entao precisa avisar o pai
+    toda vez que o valor muda (nao so guardar localmente).
+-->
+
+<div class="row mb-3">
+    <div class="col-md-4">
+        <label class="form-label">Filtrar por assunto</label>
+        <select class="form-select" @bind="FiltroAssuntoId" @bind:after="Alterado">
+            <option value="0">Todos</option>
+            @foreach (var a in AssuntosDisponiveis)
+            {
+                <option value="@a.Id">@a.Nome</option>
+            }
+        </select>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int FiltroAssuntoId { get; set; }
+    [Parameter] public EventCallback<int> FiltroAssuntoIdChanged { get; set; }
+    [Parameter] public List<Assunto> AssuntosDisponiveis { get; set; } = new();
+    [Parameter] public EventCallback OnAlterado { get; set; }
+
+    private async Task Alterado()
+    {
+        await FiltroAssuntoIdChanged.InvokeAsync(FiltroAssuntoId);
+        await OnAlterado.InvokeAsync();
+    }
+}

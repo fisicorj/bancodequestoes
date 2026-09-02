@@ -1,0 +1,117 @@
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Taxon Quest</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <i class="bi bi-house-door-fill" aria-hidden="true"></i> Início
+            </NavLink>
+        </div>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="estatisticas">
+                        <i class="bi bi-bar-chart-fill" aria-hidden="true"></i> Painel
+                    </NavLink>
+                </div>
+
+                <div class="nav-section-title px-3">Conteúdo</div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="disciplinas">
+                        <i class="bi bi-book-fill" aria-hidden="true"></i> Disciplinas
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="assuntos">
+                        <i class="bi bi-tag-fill" aria-hidden="true"></i> Assuntos
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="questoes">
+                        <i class="bi bi-question-circle-fill" aria-hidden="true"></i> Questões
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="questoes/historico">
+                        <i class="bi bi-clock-history" aria-hidden="true"></i> Histórico
+                    </NavLink>
+                </div>
+
+                <div class="nav-section-title px-3">Provas</div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="provas">
+                        <i class="bi bi-file-earmark-text-fill" aria-hidden="true"></i> Provas
+                    </NavLink>
+                </div>
+
+                <div class="nav-section-title px-3">Configurações</div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="instituicoes">
+                        <i class="bi bi-building-fill" aria-hidden="true"></i> Instituições
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="cursos">
+                        <i class="bi bi-mortarboard-fill" aria-hidden="true"></i> Cursos
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="areas-curso">
+                        <i class="bi bi-globe-americas" aria-hidden="true"></i> Áreas de Curso
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="turmas">
+                        <i class="bi bi-collection-fill" aria-hidden="true"></i> Turmas
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="matrizes">
+                        <i class="bi bi-signpost-split-fill" aria-hidden="true"></i> Matrizes
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="cobertura-curricular">
+                        <i class="bi bi-pie-chart-fill" aria-hidden="true"></i> Cobertura
+                    </NavLink>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <div class="nav-section-title px-3">Administração</div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="admin/usuarios">
+                        <i class="bi bi-people-fill" aria-hidden="true"></i> Usuários
+                    </NavLink>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+
+        <AuthorizeView>
+            <Authorized>
+                <div class="nav-section-title px-3">Conta</div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="perfil">
+                        <i class="bi bi-person-fill" aria-hidden="true"></i> Olá, @context.User.Identity?.Name
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <form action="Account/Logout" method="post">
+                        <button type="submit" class="nav-link" style="background:none;border:none;padding:0;">
+                            <i class="bi bi-box-arrow-right" aria-hidden="true"></i> Sair
+                        </button>
+                    </form>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </nav>
+</div>

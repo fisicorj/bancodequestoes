@@ -1,0 +1,117 @@
+@page "/assuntos/novo"
+@page "/assuntos/editar/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject DisciplinaService DisciplinaService
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(Id is null ? "Novo assunto" : "Editar assunto")</PageTitle>
+
+<h1>@(Id is null ? "Novo assunto" : "Editar assunto")</h1>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (disciplinas.Count == 0)
+{
+    <p><em>Cadastre uma disciplina antes de criar um assunto.</em> <a href="disciplinas/novo">Criar disciplina</a></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-5">
+            <div class="form-card">
+                <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Nome" id="Nome" class="form-control" placeholder="Nome" />
+                        <label for="Nome">Nome</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputSelect @bind-Value="modelo.DisciplinaId" id="DisciplinaId" class="form-select">
+                            <option value="0">Selecione...</option>
+                            @foreach (var d in disciplinas)
+                            {
+                                <option value="@d.Id">@d.Nome</option>
+                            }
+                        </InputSelect>
+                        <label for="DisciplinaId">Disciplina</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <a href="assuntos" class="btn btn-link">Cancelar</a>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private AssuntoInput modelo = new();
+    private List<Disciplina> disciplinas = new();
+    private bool carregando;
+    private string? erro;
+
+    protected override async Task OnInitializedAsync()
+    {
+        carregando = true;
+        disciplinas = await DisciplinaService.ListarTodasAsync();
+
+        if (Id is not null)
+        {
+            var assunto = await DisciplinaService.ObterAssuntoAsync(Id.Value);
+            if (assunto is null)
+            {
+                erro = "Assunto não encontrado.";
+            }
+            else
+            {
+                modelo = new AssuntoInput { Nome = assunto.Nome, DisciplinaId = assunto.DisciplinaId };
+            }
+        }
+        carregando = false;
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+
+        try
+        {
+            if (Id is null)
+            {
+                await DisciplinaService.CriarAssuntoAsync(modelo.Nome, modelo.DisciplinaId);
+            }
+            else
+            {
+                await DisciplinaService.AtualizarAssuntoAsync(Id.Value, modelo.Nome, modelo.DisciplinaId);
+            }
+
+            NavigationManager.NavigateTo($"assuntos?msg={Uri.EscapeDataString($"\"{modelo.Nome}\" salvo com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private sealed class AssuntoInput
+    {
+        [Required(ErrorMessage = "Informe o nome.")]
+        public string Nome { get; set; } = "";
+
+        public int DisciplinaId { get; set; }
+    }
+}

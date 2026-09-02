@@ -1,0 +1,296 @@
+@page "/matrizes/importar-completa"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BancoQuestoes.Importacao
+@using BancoQuestoes.Models
+@inject MatrizReferenciaService MatrizService
+@inject CursoService CursoService
+@inject AreaCursoService AreaCursoService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Importar matriz completa</PageTitle>
+
+<h1>Importar matriz completa (JSON)</h1>
+<p class="text-muted">
+    Cria uma Matriz de Referência nova (curso + tipo + itens) a partir de um único arquivo JSON — útil pra importar de uma vez uma matriz ENADE/DCN/PPC inteira em vez de cadastrar item por item.
+</p>
+<p>
+    <a href="matrizes" class="btn btn-sm btn-link px-0">&laquo; Voltar às matrizes</a>
+</p>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="form-card mb-3">
+    <p class="small text-muted mb-2">
+        Formato esperado: <code>{"curso": "...", "tipo": "ENADE", "ano": 2023, "edicao": "...", "orgao": "INEP", "documento": "...", "urlFonte": "...", "descricao": "...", "grupos": {"perfil": [...], "competencias": [...], "conteudos": [...]}}</code>.
+        Cada item dentro de um grupo precisa de <code>codigo</code> e <code>titulo</code> (<code>descricao</code> é opcional).
+    </p>
+
+    <div class="mb-3">
+        <label class="form-label">Arquivo (.json)</label>
+        <InputFile OnChange="OnArquivoSelecionadoAsync" accept=".json" class="form-control" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Ou cole o conteúdo aqui</label>
+        <textarea class="form-control" style="height: 260px; font-family: monospace;" @bind="textoOriginal" placeholder="Cole aqui o JSON da matriz completa..."></textarea>
+    </div>
+
+    <button type="button" class="btn btn-primary" @onclick="Analisar" disabled="@string.IsNullOrWhiteSpace(textoOriginal)">Analisar</button>
+</div>
+
+@if (previa is not null)
+{
+    @if (previa.Erros.Count > 0)
+    {
+        <div class="alert alert-warning">
+            <strong>@previa.Erros.Count aviso(s)/erro(s) na leitura do arquivo:</strong>
+            <ul class="mb-0">
+                @foreach (var e in previa.Erros)
+                {
+                    <li>@e</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <div class="form-card mb-3">
+        <h5>Pré-visualização</h5>
+
+        <div class="row g-3 mb-2">
+            <div class="col-md-6">
+                <label class="form-label small mb-1">
+                    Tipo
+                    @if (previa.Tipo is null)
+                    {
+                        <span class="text-danger">— "@(previa.TipoTexto ?? "(não informado)")" não reconhecido; selecione manualmente</span>
+                    }
+                </label>
+                <select class="form-select" @bind="tipoSelecionado">
+                    <option value="">Selecione...</option>
+                    @foreach (var t in Enum.GetValues<TipoMatrizReferencia>())
+                    {
+                        <option value="@t">@t.Rotulo()</option>
+                    }
+                </select>
+            </div>
+
+            @if (TipoSelecionadoNacional())
+            {
+                <div class="col-md-6">
+                    @if (!ehAdmin)
+                    {
+                        <div class="alert alert-warning py-2 mb-2">Matrizes ENADE/DCN são de escopo nacional — só administradores podem importá-las.</div>
+                    }
+                    <label class="form-label small mb-1">
+                        Área de Curso
+                        @if (previa.AreaCursoEncontrada is not null)
+                        {
+                            <span class="text-success">— encontrada: "@previa.AreaCursoEncontrada.Nome"</span>
+                        }
+                        else
+                        {
+                            <span class="text-danger">— "@(previa.CursoTexto ?? "(não informado)")" não encontrada; selecione manualmente</span>
+                        }
+                    </label>
+                    <select class="form-select" @bind="areaCursoSelecionadaId">
+                        <option value="0">Selecione a área correspondente...</option>
+                        @foreach (var a in areasCurso)
+                        {
+                            <option value="@a.Id">@a.Nome</option>
+                        }
+                    </select>
+                    <div class="form-text">
+                        ENADE/DCN são nacionais — não pertencem a um curso de uma instituição específica. Escolha a
+                        Área de Curso já cadastrada que corresponde a "@previa.CursoTexto".
+                        <a href="areas-curso">Gerenciar áreas de curso</a>.
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">
+                        Curso
+                        @if (previa.CursoEncontrado is not null)
+                        {
+                            <span class="text-success">— encontrado: "@previa.CursoEncontrado.Nome" (@previa.CursoEncontrado.Instituicao?.Nome)</span>
+                        }
+                        else
+                        {
+                            <span class="text-danger">— "@(previa.CursoTexto ?? "(não informado)")" não encontrado nas suas instituições; selecione manualmente</span>
+                        }
+                    </label>
+                    <select class="form-select" @bind="cursoSelecionadoId">
+                        <option value="0">Selecione o curso correspondente...</option>
+                        @foreach (var c in cursos)
+                        {
+                            <option value="@c.Id">@c.Nome (@c.Instituicao?.Nome)</option>
+                        }
+                    </select>
+                    <div class="form-text">Nunca criamos um curso automaticamente a partir do JSON — escolha o curso já cadastrado que corresponde a "@previa.CursoTexto".</div>
+                </div>
+            }
+        </div>
+
+        <table class="table table-sm mb-3">
+            <tbody>
+                <tr><th style="width:160px;">Ano</th><td>@(previa.Ano?.ToString() ?? "—")</td></tr>
+                <tr><th>Edição</th><td>@(previa.Edicao ?? "—")</td></tr>
+                <tr><th>Órgão</th><td>@(previa.Orgao ?? "—")</td></tr>
+                <tr><th>Documento</th><td>@(previa.Documento ?? "—")</td></tr>
+                <tr><th>Descrição</th><td>@(previa.Descricao ?? "—")</td></tr>
+            </tbody>
+        </table>
+
+        <h6>Itens por grupo</h6>
+        <table class="table table-sm" style="max-width: 420px;">
+            <tbody>
+                @foreach (var tipo in Enum.GetValues<TipoItemMatriz>())
+                {
+                    var qtd = previa.ContagemPorTipo.GetValueOrDefault(tipo);
+                    @if (qtd > 0)
+                    {
+                        <tr><td>@tipo.RotuloPlural()</td><td class="text-end">@qtd</td></tr>
+                    }
+                }
+            </tbody>
+            <tfoot>
+                <tr class="fw-bold"><td>Total</td><td class="text-end">@previa.Total</td></tr>
+            </tfoot>
+        </table>
+
+        @if (previa.MatrizSimilarExistente is not null)
+        {
+            <div class="alert alert-warning">
+                ⚠ Já existe: <strong>"@previa.MatrizSimilarExistente.Nome"</strong> (@previa.MatrizSimilarExistente.Tipo.Rotulo() @previa.MatrizSimilarExistente.Ano, status @previa.MatrizSimilarExistente.Status.Rotulo()) ness@(TipoSelecionadoNacional() ? "a área de curso" : "e curso").
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" id="confirmarNova" @bind="confirmarNovaMatriz" />
+                    <label class="form-check-label" for="confirmarNova">Importar mesmo assim, como uma matriz nova (não sobrescreve a existente)</label>
+                </div>
+            </div>
+        }
+
+        @if (sucesso is not null)
+        {
+            <div class="alert alert-success">@sucesso</div>
+        }
+
+        <button type="button" class="btn btn-link" @onclick="Cancelar">Cancelar</button>
+        <button type="button" class="btn btn-success" @onclick="ImportarAsync" disabled="@(!PodeImportar())">Importar</button>
+    </div>
+}
+
+@code {
+    private string textoOriginal = "";
+    private string? erro;
+    private string? sucesso;
+
+    private MatrizCompletaImportada? dados;
+    private PreviaImportacaoMatrizCompleta? previa;
+
+    private List<Curso> cursos = new();
+    private List<AreaCurso> areasCurso = new();
+    private int cursoSelecionadoId;
+    private int areaCursoSelecionadaId;
+    private string tipoSelecionado = "";
+    private bool confirmarNovaMatriz;
+
+    private string? meuId;
+    private int? minhaInstituicaoId;
+    private bool ehAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        ehAdmin = authState.User.IsInRole("Admin");
+        minhaInstituicaoId = await MatrizService.ObterInstituicaoDoUsuarioAsync(meuId);
+
+        cursos = ehAdmin
+            ? await CursoService.ListarTodosAsync()
+            : await CursoService.ListarPorInstituicaoAsync(minhaInstituicaoId);
+        areasCurso = await AreaCursoService.ListarAtivasAsync();
+    }
+
+    // Tipo já resolvido/confirmado na tela decide se o seletor certo é
+    // Área de Curso (ENADE/DCN, nacional) ou Curso (demais) — ver
+    // TipoMatrizReferenciaExtensions.EhEscopoNacional. Sem Tipo ainda
+    // resolvido/selecionado, mostra o de Curso (comportamento de antes desta
+    // rodada, e o mais comum na prática — a maioria das importações não é
+    // ENADE/DCN).
+    private bool TipoSelecionadoNacional() =>
+        Enum.TryParse<TipoMatrizReferencia>(tipoSelecionado, out var t) && t.EhEscopoNacional();
+
+    private async Task OnArquivoSelecionadoAsync(InputFileChangeEventArgs e)
+    {
+        erro = null;
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(5 * 1024 * 1024));
+            textoOriginal = await reader.ReadToEndAsync();
+        }
+        catch (Exception)
+        {
+            erro = "Não foi possível ler o arquivo (verifique o tamanho, até 5 MB).";
+        }
+    }
+
+    private async Task Analisar()
+    {
+        erro = null;
+        sucesso = null;
+        previa = null;
+        confirmarNovaMatriz = false;
+
+        dados = ItemMatrizImportParser.ParseMatrizCompleta(textoOriginal);
+        previa = await MatrizService.PrepararImportacaoMatrizCompletaAsync(dados, minhaInstituicaoId, ehAdmin);
+
+        cursoSelecionadoId = previa.CursoEncontrado?.Id ?? 0;
+        areaCursoSelecionadaId = previa.AreaCursoEncontrada?.Id ?? 0;
+        tipoSelecionado = previa.Tipo?.ToString() ?? "";
+    }
+
+    private bool PodeImportar() =>
+        previa is not null && !string.IsNullOrEmpty(tipoSelecionado) && previa.Total > 0
+        && (TipoSelecionadoNacional() ? areaCursoSelecionadaId != 0 && ehAdmin : cursoSelecionadoId != 0)
+        && (previa.MatrizSimilarExistente is null || confirmarNovaMatriz);
+
+    private void Cancelar()
+    {
+        previa = null;
+        dados = null;
+        textoOriginal = "";
+    }
+
+    private async Task ImportarAsync()
+    {
+        if (dados is null || !Enum.TryParse<TipoMatrizReferencia>(tipoSelecionado, out var tipo))
+        {
+            return;
+        }
+
+        erro = null;
+        try
+        {
+            var nacional = tipo.EhEscopoNacional();
+            var (matriz, itensImportados) = await MatrizService.ImportarMatrizCompletaAsync(
+                dados,
+                nacional ? null : cursoSelecionadoId,
+                nacional ? areaCursoSelecionadaId : null,
+                tipo, confirmarNovaMatriz, minhaInstituicaoId, ehAdmin);
+
+            NavigationManager.NavigateTo(
+                $"matrizes/{matriz.Id}/itens?msg={Uri.EscapeDataString($"Matriz \"{matriz.Nome}\" criada com {itensImportados} item(ns) importado(s). Está como Rascunho — revise e ative quando estiver pronta.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

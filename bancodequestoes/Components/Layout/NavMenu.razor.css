@@ -1,0 +1,125 @@
+.navbar-toggler {
+    appearance: none;
+    cursor: pointer;
+    width: 3.5rem;
+    height: 2.5rem;
+    color: white;
+    position: absolute;
+    top: 0.5rem;
+    right: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 30'%3e%3cpath stroke='rgba%28255, 255, 255, 0.55%29' stroke-linecap='round' stroke-miterlimit='10' stroke-width='2' d='M4 7h22M4 15h22M4 23h22'/%3e%3c/svg%3e") no-repeat center/1.75rem rgba(255, 255, 255, 0.1);
+}
+
+.navbar-toggler:checked {
+    background-color: rgba(255, 255, 255, 0.5);
+}
+
+.top-row {
+    min-height: 3.5rem;
+    background-color: rgba(0,0,0,0.4);
+}
+
+.navbar-brand {
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #fff;
+}
+
+/* Ícones agora vêm da fonte oficial do Bootstrap Icons (carregada via CDN em
+   App.razor), então não precisamos mais desenhar cada SVG à mão — só ajustar
+   tamanho/alinhamento. A cor herda do texto do link (currentColor), então o
+   ícone já fica branco/realçado nos mesmos estados de hover e ativo. */
+.bi {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 1.4rem;
+    margin-right: 0.4rem;
+    font-size: 1.05rem;
+    text-align: center;
+    vertical-align: -0.1em;
+}
+
+.nav-section-title {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.5);
+    margin-top: 0.9rem;
+    margin-bottom: 0.25rem;
+}
+
+.nav-item {
+    font-size: 0.9rem;
+    padding-bottom: 0.3rem;
+}
+
+    .nav-item:first-of-type {
+        padding-top: 1rem;
+    }
+
+    .nav-item:last-of-type {
+        padding-bottom: 1rem;
+    }
+
+    .nav-item ::deep .nav-link {
+        color: rgba(255, 255, 255, 0.78);
+        background: none;
+        border: none;
+        border-radius: 8px;
+        min-height: 2.7rem;
+        display: flex;
+        align-items: center;
+        /* Antes era "height" fixa + "line-height" igual à altura — com um
+           rótulo comprido (ex.: "Matrizes de Referência", ou um nome de
+           usuário grande em "Olá, ..."), o texto quebrava em duas linhas mas
+           a caixa continuava com a mesma altura de uma linha só, então a
+           segunda linha vazava por cima do próximo item do menu. Trocando
+           pra min-height + padding vertical, o item cresce sozinho quando o
+           texto quebra, empurrando os itens seguintes pra baixo em vez de
+           sobrepor.
+        */
+        padding: 0.4rem 0.6rem;
+        line-height: 1.25;
+        width: 100%;
+        font-weight: 500;
+        overflow-wrap: anywhere;
+        transition: background-color 0.12s ease, color 0.12s ease;
+    }
+
+.nav-item ::deep a.active {
+    background-color: rgba(255, 255, 255, 0.16);
+    color: white;
+    font-weight: 600;
+    box-shadow: inset 3px 0 0 #a5b4fc;
+}
+
+.nav-item ::deep .nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.09);
+    color: white;
+}
+
+.nav-scrollable {
+    display: none;
+}
+
+.navbar-toggler:checked ~ .nav-scrollable {
+    display: block;
+}
+
+@media (min-width: 641px) {
+    .navbar-toggler {
+        display: none;
+    }
+
+    .nav-scrollable {
+        /* Never collapse the sidebar for wide screens */
+        display: block;
+
+        /* Allow sidebar to scroll for tall menus */
+        height: calc(100vh - 3.5rem);
+        overflow-y: auto;
+    }
+}

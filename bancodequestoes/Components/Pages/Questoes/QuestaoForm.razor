@@ -1,0 +1,789 @@
+@page "/questoes/novo"
+@page "/questoes/editar/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BancoQuestoes.Exportacao
+@using BancoQuestoes.Components.Pages.Questoes.Components
+@inject QuestaoService QuestaoService
+@inject DisciplinaService DisciplinaService
+@inject CursoService CursoService
+@inject MatrizReferenciaService MatrizService
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+
+<PageTitle>@(Id is null ? "Nova questão" : "Editar questão")</PageTitle>
+
+<h1>@(Id is null ? "Nova questão" : "Editar questão")</h1>
+
+@if (Id is not null && qualidade is not null)
+{
+    <p>
+        <span class="badge text-bg-@qualidade.CorFarol">Qualidade: @qualidade.Percentual%</span>
+        @if (qualidade.CriteriosFaltando.Count > 0)
+        {
+            <span class="text-muted small ms-1">Faltando: @string.Join(", ", qualidade.CriteriosFaltando)</span>
+        }
+    </p>
+}
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (acessoNegado)
+{
+    <p><a href="questoes">Voltar para questões</a></p>
+}
+else if (assuntos.Count == 0)
+{
+    <p><em>Cadastre um assunto antes de criar uma questão.</em> <a href="assuntos/novo">Criar assunto</a></p>
+}
+else
+{
+    <div class="row">
+    <div class="col-md-8">
+    <div class="form-card">
+    <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" />
+
+        <div class="form-floating mb-3">
+            <InputSelect @bind-Value="modelo.TipoQuestao" id="Tipo" class="form-select" disabled="@(Id is not null)">
+                <option value="@TipoQuestao.MultiplaEscolha">Múltipla escolha</option>
+                <option value="@TipoQuestao.Discursiva">Discursiva</option>
+                <option value="@TipoQuestao.CertoErrado">Certo/Errado</option>
+                <option value="@TipoQuestao.Associacao">Associação</option>
+                <option value="@TipoQuestao.RespostaBreve">Resposta breve</option>
+                <option value="@TipoQuestao.Numerica">Numérica</option>
+                <option value="@TipoQuestao.Lacunas">Preenchimento de lacunas</option>
+            </InputSelect>
+            <label for="Tipo">Tipo</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <select class="form-select" id="DisciplinaId" @bind="disciplinaId" @bind:after="AoMudarDisciplinaFiltro">
+                <option value="0">Selecione...</option>
+                @foreach (var d in disciplinas)
+                {
+                    <option value="@d.Id">@d.Nome</option>
+                }
+            </select>
+            <label for="DisciplinaId">Disciplina</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputSelect @bind-Value="modelo.AssuntoId" id="AssuntoId" class="form-select" disabled="@(disciplinaId == 0)">
+                <option value="0">@(disciplinaId == 0 ? "Escolha a disciplina primeiro..." : "Selecione...")</option>
+                @foreach (var a in assuntos.Where(a => a.DisciplinaId == disciplinaId))
+                {
+                    <option value="@a.Id">@a.Nome</option>
+                }
+            </InputSelect>
+            <label for="AssuntoId">Assunto</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputSelect @bind-Value="modelo.Dificuldade" id="Dificuldade" class="form-select">
+                <option value="@Dificuldade.Facil">Fácil</option>
+                <option value="@Dificuldade.Media">Média</option>
+                <option value="@Dificuldade.Dificil">Difícil</option>
+            </InputSelect>
+            <label for="Dificuldade">Dificuldade</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputSelect @bind-Value="modelo.Bloom" id="Bloom" class="form-select">
+                <option value="">Não classificado</option>
+                <option value="@NivelBloom.Lembrar">Lembrar</option>
+                <option value="@NivelBloom.Entender">Entender</option>
+                <option value="@NivelBloom.Aplicar">Aplicar</option>
+                <option value="@NivelBloom.Analisar">Analisar</option>
+                <option value="@NivelBloom.Avaliar">Avaliar</option>
+                <option value="@NivelBloom.Criar">Criar</option>
+            </InputSelect>
+            <label for="Bloom">Nível (Bloom)</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputSelect @bind-Value="modelo.Visibilidade" id="Visibilidade" class="form-select">
+                <option value="@VisibilidadeQuestao.Privada">🔒 Somente eu</option>
+                <option value="@VisibilidadeQuestao.Institucional" disabled="@(!minhaInstituicaoId.HasValue)">
+                    👥 Professores da minha instituição@(minhaInstituicaoId.HasValue ? "" : " (defina sua instituição no perfil)")
+                </option>
+                <option value="@VisibilidadeQuestao.Compartilhada">🌐 Todos os professores</option>
+            </InputSelect>
+            <label for="Visibilidade">Quem pode usar esta questão</label>
+        </div>
+
+        <div class="row g-2 mb-3">
+            <div class="col-6">
+                <div class="form-floating">
+                    <InputSelect @bind-Value="modelo.Origem" id="Origem" class="form-select">
+                        <option value="@OrigemQuestao.Autoral">Autoral</option>
+                        <option value="@OrigemQuestao.Livro">Livro</option>
+                        <option value="@OrigemQuestao.Enade">ENADE</option>
+                        <option value="@OrigemQuestao.Concurso">Concurso</option>
+                        <option value="@OrigemQuestao.Vestibular">Vestibular</option>
+                        <option value="@OrigemQuestao.Importada">Importada</option>
+                        <option value="@OrigemQuestao.Ia">IA</option>
+                    </InputSelect>
+                    <label for="Origem">Origem</label>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="form-floating">
+                    <InputNumber @bind-Value="modelo.Ano" id="Ano" class="form-control" placeholder="Ano" />
+                    <label for="Ano">Ano</label>
+                </div>
+            </div>
+            <div class="col-3">
+                <div class="form-floating">
+                    <InputText @bind-Value="modelo.Referencia" id="Referencia" class="form-control" placeholder="Referência" />
+                    <label for="Referencia">Referência</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label small mb-1">Tags</label>
+            <div class="d-flex flex-wrap gap-1 mb-2">
+                @foreach (var tag in modelo.Tags)
+                {
+                    <span class="badge text-bg-light border">
+                        @tag
+                        <button type="button" class="btn-close ms-1" style="font-size:0.55rem;" aria-label="Remover tag" @onclick="() => RemoverTag(tag)"></button>
+                    </span>
+                }
+            </div>
+            <div class="input-group input-group-sm" style="max-width:320px;">
+                <input type="text" class="form-control" placeholder="Adicionar tag..." list="tags-existentes"
+                       @bind="novaTag" @bind:event="oninput" @onkeydown="AoTeclarNaTag" />
+                <button type="button" class="btn btn-outline-secondary" @onclick="AdicionarTag">+</button>
+            </div>
+            <datalist id="tags-existentes">
+                @foreach (var t in todasTagsExistentes)
+                {
+                    <option value="@t.Nome" />
+                }
+            </datalist>
+        </div>
+
+        <details class="mb-3">
+            <summary class="fw-bold" style="cursor: pointer;">▸ Alinhamento Curricular / ENADE</summary>
+            <div class="mt-2">
+                <div class="form-floating mb-2" style="max-width: 420px;">
+                    <select class="form-select" id="CursoIdQuestao" @bind="modelo.CursoId" @bind:after="AoMudarCursoQuestaoAsync">
+                        <option value="">Nenhum (sem Alinhamento Curricular)</option>
+                        @foreach (var c in cursos)
+                        {
+                            <option value="@c.Id">@c.Instituicao?.Nome / @c.Nome</option>
+                        }
+                    </select>
+                    <label for="CursoIdQuestao">Curso</label>
+                </div>
+
+                @if (modelo.CursoId is null)
+                {
+                    <p class="text-muted small mb-0">Escolha um curso pra marcar os itens (perfil do concluinte, competências, conteúdos...) de uma ou mais matrizes de referência que essa questão avalia.</p>
+                }
+                else if (itensDoCurso.Count == 0)
+                {
+                    <p class="text-muted small mb-0">Esse curso ainda não tem matrizes de referência cadastradas. <a href="matrizes">Cadastrar matrizes</a></p>
+                }
+                else
+                {
+                    <p class="text-muted small mb-1">Marque os itens avaliados por essa questão (opcional) — de uma ou mais matrizes ao mesmo tempo.</p>
+                    <ItemMatrizChecklist Itens="itensDoCurso" Selecionados="itemMatrizIdsSelecionados" OnAlterado="NotificarMudancaCurricular" />
+                }
+            </div>
+        </details>
+
+        <div class="mb-1 d-flex flex-wrap gap-1">
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="Negrito" @onclick='() => AplicarFormatacaoAsync("negrito")'><strong>B</strong></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="Itálico" @onclick='() => AplicarFormatacaoAsync("italico")'><em>I</em></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="Lista" @onclick='() => AplicarFormatacaoAsync("lista")'><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="Código" @onclick='() => AplicarFormatacaoAsync("codigo-linha")'><i class="bi bi-code" aria-hidden="true"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="Bloco de código" @onclick='() => AplicarFormatacaoAsync("codigo-bloco")'><i class="bi bi-code-square" aria-hidden="true"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="Tabela" @onclick='() => AplicarFormatacaoAsync("tabela")'><i class="bi bi-table" aria-hidden="true"></i></button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" title="Fórmula (LaTeX)" @onclick='() => AplicarFormatacaoAsync("formula")'><i class="bi bi-superscript" aria-hidden="true"></i></button>
+        </div>
+
+        <div class="form-floating mb-2">
+            <InputTextArea @bind-Value="modelo.Enunciado" @oninput="OnEnunciadoInput" id="enunciado-textarea" class="form-control" style="height: 100px;" placeholder="Enunciado" />
+            <label for="enunciado-textarea">Enunciado</label>
+            <ValidationMessage For="() => modelo.Enunciado" class="text-danger" />
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(modelo.Enunciado))
+        {
+            <div class="mb-3">
+                <span class="form-label small text-muted d-block mb-1">Pré-visualização — Markdown (negrito, itálico, lista, código, tabela) e fórmulas entre <code>$...$</code> ou <code>$$...$$</code></span>
+                <div class="border rounded p-2 bg-white markdown-preview" id="preview-enunciado">@RenderizarPreview(modelo.Enunciado)</div>
+            </div>
+        }
+
+        @if (Id is not null)
+        {
+            <div class="form-check mb-3">
+                <InputCheckbox @bind-Value="modelo.Ativa" class="form-check-input" id="Ativa" />
+                <label class="form-check-label" for="Ativa">Ativa</label>
+            </div>
+        }
+
+        @if (modelo.TipoQuestao == TipoQuestao.MultiplaEscolha)
+        {
+            <h5>Alternativas</h5>
+            <InputRadioGroup @bind-Value="modelo.RespostaCorretaIndex" Name="respostaCorreta">
+                @for (var i = 0; i < modelo.Alternativas.Count; i++)
+                {
+                    var idx = i;
+                    <div class="input-group mb-2">
+                        <span class="input-group-text">@LetraDaAlternativa(idx)</span>
+                        <input class="form-control" @bind="modelo.Alternativas[idx].Texto" placeholder="Texto da alternativa" />
+                        <span class="input-group-text">
+                            <InputRadio Value="idx" /> <span class="ms-1">Correta</span>
+                        </span>
+                        @if (modelo.Alternativas.Count > 2)
+                        {
+                            <button type="button" class="btn btn-outline-danger" @onclick="() => RemoverAlternativa(idx)">x</button>
+                        }
+                    </div>
+                }
+            </InputRadioGroup>
+            @if (modelo.Alternativas.Count < 8)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm mb-3" @onclick="AdicionarAlternativa">+ Alternativa</button>
+            }
+        }
+        else if (modelo.TipoQuestao == TipoQuestao.Discursiva)
+        {
+            <div class="form-floating mb-3">
+                <InputTextArea @bind-Value="modelo.RespostaEsperada" id="RespostaEsperada" class="form-control" style="height: 80px;" placeholder="Resposta esperada" />
+                <label for="RespostaEsperada">Resposta esperada</label>
+            </div>
+            <div class="form-floating mb-3">
+                <InputTextArea @bind-Value="modelo.CriterioAvaliacao" id="CriterioAvaliacao" class="form-control" style="height: 80px;" placeholder="Critério de avaliação (opcional)" />
+                <label for="CriterioAvaliacao">Critério de avaliação (opcional)</label>
+            </div>
+        }
+        else if (modelo.TipoQuestao == TipoQuestao.CertoErrado)
+        {
+            <div class="mb-3">
+                <label class="form-label d-block">Resposta correta</label>
+                <InputRadioGroup @bind-Value="modelo.RespostaCorretaCE" Name="respostaCE">
+                    <div class="form-check form-check-inline">
+                        <InputRadio Value="true" class="form-check-input" id="CE-certo" />
+                        <label class="form-check-label" for="CE-certo">Certo</label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <InputRadio Value="false" class="form-check-input" id="CE-errado" />
+                        <label class="form-check-label" for="CE-errado">Errado</label>
+                    </div>
+                </InputRadioGroup>
+            </div>
+        }
+        else if (modelo.TipoQuestao == TipoQuestao.Associacao)
+        {
+            <h5>Pares (termo → correspondente)</h5>
+            @for (var i = 0; i < modelo.Pares.Count; i++)
+            {
+                var idx = i;
+                <div class="input-group mb-2">
+                    <span class="input-group-text">@(idx + 1)</span>
+                    <input class="form-control" @bind="modelo.Pares[idx].Termo" placeholder="Termo (coluna A)" />
+                    <span class="input-group-text">↔</span>
+                    <input class="form-control" @bind="modelo.Pares[idx].Correspondente" placeholder="Correspondente (coluna B)" />
+                    @if (modelo.Pares.Count > 2)
+                    {
+                        <button type="button" class="btn btn-outline-danger" @onclick="() => modelo.Pares.RemoveAt(idx)">x</button>
+                    }
+                </div>
+            }
+            @if (modelo.Pares.Count < 12)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm mb-3" @onclick="() => modelo.Pares.Add(new ParAssociacaoInput())">+ Par</button>
+            }
+        }
+        else if (modelo.TipoQuestao == TipoQuestao.RespostaBreve)
+        {
+            <div class="form-floating mb-3">
+                <input class="form-control" @bind="modelo.RespostaBreveEsperada" id="RespostaBreve" placeholder="Resposta esperada" />
+                <label for="RespostaBreve">Resposta esperada</label>
+            </div>
+        }
+        else if (modelo.TipoQuestao == TipoQuestao.Numerica)
+        {
+            <div class="row">
+                <div class="col-md-6 form-floating mb-3">
+                    <InputNumber @bind-Value="modelo.NumericaEsperada" id="NumericaEsperada" class="form-control" placeholder="Resposta esperada" />
+                    <label for="NumericaEsperada">Resposta esperada</label>
+                </div>
+                <div class="col-md-6 form-floating mb-3">
+                    <InputNumber @bind-Value="modelo.NumericaTolerancia" id="NumericaTolerancia" class="form-control" placeholder="Tolerância (± )" />
+                    <label for="NumericaTolerancia">Tolerância (±, opcional)</label>
+                </div>
+            </div>
+        }
+        else if (modelo.TipoQuestao == TipoQuestao.Lacunas)
+        {
+            <p class="text-muted">Marque cada lacuna no enunciado com três ou mais underscores (<code>___</code>), na ordem em que devem aparecer, e informe a resposta esperada de cada uma abaixo, na mesma ordem.</p>
+            <h5>Respostas das lacunas</h5>
+            @for (var i = 0; i < modelo.Lacunas.Count; i++)
+            {
+                var idx = i;
+                <div class="input-group mb-2">
+                    <span class="input-group-text">Lacuna @(idx + 1)</span>
+                    <input class="form-control" @bind="modelo.Lacunas[idx].RespostaEsperada" placeholder="Resposta esperada" />
+                    @if (modelo.Lacunas.Count > 1)
+                    {
+                        <button type="button" class="btn btn-outline-danger" @onclick="() => modelo.Lacunas.RemoveAt(idx)">x</button>
+                    }
+                </div>
+            }
+            @if (modelo.Lacunas.Count < 20)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm mb-3" @onclick="() => modelo.Lacunas.Add(new LacunaInput())">+ Lacuna</button>
+            }
+        }
+
+        <div class="form-floating mb-2">
+            <InputTextArea @bind-Value="modelo.Explicacao" @oninput="OnExplicacaoInput" id="explicacao-textarea" class="form-control" style="height: 80px;" placeholder="Explicação da resposta (opcional)" />
+            <label for="explicacao-textarea">Explicação da resposta (opcional)</label>
+        </div>
+        <p class="text-muted small mb-2">
+            Resolução/comentário sobre por que a resposta é essa — some no gabarito comentado da prova e ajuda quem for reaproveitar a questão depois. Aceita o mesmo Markdown/LaTeX do enunciado.
+        </p>
+
+        @if (!string.IsNullOrWhiteSpace(modelo.Explicacao))
+        {
+            <div class="mb-3">
+                <span class="form-label small text-muted d-block mb-1">Pré-visualização</span>
+                <div class="border rounded p-2 bg-white markdown-preview" id="preview-explicacao">@RenderizarPreview(modelo.Explicacao)</div>
+            </div>
+        }
+
+        <h5>Imagens</h5>
+        @if (erroImagem is not null)
+        {
+            <div class="alert alert-warning py-1">@erroImagem</div>
+        }
+        <div class="d-flex flex-wrap gap-2 mb-2">
+            @foreach (var img in imagensExistentes.Where(i => !imagensParaRemover.Contains(i.Id)))
+            {
+                <div class="border rounded p-2" style="width:220px;">
+                    <div class="text-center mb-2">
+                        <img src="@($"questoes/imagem/{img.Id}")" alt="@(img.TextoAlternativo ?? img.NomeArquivo)" style="max-width:100%; max-height:100px;" />
+                    </div>
+                    <input type="text" class="form-control form-control-sm mb-1" placeholder="Legenda" @bind="img.Legenda" @bind:event="oninput" />
+                    <input type="text" class="form-control form-control-sm mb-1" placeholder="Texto alternativo" @bind="img.TextoAlternativo" @bind:event="oninput" />
+                    <select class="form-select form-select-sm mb-1" @bind="img.Alinhamento">
+                        <option value="">Alinhamento: padrão</option>
+                        <option value="@AlinhamentoImagem.Esquerda">Esquerda</option>
+                        <option value="@AlinhamentoImagem.Centralizado">Centralizado</option>
+                        <option value="@AlinhamentoImagem.Direita">Direita</option>
+                    </select>
+                    <div class="input-group input-group-sm mb-1">
+                        <span class="input-group-text">Largura</span>
+                        <input type="number" min="10" max="100" step="5" class="form-control" placeholder="60" @bind="img.LarguraPercentual" />
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger w-100" @onclick="() => imagensParaRemover.Add(img.Id)">Remover</button>
+                </div>
+            }
+            @foreach (var p in pendentes)
+            {
+                <div class="border rounded p-2" style="width:220px;">
+                    <div class="text-center mb-2">
+                        <img src="@($"data:{p.ContentType};base64,{Convert.ToBase64String(p.Conteudo)}")" alt="@(p.TextoAlternativo ?? p.NomeArquivo)" style="max-width:100%; max-height:100px;" />
+                    </div>
+                    <input type="text" class="form-control form-control-sm mb-1" placeholder="Legenda" @bind="p.Legenda" @bind:event="oninput" />
+                    <input type="text" class="form-control form-control-sm mb-1" placeholder="Texto alternativo" @bind="p.TextoAlternativo" @bind:event="oninput" />
+                    <select class="form-select form-select-sm mb-1" @bind="p.Alinhamento">
+                        <option value="">Alinhamento: padrão</option>
+                        <option value="@AlinhamentoImagem.Esquerda">Esquerda</option>
+                        <option value="@AlinhamentoImagem.Centralizado">Centralizado</option>
+                        <option value="@AlinhamentoImagem.Direita">Direita</option>
+                    </select>
+                    <div class="input-group input-group-sm mb-1">
+                        <span class="input-group-text">Largura</span>
+                        <input type="number" min="10" max="100" step="5" class="form-control" placeholder="60" @bind="p.LarguraPercentual" />
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-danger w-100" @onclick="() => pendentes.Remove(p)">Remover</button>
+                </div>
+            }
+        </div>
+        <InputFile OnChange="OnImagensSelecionadasAsync" multiple accept="image/*" class="form-control mb-3" />
+
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <a href="questoes" class="btn btn-link">Cancelar</a>
+    </EditForm>
+    </div>
+    </div>
+    </div>
+
+    @if (Id is not null && historico.Count > 0)
+    {
+        <div class="row mt-3">
+        <div class="col-md-8">
+        <div class="form-card">
+            <h5>Histórico de alterações</h5>
+            <ul class="list-unstyled mb-0">
+                @foreach (var h in historico)
+                {
+                    <li class="mb-3 pb-2 border-bottom">
+                        <div class="text-muted small">
+                            @h.DataHora.ToLocalTime().ToString("dd/MM/yyyy HH:mm") —
+                            @(h.Usuario?.NomeCompleto ?? h.Usuario?.Email ?? "professor removido")
+                        </div>
+                        <div>
+                            @if (h.ValorAnterior is null && h.ValorNovo is null)
+                            {
+                                <text>@h.Campo alterado</text>
+                            }
+                            else
+                            {
+                                <text>@h.Campo: @h.ValorAnterior → @h.ValorNovo</text>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+        </div>
+        </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private QuestaoInput modelo = new();
+    private List<Assunto> assuntos = new();
+    private List<Disciplina> disciplinas = new();
+
+    // Filtro em cascata Disciplina -> Assunto: não é campo de QuestaoInput
+    // (a questão só grava AssuntoId), é só estado da tela pra não listar os
+    // assuntos de TODAS as disciplinas misturados no mesmo select — o mesmo
+    // problema que ProvaForm já resolvia com "filtroAssuntoId".
+    private int disciplinaId;
+
+    // Trocar de disciplina invalida o assunto marcado (é de outra
+    // disciplina) — limpa pra não deixar a questão salvando com um par
+    // Disciplina/Assunto inconsistente.
+    private void AoMudarDisciplinaFiltro() => modelo.AssuntoId = 0;
+
+    // Trocar (ou limpar) o Curso invalida qualquer item de matriz já marcado
+    // (eles são do curso ANTERIOR) — limpa a seleção pra nunca deixar a
+    // questão salvando com vínculo pra um item de outro curso. QuestaoService
+    // também valida isso de novo no servidor (nunca confia só na tela), mas
+    // aqui evita o problema já na experiência do professor.
+    private async Task AoMudarCursoQuestaoAsync()
+    {
+        itemMatrizIdsSelecionados.Clear();
+
+        if (modelo.CursoId is int cursoId)
+        {
+            await CarregarItensDoCursoAsync(cursoId);
+        }
+        else
+        {
+            itensDoCurso = new();
+        }
+    }
+
+    private async Task CarregarItensDoCursoAsync(int cursoId) =>
+        itensDoCurso = await MatrizService.ListarItensVinculaveisPorCursoAsync(cursoId);
+
+    // Sem corpo de propósito — só existe pra ser o alvo do OnAlterado de
+    // ItemMatrizChecklist (mesmo padrão "notificar" já usado em
+    // ProvaForm/GeradorAutomatico): força este componente a re-renderizar
+    // pra refletir o contador "N selecionado(s)" a cada marcar/desmarcar.
+    private void NotificarMudancaCurricular()
+    {
+    }
+
+    private bool carregando;
+    private bool acessoNegado;
+    private string? erro;
+    private string? meuId;
+    private int? minhaInstituicaoId;
+
+    private string novaTag = "";
+    private List<Tag> todasTagsExistentes = new();
+
+    private const long TamanhoMaximoImagem = 5 * 1024 * 1024; // 5 MB
+    private List<QuestaoImagem> imagensExistentes = new();
+    private HashSet<int> imagensParaRemover = new();
+    private List<PendenteImagem> pendentes = new();
+    private string? erroImagem;
+    private List<QuestaoHistorico> historico = new();
+    private QualidadeResultado? qualidade;
+
+    // Alinhamento Curricular / ENADE — "cursos" é a lista completa (pro
+    // select); "itensDoCurso" (itens de TODAS as matrizes vinculáveis do
+    // curso, já flat) é recarregada toda vez que o Curso escolhido muda (ver
+    // AoMudarCursoQuestaoAsync). "itemMatrizIdsSelecionados" é o HashSet
+    // compartilhado que ItemMatrizChecklist muta direto — pode conter itens
+    // de mais de uma matriz ao mesmo tempo (item 10 do pedido).
+    private List<Curso> cursos = new();
+    private List<ItemMatrizReferencia> itensDoCurso = new();
+    private HashSet<int> itemMatrizIdsSelecionados = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        carregando = true;
+        assuntos = await DisciplinaService.ListarTodosAssuntosAsync();
+        disciplinas = await DisciplinaService.ListarTodasAsync();
+        todasTagsExistentes = await QuestaoService.ListarTagsAsync();
+        cursos = await CursoService.ListarTodosAsync();
+
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        minhaInstituicaoId = await QuestaoService.ObterInstituicaoDoUsuarioAsync(meuId);
+
+        if (Id is not null)
+        {
+            try
+            {
+                var questao = await QuestaoService.CarregarParaEdicaoAsync(Id.Value, meuId);
+                modelo.AssuntoId = questao.AssuntoId;
+                // Pré-seleciona a disciplina do filtro em cascata a partir do
+                // assunto já salvo, senão o select de Disciplina começaria
+                // vazio e o de Assunto (desabilitado até escolher disciplina)
+                // esconderia a opção já marcada.
+                disciplinaId = assuntos.FirstOrDefault(a => a.Id == questao.AssuntoId)?.DisciplinaId ?? 0;
+                modelo.Enunciado = questao.Enunciado;
+                modelo.Dificuldade = questao.Dificuldade;
+                modelo.TipoQuestao = questao.TipoQuestao;
+                modelo.Visibilidade = questao.Visibilidade;
+                modelo.Bloom = questao.Bloom;
+                modelo.Origem = questao.Origem;
+                modelo.Ano = questao.Ano;
+                modelo.Referencia = questao.Referencia;
+                modelo.Explicacao = questao.Explicacao;
+                modelo.Tags = questao.Tags.Select(t => t.Nome).OrderBy(n => n).ToList();
+                modelo.Ativa = questao.Ativa;
+                modelo.CursoId = questao.CursoId;
+                itemMatrizIdsSelecionados = questao.ItensMatriz.Select(i => i.Id).ToHashSet();
+                if (modelo.CursoId is int cursoDaQuestao)
+                {
+                    await CarregarItensDoCursoAsync(cursoDaQuestao);
+                }
+                imagensExistentes = questao.Imagens.OrderBy(i => i.Ordem).ToList();
+                historico = await QuestaoService.ObterHistoricoAsync(Id.Value, meuId, minhaInstituicaoId);
+                qualidade = QualidadeQuestao.Calcular(questao);
+
+                switch (questao)
+                {
+                    case QuestaoMultiplaEscolha me:
+                        var ordenadas = me.Alternativas.OrderBy(a => a.Letra).ToList();
+                        modelo.Alternativas = ordenadas.Select(a => new AlternativaInput { Texto = a.Texto }).ToList();
+                        while (modelo.Alternativas.Count < 2)
+                        {
+                            modelo.Alternativas.Add(new AlternativaInput());
+                        }
+                        modelo.RespostaCorretaIndex = Math.Max(0, ordenadas.FindIndex(a => a.Letra == me.RespostaCorreta));
+                        break;
+                    case QuestaoDiscursiva d:
+                        modelo.RespostaEsperada = d.RespostaEsperada;
+                        modelo.CriterioAvaliacao = d.CriterioAvaliacao;
+                        break;
+                    case QuestaoCertoErrado c:
+                        modelo.RespostaCorretaCE = c.RespostaCorreta;
+                        break;
+                    case QuestaoAssociacao assoc:
+                        modelo.Pares = assoc.Pares.OrderBy(p => p.Ordem)
+                            .Select(p => new ParAssociacaoInput { Termo = p.Termo, Correspondente = p.Correspondente })
+                            .ToList();
+                        while (modelo.Pares.Count < 2)
+                        {
+                            modelo.Pares.Add(new ParAssociacaoInput());
+                        }
+                        break;
+                    case QuestaoRespostaBreve rb:
+                        modelo.RespostaBreveEsperada = rb.RespostaEsperada;
+                        break;
+                    case QuestaoNumerica num:
+                        modelo.NumericaEsperada = num.RespostaEsperada;
+                        modelo.NumericaTolerancia = num.Tolerancia;
+                        break;
+                    case QuestaoLacunas lac:
+                        modelo.Lacunas = lac.Lacunas.OrderBy(l => l.Ordem)
+                            .Select(l => new LacunaInput { RespostaEsperada = l.RespostaEsperada })
+                            .ToList();
+                        if (modelo.Lacunas.Count == 0)
+                        {
+                            modelo.Lacunas.Add(new LacunaInput());
+                        }
+                        break;
+                }
+            }
+            catch (OperacaoInvalidaException ex)
+            {
+                erro = ex.Message;
+                acessoNegado = true;
+            }
+        }
+
+        carregando = false;
+    }
+
+    // Reprocessa a pré-visualização de fórmulas (MathJax) a cada nova renderização
+    // — inclusive as disparadas pelo próprio "oninput" do enunciado, então a
+    // pré-visualização acompanha o que o professor está digitando.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!string.IsNullOrWhiteSpace(modelo.Enunciado))
+        {
+            await JS.InvokeVoidAsync("bqTypesetMath", "preview-enunciado");
+        }
+        if (!string.IsNullOrWhiteSpace(modelo.Explicacao))
+        {
+            await JS.InvokeVoidAsync("bqTypesetMath", "preview-explicacao");
+        }
+    }
+
+    // Conversão Markdown -> HTML compartilhada com o modal de prévia da
+    // listagem (ver Exportacao/MarkdownPreview.cs). O MathJax processa as
+    // fórmulas em cima do HTML já renderizado, em OnAfterRenderAsync acima.
+    private static MarkupString RenderizarPreview(string markdown) => (MarkupString)MarkdownPreview.ParaHtml(markdown);
+
+    // Atualiza o campo a cada tecla digitada, pra pré-visualização acompanhar
+    // em tempo real. NÃO dá pra fazer isso com "@bind-Value:event=\"oninput\""
+    // direto no InputTextArea — é um bug conhecido do Blazor (só funciona em
+    // <textarea> puro, não em componentes InputBase<T>): o binder tenta
+    // converter o ChangeEventArgs bruto do evento pra string sem passar pelo
+    // parsing automático que só existe pra "onchange", e explode com
+    // "Object of type ChangeEventArgs cannot be converted to type String".
+    // Por isso aqui o InputTextArea fica com o binding padrão (dispara em
+    // onchange, ao perder o foco) e a atualização "ao vivo" vem desse handler
+    // manual em cima do oninput, que já lida com o ChangeEventArgs sozinho.
+    private void OnEnunciadoInput(ChangeEventArgs e) => modelo.Enunciado = e.Value?.ToString() ?? "";
+
+    private void OnExplicacaoInput(ChangeEventArgs e) => modelo.Explicacao = e.Value?.ToString();
+
+    // Envolve a seleção atual do textarea com a marcação Markdown certa pra
+    // cada botão da toolbar (ou insere um texto de exemplo, se nada estiver
+    // selecionado). O JS só calcula e devolve o novo texto — quem atualiza
+    // modelo.Enunciado é o C#, então o re-render do Blazor cuida de refletir
+    // a mudança no textarea (evita mexer no DOM do textarea por fora do
+    // controle do Blazor, que poderia entrar em conflito com o data binding).
+    private async Task AplicarFormatacaoAsync(string acao)
+    {
+        var novoValor = await JS.InvokeAsync<string?>("bqToolbarAction", "enunciado-textarea", acao);
+        if (novoValor is not null)
+        {
+            modelo.Enunciado = novoValor;
+        }
+    }
+
+    private void AdicionarTag()
+    {
+        var nome = novaTag.Trim();
+        if (nome.Length == 0)
+        {
+            return;
+        }
+        if (!modelo.Tags.Any(t => string.Equals(t, nome, StringComparison.OrdinalIgnoreCase)))
+        {
+            modelo.Tags.Add(nome);
+        }
+        novaTag = "";
+    }
+
+    private void RemoverTag(string nome) => modelo.Tags.Remove(nome);
+
+    // Enter adiciona a tag sem submeter o formulário inteiro (o campo de tag
+    // não é o botão "Salvar" — sem o PreventDefault, Enter aqui recarregaria
+    // a página tentando dar submit no EditForm).
+    private void AoTeclarNaTag(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AdicionarTag();
+        }
+    }
+
+    private async Task OnImagensSelecionadasAsync(InputFileChangeEventArgs e)
+    {
+        erroImagem = null;
+        foreach (var arquivo in e.GetMultipleFiles(10))
+        {
+            if (arquivo.Size > TamanhoMaximoImagem)
+            {
+                erroImagem = $"\"{arquivo.Name}\" passa de 5 MB e foi ignorado.";
+                continue;
+            }
+
+            using var ms = new MemoryStream();
+            await arquivo.OpenReadStream(TamanhoMaximoImagem).CopyToAsync(ms);
+            pendentes.Add(new PendenteImagem
+            {
+                NomeArquivo = arquivo.Name,
+                ContentType = string.IsNullOrWhiteSpace(arquivo.ContentType) ? "application/octet-stream" : arquivo.ContentType,
+                Conteudo = ms.ToArray(),
+            });
+        }
+    }
+
+    private void AdicionarAlternativa()
+    {
+        if (modelo.Alternativas.Count < 8)
+        {
+            modelo.Alternativas.Add(new AlternativaInput());
+        }
+    }
+
+    private void RemoverAlternativa(int idx)
+    {
+        if (modelo.Alternativas.Count <= 2)
+        {
+            return;
+        }
+        modelo.Alternativas.RemoveAt(idx);
+        if (modelo.RespostaCorretaIndex >= modelo.Alternativas.Count)
+        {
+            modelo.RespostaCorretaIndex = modelo.Alternativas.Count - 1;
+        }
+    }
+
+    private static string LetraDaAlternativa(int idx) => ((char)('A' + idx)).ToString();
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+        modelo.ItemMatrizIds = itemMatrizIdsSelecionados.ToList();
+
+        try
+        {
+            if (Id is null)
+            {
+                await QuestaoService.CriarAsync(modelo, pendentes, meuId, minhaInstituicaoId);
+            }
+            else
+            {
+                await QuestaoService.AtualizarAsync(Id.Value, modelo, imagensExistentes, imagensParaRemover, pendentes, meuId, minhaInstituicaoId);
+            }
+
+            NavigationManager.NavigateTo($"questoes?msg={Uri.EscapeDataString("Questão salva com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    // QuestaoInput, AlternativaInput, ParAssociacaoInput, LacunaInput e
+    // PendenteImagem agora moram em Services/QuestaoInput.cs — QuestaoService
+    // é quem valida e monta a Questao a partir deles, então fazia sentido
+    // esses tipos serem públicos e viverem ao lado do Service.
+}

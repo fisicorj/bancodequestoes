@@ -1,0 +1,250 @@
+@page "/matrizes/novo"
+@page "/matrizes/editar/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BancoQuestoes.Models
+@inject MatrizReferenciaService MatrizService
+@inject CursoService CursoService
+@inject AreaCursoService AreaCursoService
+@inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>@(Id is null ? "Nova matriz de referência" : "Editar matriz de referência")</PageTitle>
+
+<h1>@(Id is null ? "Nova matriz de referência" : "Editar matriz de referência")</h1>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-7">
+            <div class="form-card">
+                <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="form-floating mb-3">
+                                <InputSelect @bind-Value="modelo.Tipo" id="Tipo" class="form-select">
+                                    @foreach (var t in Enum.GetValues<TipoMatrizReferencia>())
+                                    {
+                                        <option value="@t">@t.Rotulo()</option>
+                                    }
+                                </InputSelect>
+                                <label for="Tipo">Tipo</label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="form-floating mb-3">
+                                <InputSelect @bind-Value="modelo.Status" id="Status" class="form-select">
+                                    @foreach (var s in Enum.GetValues<StatusMatrizReferencia>())
+                                    {
+                                        <option value="@s">@s.Rotulo()</option>
+                                    }
+                                </InputSelect>
+                                <label for="Status">Status</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (modelo.Tipo.EhEscopoNacional())
+                    {
+                        <div class="form-floating mb-3">
+                            <InputSelect @bind-Value="modelo.AreaCursoId" id="AreaCursoId" class="form-select" disabled="@(Id is not null)">
+                                <option value="">Selecione...</option>
+                                @foreach (var a in areasCurso)
+                                {
+                                    <option value="@a.Id">@a.Nome</option>
+                                }
+                            </InputSelect>
+                            <label for="AreaCursoId">Área de Curso</label>
+                        </div>
+                        <p class="form-text text-muted mt-n2 mb-3">
+                            ENADE/DCN são documentos nacionais do MEC/INEP — não pertencem a um curso de uma
+                            instituição específica. Escolha a Área de Curso (ex.: "Engenharia de Computação"); a
+                            matriz fica automaticamente disponível pra qualquer curso, de qualquer instituição, que
+                            aponte pra essa mesma área. <a href="areas-curso">Gerenciar áreas de curso</a>.
+                        </p>
+                    }
+                    else
+                    {
+                        <div class="form-floating mb-3">
+                            <InputSelect @bind-Value="modelo.CursoId" id="CursoId" class="form-select" disabled="@(Id is not null)">
+                                <option value="0">Selecione...</option>
+                                @foreach (var c in cursos)
+                                {
+                                    <option value="@c.Id">@c.Nome (@c.Instituicao?.Nome)</option>
+                                }
+                            </InputSelect>
+                            <label for="CursoId">Curso</label>
+                        </div>
+                    }
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Nome" id="Nome" class="form-control" placeholder="Nome" />
+                        <label for="Nome">Nome (ex.: "ENADE 2023")</label>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="form-floating mb-3">
+                                <InputNumber @bind-Value="modelo.Ano" id="Ano" class="form-control" placeholder="Ano" />
+                                <label for="Ano">Ano</label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="form-floating mb-3">
+                                <InputText @bind-Value="modelo.Edicao" id="Edicao" class="form-control" placeholder="Edição" />
+                                <label for="Edicao">Edição (opcional)</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Orgao" id="Orgao" class="form-control" placeholder="Órgão" />
+                        <label for="Orgao">Órgão (ex.: "INEP", "MEC")</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Documento" id="Documento" class="form-control" placeholder="Documento normativo" />
+                        <label for="Documento">Documento normativo (ex.: "Portaria nº 279/2023")</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.UrlFonte" id="UrlFonte" class="form-control" placeholder="URL da fonte oficial" />
+                        <label for="UrlFonte">URL da fonte oficial (opcional)</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputTextArea @bind-Value="modelo.Descricao" id="Descricao" class="form-control" placeholder="Descrição" style="height:100px" />
+                        <label for="Descricao">Descrição / observações (opcional)</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <a href="@LinkVoltar()" class="btn btn-link">Cancelar</a>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    [SupplyParameterFromQuery(Name = "cursoId")]
+    private int? CursoIdInicial { get; set; }
+
+    private MatrizReferenciaInput modelo = new();
+    private List<Curso> cursos = new();
+    private List<AreaCurso> areasCurso = new();
+    private bool carregando;
+    private string? erro;
+
+    private string? meuId;
+    private int? minhaInstituicaoId;
+    private bool ehAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        carregando = true;
+
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        ehAdmin = authState.User.IsInRole("Admin");
+        minhaInstituicaoId = await MatrizService.ObterInstituicaoDoUsuarioAsync(meuId);
+
+        cursos = ehAdmin
+            ? await CursoService.ListarTodosAsync()
+            : await CursoService.ListarPorInstituicaoAsync(minhaInstituicaoId);
+        areasCurso = await AreaCursoService.ListarAtivasAsync();
+
+        if (Id is not null)
+        {
+            // Sobrecarga autorizada (item 8/9): devolve null tanto pra id
+            // inexistente quanto pra matriz sem acesso de leitura (curso de
+            // outra instituição) — ataque nomeado no pedido:
+            // "/matrizes/editar/123" de outra instituição. Matriz nacional
+            // (AreaCursoId) é de leitura aberta — ver
+            // MatrizReferenciaService.TemAcessoDeLeituraAsync.
+            var matriz = await MatrizService.ObterAsync(Id.Value, minhaInstituicaoId, ehAdmin);
+            if (matriz is null)
+            {
+                erro = "Matriz de referência não encontrada.";
+            }
+            else
+            {
+                modelo = new MatrizReferenciaInput
+                {
+                    CursoId = matriz.CursoId ?? 0,
+                    AreaCursoId = matriz.AreaCursoId,
+                    Nome = matriz.Nome,
+                    Tipo = matriz.Tipo,
+                    Ano = matriz.Ano,
+                    Edicao = matriz.Edicao,
+                    Orgao = matriz.Orgao,
+                    Documento = matriz.Documento,
+                    UrlFonte = matriz.UrlFonte,
+                    Descricao = matriz.Descricao,
+                    Status = matriz.Status,
+                };
+            }
+        }
+        else if (CursoIdInicial is int cid)
+        {
+            modelo.CursoId = cid;
+
+            // O Tipo padrão do formulário (ver MatrizReferenciaInput) é
+            // ENADE, que é de escopo nacional — pré-preenche a Área de Curso
+            // com a do curso de origem, se ele já tiver uma escolhida (ver
+            // Curso.AreaCursoId), pra o professor não precisar escolher de
+            // novo algo que o curso já sabe. Sem área no curso, o seletor
+            // fica vazio e o professor escolhe manualmente (ou troca o Tipo
+            // pra um institucional, que usa o Curso pré-selecionado acima).
+            var curso = await CursoService.ObterAsync(cid);
+            modelo.AreaCursoId = curso?.AreaCursoId;
+        }
+
+        carregando = false;
+    }
+
+    // Pra onde "Cancelar"/o redirecionamento pós-salvar leva — matriz
+    // institucional volta pras matrizes DO CURSO (como sempre foi); matriz
+    // nacional não tem "o curso" (pode servir vários ao mesmo tempo), então
+    // volta pra listagem geral de matrizes.
+    private string LinkVoltar() =>
+        modelo.Tipo.EhEscopoNacional() ? "matrizes" : $"matrizes/{modelo.CursoId}";
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+
+        try
+        {
+            if (Id is null)
+            {
+                await MatrizService.CriarAsync(modelo, minhaInstituicaoId, ehAdmin);
+            }
+            else
+            {
+                await MatrizService.AtualizarAsync(Id.Value, modelo, minhaInstituicaoId, ehAdmin);
+            }
+
+            NavigationManager.NavigateTo($"{LinkVoltar()}?msg={Uri.EscapeDataString($"\"{modelo.Nome}\" salva com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

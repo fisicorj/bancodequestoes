@@ -1,0 +1,223 @@
+@page "/questoes/importar"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BancoQuestoes.Importacao
+@inject ImportacaoService ImportacaoService
+@inject DisciplinaService DisciplinaService
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Importar questões</PageTitle>
+
+<h1>Importar questões</h1>
+<p class="text-muted">Cole o texto no formato Aiken ou GIFT (ou envie um arquivo .txt), escolha o assunto de destino e confira a pré-visualização antes de importar.</p>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="form-card mb-3">
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <div class="form-floating">
+                <select class="form-select" id="Formato" @bind="formato">
+                    <option value="Aiken">Aiken</option>
+                    <option value="Gift">GIFT</option>
+                </select>
+                <label for="Formato">Formato</label>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-floating">
+                <select class="form-select" id="AssuntoId" @bind="assuntoId">
+                    <option value="0">Selecione...</option>
+                    @foreach (var a in assuntos)
+                    {
+                        <option value="@a.Id">@a.Disciplina?.Nome / @a.Nome</option>
+                    }
+                </select>
+                <label for="AssuntoId">Assunto de destino</label>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="form-floating">
+                <select class="form-select" id="Dificuldade" @bind="dificuldade">
+                    <option value="@Dificuldade.Facil">Fácil</option>
+                    <option value="@Dificuldade.Media">Média</option>
+                    <option value="@Dificuldade.Dificil">Difícil</option>
+                </select>
+                <label for="Dificuldade">Dificuldade (aplicada a todas)</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Arquivo .txt (opcional — ou cole o texto abaixo)</label>
+        <InputFile OnChange="OnArquivoSelecionadoAsync" accept=".txt" class="form-control" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Texto</label>
+        <textarea class="form-control" style="height: 220px; font-family: monospace;" @bind="textoOriginal" placeholder="Cole aqui o conteúdo no formato Aiken ou GIFT..."></textarea>
+    </div>
+
+    <button type="button" class="btn btn-primary" @onclick="Analisar" disabled="@(string.IsNullOrWhiteSpace(textoOriginal))">Analisar</button>
+</div>
+
+@if (resultado is not null)
+{
+    @if (resultado.Erros.Count > 0)
+    {
+        <div class="alert alert-warning">
+            <strong>@resultado.Erros.Count trecho(s) não reconhecido(s):</strong>
+            <ul class="mb-0">
+                @foreach (var e in resultado.Erros)
+                {
+                    <li>@e</li>
+                }
+            </ul>
+        </div>
+    }
+
+    @if (resultado.Questoes.Count == 0)
+    {
+        <p><em>Nenhuma questão importável foi reconhecida.</em></p>
+    }
+    else
+    {
+        <h5>Pré-visualização (@resultado.Questoes.Count questão(ões) reconhecida(s))</h5>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th style="width:40px;"></th>
+                    <th>Enunciado</th>
+                    <th>Tipo</th>
+                    <th>Detalhe</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var q in resultado.Questoes)
+                {
+                    <tr>
+                        <td><input type="checkbox" class="form-check-input" @bind="q.Selecionada" /></td>
+                        <td>
+                            @Truncar(q.Enunciado)
+                            @if (q.Aviso is not null)
+                            {
+                                <div class="text-warning small">⚠ @q.Aviso</div>
+                            }
+                        </td>
+                        <td>@RotuloTipo(q.Tipo)</td>
+                        <td class="small text-muted">@Detalhe(q)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (sucesso is not null)
+        {
+            <div class="alert alert-success">@sucesso</div>
+        }
+
+        <button type="button" class="btn btn-success" @onclick="ImportarAsync" disabled="@(assuntoId == 0 || !resultado.Questoes.Any(q => q.Selecionada))">
+            Importar selecionadas (@resultado.Questoes.Count(q => q.Selecionada))
+        </button>
+        @if (assuntoId == 0)
+        {
+            <span class="text-danger small ms-2">Selecione o assunto de destino acima.</span>
+        }
+    }
+}
+
+<p class="mt-3"><a href="questoes">Voltar para questões</a></p>
+
+@code {
+    private string formato = "Aiken";
+    private int assuntoId;
+    private Dificuldade dificuldade = Dificuldade.Media;
+    private string textoOriginal = "";
+    private List<Assunto> assuntos = new();
+    private ResultadoImportacao? resultado;
+    private string? erro;
+    private string? sucesso;
+
+    protected override async Task OnInitializedAsync()
+    {
+        assuntos = await DisciplinaService.ListarTodosAssuntosAsync();
+    }
+
+    private async Task OnArquivoSelecionadoAsync(InputFileChangeEventArgs e)
+    {
+        erro = null;
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(2 * 1024 * 1024)); // até 2 MB
+            textoOriginal = await reader.ReadToEndAsync();
+        }
+        catch (Exception)
+        {
+            erro = "Não foi possível ler o arquivo (verifique se é um .txt de até 2 MB).";
+        }
+    }
+
+    private void Analisar()
+    {
+        erro = null;
+        sucesso = null;
+        resultado = ImportacaoService.Analisar(textoOriginal, formato);
+    }
+
+    private async Task ImportarAsync()
+    {
+        if (resultado is null || assuntoId == 0)
+        {
+            return;
+        }
+
+        erro = null;
+
+        try
+        {
+            var authState = await AuthProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            var importadas = await ImportacaoService.ImportarAsync(resultado, assuntoId, dificuldade, userId);
+
+            NavigationManager.NavigateTo($"questoes?msg={Uri.EscapeDataString($"{importadas} questão(ões) importada(s) com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private static string Truncar(string texto) => texto.Length > 90 ? texto[..90] + "..." : texto;
+
+    private static string RotuloTipo(TipoQuestao tipo) => tipo switch
+    {
+        TipoQuestao.MultiplaEscolha => "Múltipla escolha",
+        TipoQuestao.CertoErrado => "Certo/Errado",
+        TipoQuestao.RespostaBreve => "Resposta breve",
+        TipoQuestao.Numerica => "Numérica",
+        TipoQuestao.Associacao => "Associação",
+        _ => tipo.ToString(),
+    };
+
+    private static string Detalhe(QuestaoImportada q) => q.Tipo switch
+    {
+        TipoQuestao.MultiplaEscolha => $"{q.Alternativas.Count} alternativas, correta: {LetraCorreta(q.Alternativas)}",
+        TipoQuestao.CertoErrado => q.RespostaCertoErrado == true ? "Certo" : "Errado",
+        TipoQuestao.RespostaBreve => $"Resposta: {q.RespostaBreveEsperada}",
+        TipoQuestao.Numerica => $"Resposta: {q.NumericaEsperada} (±{q.NumericaTolerancia})",
+        TipoQuestao.Associacao => $"{q.Pares.Count} pares",
+        _ => "",
+    };
+
+    private static string LetraCorreta(List<AlternativaImportada> alternativas)
+    {
+        var idx = alternativas.FindIndex(a => a.Correta);
+        return idx < 0 ? "—" : ((char)('A' + idx)).ToString();
+    }
+}

@@ -1,0 +1,178 @@
+@page "/turmas"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject CursoService CursoService
+@inject DisciplinaService DisciplinaService
+@inject IJSRuntime JS
+
+<PageTitle>Turmas</PageTitle>
+
+<h1>Turmas</h1>
+
+<p>
+    <a class="btn btn-primary" href="turmas/novo">+ Nova turma</a>
+</p>
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
+    <div class="col-12 col-md-4">
+        <label class="form-label small mb-1">Buscar por nome</label>
+        <input type="text" class="form-control" placeholder="Digite para buscar..."
+               @bind="filtroTexto" @bind:event="oninput" @bind:after="AplicarFiltroAsync" />
+    </div>
+    <div class="col-6 col-md-4">
+        <label class="form-label small mb-1">Curso</label>
+        <select class="form-select" @bind="filtroCursoId" @bind:after="AplicarFiltroAsync">
+            <option value="0">Todos</option>
+            @foreach (var c in cursos)
+            {
+                <option value="@c.Id">@c.Instituicao?.Nome / @c.Nome</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Disciplina</label>
+        <select class="form-select" @bind="filtroDisciplinaId" @bind:after="AplicarFiltroAsync">
+            <option value="0">Todas</option>
+            @foreach (var d in disciplinas)
+            {
+                <option value="@d.Id">@d.Nome</option>
+            }
+        </select>
+    </div>
+    <div class="col-12 col-md-1">
+        <button type="button" class="btn btn-sm btn-outline-secondary w-100" @onclick="LimparFiltrosAsync">Limpar</button>
+    </div>
+</div>
+
+@if (turmas is null)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (turmas.Count == 0)
+{
+    <p><em>Nenhuma turma encontrada com os filtros atuais.</em></p>
+}
+else
+{
+    <p class="text-muted small">
+        Mostrando @((pagina - 1) * TamanhoPagina + 1)–@((pagina - 1) * TamanhoPagina + turmas.Count) de @totalRegistros turma(s).
+    </p>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Turma</th>
+                <th>Disciplina</th>
+                <th>Curso</th>
+                <th>Instituição</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var t in turmas)
+            {
+                <tr>
+                    <td>@t.Rotulo</td>
+                    <td>@t.Disciplina?.Nome</td>
+                    <td>@t.Curso?.Nome</td>
+                    <td>@t.Curso?.Instituicao?.Nome</td>
+                    <td>
+                        <a class="btn btn-sm btn-secondary" href="@($"turmas/editar/{t.Id}")">Editar</a>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(t)">Excluir</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <Paginacao Pagina="pagina" TamanhoPagina="TamanhoPagina" TotalRegistros="totalRegistros" PaginaChanged="MudarPaginaAsync" />
+}
+
+@code {
+    private List<Turma>? turmas;
+    private List<Curso> cursos = new();
+    private List<Disciplina> disciplinas = new();
+    private string? erro;
+    private string? sucesso;
+
+    private string filtroTexto = "";
+    private int filtroCursoId;
+    private int filtroDisciplinaId;
+
+    private const int TamanhoPagina = 20;
+    private int pagina = 1;
+    private int totalRegistros;
+
+    [SupplyParameterFromQuery(Name = "msg")]
+    private string? Msg { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        sucesso = Msg;
+        cursos = await CursoService.ListarTodosAsync();
+        disciplinas = await DisciplinaService.ListarTodasAsync();
+        await CarregarAsync();
+    }
+
+    private async Task AplicarFiltroAsync()
+    {
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task LimparFiltrosAsync()
+    {
+        filtroTexto = "";
+        filtroCursoId = 0;
+        filtroDisciplinaId = 0;
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task MudarPaginaAsync(int novaPagina)
+    {
+        pagina = novaPagina;
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        var resultado = await CursoService.ListarTurmasAsync(filtroTexto, filtroCursoId, filtroDisciplinaId, pagina, TamanhoPagina);
+        turmas = resultado.Itens;
+        totalRegistros = resultado.Total;
+    }
+
+    private async Task ConfirmarExcluirAsync(Turma t)
+    {
+        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir a turma \"{t.Rotulo}\"? Essa ação não pode ser desfeita.");
+        if (confirmado)
+        {
+            await ExcluirAsync(t);
+        }
+    }
+
+    private async Task ExcluirAsync(Turma t)
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await CursoService.ExcluirTurmaAsync(t);
+            sucesso = $"\"{t.Rotulo}\" excluída com sucesso.";
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

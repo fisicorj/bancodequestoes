@@ -1,0 +1,211 @@
+@page "/areas-curso"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using BancoQuestoes.Models
+@inject AreaCursoService AreaCursoService
+@inject IJSRuntime JS
+
+<PageTitle>Áreas de Curso</PageTitle>
+
+<h1>Áreas de Curso</h1>
+<p class="text-muted">
+    Catálogo NACIONAL de área de curso (ex.: "Engenharia de Computação", "Análise e Desenvolvimento de Sistemas") —
+    é o que permite uma matriz ENADE/DCN cadastrada uma única vez ser compartilhada por vários cursos, de várias
+    instituições, sem precisar ser recadastrada em cada um. Não confundir com <a href="cursos">Curso</a>, que
+    continua sendo específico de uma instituição — em <a href="cursos">Cursos</a> você escolhe a Área de Curso que o
+    curso da sua instituição representa.
+</p>
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<p>
+    <button type="button" class="btn btn-primary" @onclick="AbrirNova">+ Nova área de curso</button>
+</p>
+
+@if (mostrarFormNovo)
+{
+    <div class="form-card mb-4">
+        <h6>Nova área de curso</h6>
+        <EditForm Model="novaArea" OnValidSubmit="CriarAsync">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label small">Nome</label>
+                    <InputText @bind-Value="novaArea.Nome" class="form-control" placeholder="ex.: Engenharia de Computação" />
+                </div>
+                <div class="col-md-3 d-flex align-items-center">
+                    <div class="form-check">
+                        <InputCheckbox @bind-Value="novaArea.Ativo" class="form-check-input" id="novaAtivo" />
+                        <label class="form-check-label" for="novaAtivo">Ativa</label>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-success w-100">Salvar</button>
+                </div>
+            </div>
+            <button type="button" class="btn btn-link btn-sm mt-2 px-0" @onclick="() => mostrarFormNovo = false">Cancelar</button>
+        </EditForm>
+    </div>
+}
+
+@if (areas is null)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (areas.Count == 0)
+{
+    <p><em>Nenhuma área de curso cadastrada ainda.</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th style="width:120px">Status</th>
+                <th style="width:260px"></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var a in areas)
+            {
+                @if (editandoId == a.Id)
+                {
+                    <tr>
+                        <td><InputText @bind-Value="areaEditada!.Nome" class="form-control form-control-sm" /></td>
+                        <td>
+                            <div class="form-check">
+                                <InputCheckbox @bind-Value="areaEditada!.Ativo" class="form-check-input" id="@($"ativo{a.Id}")" />
+                                <label class="form-check-label small" for="@($"ativo{a.Id}")">Ativa</label>
+                            </div>
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-success" @onclick="SalvarEdicaoAsync">Salvar</button>
+                            <button class="btn btn-sm btn-link" @onclick="() => editandoId = null">Cancelar</button>
+                        </td>
+                    </tr>
+                }
+                else
+                {
+                    <tr class="@(a.Ativo ? "" : "text-muted")">
+                        <td>@a.Nome</td>
+                        <td>
+                            @if (a.Ativo)
+                            {
+                                <span class="badge text-bg-success">Ativa</span>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-secondary">Inativa</span>
+                            }
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => AbrirEdicao(a)">Editar</button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(a)">Excluir</button>
+                        </td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<AreaCurso>? areas;
+    private string? erro;
+    private string? sucesso;
+
+    private bool mostrarFormNovo;
+    private AreaCursoInput novaArea = new();
+
+    private int? editandoId;
+    private AreaCursoInput? areaEditada;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        areas = await AreaCursoService.ListarTodasAsync();
+    }
+
+    private void AbrirNova()
+    {
+        novaArea = new AreaCursoInput();
+        mostrarFormNovo = true;
+    }
+
+    private async Task CriarAsync()
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await AreaCursoService.CriarAsync(novaArea);
+            sucesso = $"\"{novaArea.Nome}\" criada com sucesso.";
+            mostrarFormNovo = false;
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private void AbrirEdicao(AreaCurso area)
+    {
+        editandoId = area.Id;
+        areaEditada = new AreaCursoInput { Nome = area.Nome, Ativo = area.Ativo };
+    }
+
+    private async Task SalvarEdicaoAsync()
+    {
+        if (editandoId is null || areaEditada is null)
+        {
+            return;
+        }
+
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await AreaCursoService.AtualizarAsync(editandoId.Value, areaEditada);
+            sucesso = "Área de curso atualizada com sucesso.";
+            editandoId = null;
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private async Task ConfirmarExcluirAsync(AreaCurso a)
+    {
+        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir a área de curso \"{a.Nome}\"? Essa ação não pode ser desfeita. Se ela ainda tiver cursos ou matrizes vinculados, considere desativá-la em vez de excluir.");
+        if (confirmado)
+        {
+            erro = null;
+            sucesso = null;
+            try
+            {
+                await AreaCursoService.ExcluirAsync(a);
+                sucesso = $"\"{a.Nome}\" excluída com sucesso.";
+                await CarregarAsync();
+            }
+            catch (OperacaoInvalidaException ex)
+            {
+                erro = ex.Message;
+            }
+        }
+    }
+}

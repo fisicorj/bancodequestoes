@@ -1,0 +1,194 @@
+@page "/instituicoes/novo"
+@page "/instituicoes/editar/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject InstituicaoService InstituicaoService
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(Id is null ? "Nova instituição" : "Editar instituição")</PageTitle>
+
+<h1>@(Id is null ? "Nova instituição" : "Editar instituição")</h1>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <div class="row">
+    <div class="col-md-7">
+    <div class="form-card">
+    <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+        <DataAnnotationsValidator />
+        <ValidationSummary class="text-danger" />
+
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="modelo.Nome" id="Nome" class="form-control" placeholder="Nome" />
+            <label for="Nome">Nome</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="modelo.Endereco" id="Endereco" class="form-control" placeholder="Endereço" />
+            <label for="Endereco">Endereço (opcional)</label>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6">
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="modelo.Cidade" id="Cidade" class="form-control" placeholder="Cidade" />
+                    <label for="Cidade">Cidade (opcional)</label>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="form-floating mb-3">
+                    <InputText @bind-Value="modelo.Telefone" id="Telefone" class="form-control" placeholder="Telefone" />
+                    <label for="Telefone">Telefone (opcional)</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputText @bind-Value="modelo.Site" id="Site" class="form-control" placeholder="Site" />
+            <label for="Site">Site (opcional)</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputSelect @bind-Value="modelo.SistemaPeriodos" id="SistemaPeriodos" class="form-select">
+                <option value="">Selecione...</option>
+                <option value="@SistemaPeriodos.Semestral">@SistemaPeriodos.Semestral.Rotulo()</option>
+                <option value="@SistemaPeriodos.SemestralComBimestres">@SistemaPeriodos.SemestralComBimestres.Rotulo()</option>
+            </InputSelect>
+            <label for="SistemaPeriodos">Sistema de períodos</label>
+        </div>
+
+        <div class="form-floating mb-3">
+            <InputTextArea @bind-Value="modelo.Instrucoes" id="Instrucoes" class="form-control" style="height: 140px;" placeholder="Instruções" />
+            <label for="Instrucoes">Instruções da prova (opcional, uma por linha)</label>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label d-block">Logo</label>
+            @if (logoAtual is not null && !removerLogo)
+            {
+                <div class="mb-2">
+                    <img src="@($"instituicoes/logo/{Id}")" style="max-height:100px;" alt="Logo atual" />
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline-danger mt-1" @onclick="() => removerLogo = true">Remover logo</button>
+                    </div>
+                </div>
+            }
+            @if (logoNova is not null)
+            {
+                <div class="mb-2">
+                    <img src="@($"data:{logoNova.ContentType};base64,{Convert.ToBase64String(logoNova.Conteudo)}")" style="max-height:100px;" alt="Nova logo" />
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline-danger mt-1" @onclick="() => logoNova = null">Cancelar nova logo</button>
+                    </div>
+                </div>
+            }
+            @if (erroLogo is not null)
+            {
+                <div class="alert alert-warning py-1">@erroLogo</div>
+            }
+            <InputFile OnChange="OnLogoSelecionadaAsync" accept="image/*" class="form-control" />
+        </div>
+
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <a href="instituicoes" class="btn btn-link">Cancelar</a>
+    </EditForm>
+    </div>
+    </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private const long TamanhoMaximoLogo = 2 * 1024 * 1024; // 2 MB
+
+    private InstituicaoInput modelo = new();
+    private bool carregando;
+    private string? erro;
+
+    private byte[]? logoAtual;
+    private bool removerLogo;
+    private LogoPendente? logoNova;
+    private string? erroLogo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Id is not null)
+        {
+            carregando = true;
+            var instituicao = await InstituicaoService.ObterAsync(Id.Value);
+            if (instituicao is null)
+            {
+                erro = "Instituição não encontrada.";
+            }
+            else
+            {
+                modelo = new InstituicaoInput
+                {
+                    Nome = instituicao.Nome,
+                    Endereco = instituicao.Endereco,
+                    Cidade = instituicao.Cidade,
+                    Telefone = instituicao.Telefone,
+                    Site = instituicao.Site,
+                    Instrucoes = instituicao.Instrucoes,
+                    SistemaPeriodos = instituicao.SistemaPeriodos,
+                };
+                logoAtual = instituicao.LogoConteudo;
+            }
+            carregando = false;
+        }
+    }
+
+    private async Task OnLogoSelecionadaAsync(InputFileChangeEventArgs e)
+    {
+        erroLogo = null;
+        var arquivo = e.File;
+        if (arquivo.Size > TamanhoMaximoLogo)
+        {
+            erroLogo = "A logo deve ter no máximo 2 MB.";
+            return;
+        }
+
+        using var ms = new MemoryStream();
+        await arquivo.OpenReadStream(TamanhoMaximoLogo).CopyToAsync(ms);
+        logoNova = new LogoPendente
+        {
+            ContentType = string.IsNullOrWhiteSpace(arquivo.ContentType) ? "application/octet-stream" : arquivo.ContentType,
+            Conteudo = ms.ToArray(),
+        };
+        removerLogo = false;
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+
+        try
+        {
+            if (Id is null)
+            {
+                await InstituicaoService.CriarAsync(modelo, logoNova);
+            }
+            else
+            {
+                await InstituicaoService.AtualizarAsync(Id.Value, modelo, logoNova, removerLogo);
+            }
+
+            NavigationManager.NavigateTo($"instituicoes?msg={Uri.EscapeDataString($"\"{modelo.Nome}\" salva com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

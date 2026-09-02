@@ -1,0 +1,34 @@
+@if (TotalRegistros > TamanhoPagina)
+{
+    <nav class="d-flex justify-content-between align-items-center mt-3">
+        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(Pagina <= 1)" @onclick="() => MudarPaginaAsync(Pagina - 1)">« Anterior</button>
+        <span class="text-muted small">Página @Pagina de @TotalPaginas (@TotalRegistros no total)</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(Pagina >= TotalPaginas)" @onclick="() => MudarPaginaAsync(Pagina + 1)">Próxima »</button>
+    </nav>
+}
+
+@code {
+    [Parameter]
+    public int Pagina { get; set; }
+
+    [Parameter]
+    public int TamanhoPagina { get; set; } = 20;
+
+    [Parameter]
+    public int TotalRegistros { get; set; }
+
+    [Parameter]
+    public EventCallback<int> PaginaChanged { get; set; }
+
+    private int TotalPaginas => Math.Max(1, (int)Math.Ceiling(TotalRegistros / (double)TamanhoPagina));
+
+    private async Task MudarPaginaAsync(int novaPagina)
+    {
+        if (novaPagina < 1 || novaPagina > TotalPaginas || novaPagina == Pagina)
+        {
+            return;
+        }
+
+        await PaginaChanged.InvokeAsync(novaPagina);
+    }
+}

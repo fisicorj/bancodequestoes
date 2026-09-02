@@ -1,0 +1,17 @@
+@page "/Account/Login"
+
+@using BancoQuestoes.Components.Account
+
+<PageTitle>Entrar</PageTitle>
+
+<div class="row justify-content-center mt-4">
+    <div class="col-12 col-sm-8 col-md-5 col-lg-4">
+        <h1 class="text-center mb-4">Entrar</h1>
+        <LoginForm ReturnUrl="@ReturnUrl" />
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+}

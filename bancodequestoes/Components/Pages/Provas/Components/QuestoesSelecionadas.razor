@@ -1,0 +1,89 @@
+<!--
+    Lista "Questoes da prova" (com drag-and-drop), extraida de ProvaForm.razor.
+
+    Reordenar (arrastar) so afeta a ordem de exibicao DESTA lista - nenhum
+    componente irmao le a ordem - entao dava pra mover a logica de arrastar
+    pra dentro daqui sem risco. Optei por manter em ProvaForm mesmo assim
+    (via EventCallback), pelo mesmo motivo de sempre neste projeto: um unico
+    padrao (ProvaForm dona de TODA a logica, componentes so avisam) em todo
+    canto, em vez de dois estilos diferentes de componente misturados no
+    mesmo arquivo - mais facil de revisar sem ter um compilador disponivel.
+
+    Adicionar/Substituir/Remover tem mesmo que voltar pra ProvaForm: qualquer
+    uma dessas acoes muda quem esta "disponivel" no componente irmao
+    BancoQuestoesSelector, entao a logica so pode morar em quem enxerga os
+    dois lados.
+
+    O input de Valor (o bind direto na propriedade Valor de "s") e uma
+    excecao segura: muta o objeto QuestaoSelecionada compartilhado direto,
+    sem EventCallback, porque o unico lugar que exibe a soma desses valores
+    (o "Total" logo abaixo) e esta mesma lista - nenhum componente irmao
+    depende disso.
+-->
+
+<h5>Questões da prova (@Selecionadas.Count)</h5>
+@if (Selecionadas.Count == 0)
+{
+    <p><em>Nenhuma questão adicionada ainda.</em></p>
+}
+@if (AvisoSubstituicao is not null)
+{
+    <div class="alert alert-warning py-1 small">@AvisoSubstituicao</div>
+}
+<ol class="list-group list-group-numbered mb-3">
+    @foreach (var s in Selecionadas.OrderBy(s => s.Ordem).ToList())
+    {
+        var questao = QuestoesPorId[s.QuestaoId];
+        <li class="list-group-item @(ReferenceEquals(Arrastando, s) ? "opacity-50" : "")" draggable="true" style="cursor: grab;"
+            @ondragstart="() => OnDragStart.InvokeAsync(s)"
+            @ondragover:preventDefault="true"
+            @ondrop="() => OnDrop.InvokeAsync(s)">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+                <div>
+                    <p class="mb-1">[@AbreviacaoTipo(questao.TipoQuestao)] @Truncar(questao.Enunciado)</p>
+                    <p class="mb-0 small text-muted">
+                        @questao.Assunto?.Nome · @questao.Dificuldade.Rotulo()@(questao.Bloom is { } bloomSel ? $" · {bloomSel.Rotulo()}" : "") · @(s.Valor is { } valorSel ? $"{valorSel:0.##} ponto(s)" : "sem valor definido")
+                    </p>
+                </div>
+                <input type="number" step="0.5" min="0" class="form-control form-control-sm" style="width:80px;" @bind="s.Valor" placeholder="Valor" />
+            </div>
+            <div class="d-flex align-items-center gap-2 mt-2">
+                <span class="text-muted" title="Arraste pra reordenar">⋮⋮</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => OnVisualizar.InvokeAsync(questao)">Visualizar</button>
+                <button type="button" class="btn btn-sm btn-outline-warning" @onclick="() => OnSubstituir.InvokeAsync(s)">🔄 Substituir</button>
+                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => OnRemover.InvokeAsync(s)">Remover</button>
+            </div>
+        </li>
+    }
+</ol>
+@if (Selecionadas.Count > 0)
+{
+    <p><strong>Total: @(Selecionadas.Sum(s => s.Valor ?? 0))</strong></p>
+}
+
+@code {
+    [Parameter] public List<QuestaoSelecionada> Selecionadas { get; set; } = new();
+    [Parameter] public Dictionary<int, Questao> QuestoesPorId { get; set; } = new();
+    [Parameter] public string? AvisoSubstituicao { get; set; }
+    [Parameter] public QuestaoSelecionada? Arrastando { get; set; }
+
+    [Parameter] public EventCallback<QuestaoSelecionada> OnDragStart { get; set; }
+    [Parameter] public EventCallback<QuestaoSelecionada> OnDrop { get; set; }
+    [Parameter] public EventCallback<Questao> OnVisualizar { get; set; }
+    [Parameter] public EventCallback<QuestaoSelecionada> OnSubstituir { get; set; }
+    [Parameter] public EventCallback<QuestaoSelecionada> OnRemover { get; set; }
+
+    private static string Truncar(string texto) => texto.Length > 70 ? texto[..70] + "..." : texto;
+
+    private static string AbreviacaoTipo(TipoQuestao tipo) => tipo switch
+    {
+        TipoQuestao.MultiplaEscolha => "ME",
+        TipoQuestao.Discursiva => "DI",
+        TipoQuestao.CertoErrado => "CE",
+        TipoQuestao.Associacao => "AS",
+        TipoQuestao.RespostaBreve => "RB",
+        TipoQuestao.Numerica => "NU",
+        TipoQuestao.Lacunas => "LA",
+        _ => "??",
+    };
+}

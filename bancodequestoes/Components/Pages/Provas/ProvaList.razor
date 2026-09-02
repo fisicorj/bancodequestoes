@@ -1,0 +1,202 @@
+@page "/provas"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@inject ProvaService ProvaService
+@inject DisciplinaService DisciplinaService
+@inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Provas</PageTitle>
+
+<h1>Provas</h1>
+
+<p class="text-muted">Só suas próprias provas aparecem aqui — cada professor vê e edita apenas o que criou.</p>
+
+<p>
+    <a class="btn btn-primary" href="provas/novo">+ Nova prova</a>
+</p>
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
+    <div class="col-12 col-md-6">
+        <label class="form-label small mb-1">Buscar por título</label>
+        <input type="text" class="form-control" placeholder="Digite para buscar..."
+               @bind="filtroTexto" @bind:event="oninput" @bind:after="AplicarFiltroAsync" />
+    </div>
+    <div class="col-8 col-md-4">
+        <label class="form-label small mb-1">Disciplina</label>
+        <select class="form-select" @bind="filtroDisciplinaId" @bind:after="AplicarFiltroAsync">
+            <option value="0">Todas</option>
+            @foreach (var d in disciplinas)
+            {
+                <option value="@d.Id">@d.Nome</option>
+            }
+        </select>
+    </div>
+    <div class="col-4 col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary w-100" @onclick="LimparFiltrosAsync">Limpar</button>
+    </div>
+</div>
+
+@if (provas is null)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (provas.Count == 0)
+{
+    <p><em>Nenhuma prova encontrada com os filtros atuais.</em></p>
+}
+else
+{
+    <p class="text-muted small">
+        Mostrando @((pagina - 1) * TamanhoPagina + 1)–@((pagina - 1) * TamanhoPagina + provas.Count) de @totalRegistros prova(s).
+    </p>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Título</th>
+                <th>Disciplina</th>
+                <th>Tipo</th>
+                <th>Turma</th>
+                <th>Questões</th>
+                <th>Aplicação</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var p in provas)
+            {
+                <tr>
+                    <td>@p.Titulo</td>
+                    <td>@p.Disciplina?.Nome</td>
+                    <td>@(p.Tipo is { } tipo ? tipo.Rotulo() : "—")</td>
+                    <td>@(p.Turma?.Rotulo ?? "—")</td>
+                    <td>@p.ProvaQuestoes.Count</td>
+                    <td>@(p.DataAplicacao is { } data ? data.ToString("dd/MM/yyyy") : p.CriadoEm.ToLocalTime().ToString("dd/MM/yyyy"))</td>
+                    <td>
+                        <a class="btn btn-sm btn-secondary" href="@($"provas/editar/{p.Id}")">Editar</a>
+                        <a class="btn btn-sm btn-outline-primary" href="@($"provas/{p.Id}/exportar.docx")">DOCX</a>
+                        <a class="btn btn-sm btn-outline-primary" href="@($"provas/{p.Id}/exportar.pdf")">PDF</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="@($"provas/{p.Id}/variacoes")">Variações</a>
+                        <a class="btn btn-sm btn-outline-secondary" href="@($"provas/{p.Id}/gabarito-comentado.docx")" title="Gabarito comentado (DOCX)"><i class="bi bi-file-earmark-word" aria-hidden="true"></i></a>
+                        <a class="btn btn-sm btn-outline-secondary" href="@($"provas/{p.Id}/gabarito-comentado.pdf")" title="Gabarito comentado (PDF)"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i></a>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => DuplicarAsync(p)">Duplicar</button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(p)">Excluir</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <Paginacao Pagina="pagina" TamanhoPagina="TamanhoPagina" TotalRegistros="totalRegistros" PaginaChanged="MudarPaginaAsync" />
+}
+
+@code {
+    private List<Prova>? provas;
+    private List<Disciplina> disciplinas = new();
+    private string? erro;
+    private string? sucesso;
+
+    private string filtroTexto = "";
+    private int filtroDisciplinaId;
+
+    private const int TamanhoPagina = 20;
+    private int pagina = 1;
+    private int totalRegistros;
+    private string? meuId;
+
+    [SupplyParameterFromQuery(Name = "msg")]
+    private string? Msg { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        sucesso = Msg;
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        disciplinas = await DisciplinaService.ListarTodasAsync();
+        await CarregarAsync();
+    }
+
+    private async Task AplicarFiltroAsync()
+    {
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task LimparFiltrosAsync()
+    {
+        filtroTexto = "";
+        filtroDisciplinaId = 0;
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task MudarPaginaAsync(int novaPagina)
+    {
+        pagina = novaPagina;
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        var filtro = new ProvaFiltro { Texto = filtroTexto, DisciplinaId = filtroDisciplinaId };
+        var resultado = await ProvaService.ListarAsync(filtro, meuId, pagina, TamanhoPagina);
+        provas = resultado.Itens;
+        totalRegistros = resultado.Total;
+    }
+
+    private async Task ConfirmarExcluirAsync(Prova p)
+    {
+        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir a prova \"{p.Titulo}\"? Essa ação não pode ser desfeita.");
+        if (confirmado)
+        {
+            await ExcluirAsync(p);
+        }
+    }
+
+    private async Task ExcluirAsync(Prova p)
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await ProvaService.ExcluirAsync(p);
+            sucesso = $"\"{p.Titulo}\" excluída com sucesso.";
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private async Task DuplicarAsync(Prova original)
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            var copia = await ProvaService.DuplicarAsync(original.Id, meuId);
+            sucesso = $"\"{copia.Titulo}\" criada com sucesso. Ajuste o que precisar.";
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+        catch (Exception)
+        {
+            erro = "Não foi possível duplicar essa prova.";
+        }
+    }
+}
