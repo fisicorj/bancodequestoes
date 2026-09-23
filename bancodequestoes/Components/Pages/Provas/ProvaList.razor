@@ -6,16 +6,15 @@
 @inject DisciplinaService DisciplinaService
 @inject IJSRuntime JS
 @inject AuthenticationStateProvider AuthProvider
+@inject ILogger<ProvaList> Logger
 
 <PageTitle>Provas</PageTitle>
 
-<h1>Provas</h1>
-
-<p class="text-muted">Só suas próprias provas aparecem aqui — cada professor vê e edita apenas o que criou.</p>
-
-<p>
-    <a class="btn btn-primary" href="provas/novo">+ Nova prova</a>
-</p>
+<PageHeader Titulo="Provas" Subtitulo="Só suas próprias provas aparecem aqui — cada professor vê e edita apenas o que criou.">
+    <Acao>
+        <a class="btn btn-primary" href="provas/novo">+ Nova prova</a>
+    </Acao>
+</PageHeader>
 
 @if (sucesso is not null)
 {
@@ -88,6 +87,7 @@ else
                         <a class="btn btn-sm btn-outline-primary" href="@($"provas/{p.Id}/exportar.docx")">DOCX</a>
                         <a class="btn btn-sm btn-outline-primary" href="@($"provas/{p.Id}/exportar.pdf")">PDF</a>
                         <a class="btn btn-sm btn-outline-secondary" href="@($"provas/{p.Id}/variacoes")">Variações</a>
+                        <a class="btn btn-sm btn-outline-primary" href="@($"aplicacoes-prova/novo?provaId={p.Id}")">Aplicar online</a>
                         <a class="btn btn-sm btn-outline-secondary" href="@($"provas/{p.Id}/gabarito-comentado.docx")" title="Gabarito comentado (DOCX)"><i class="bi bi-file-earmark-word" aria-hidden="true"></i></a>
                         <a class="btn btn-sm btn-outline-secondary" href="@($"provas/{p.Id}/gabarito-comentado.pdf")" title="Gabarito comentado (PDF)"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i></a>
                         <button class="btn btn-sm btn-outline-secondary" @onclick="() => DuplicarAsync(p)">Duplicar</button>
@@ -194,8 +194,9 @@ else
         {
             erro = ex.Message;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Falha ao duplicar prova {ProvaId}", original.Id);
             erro = "Não foi possível duplicar essa prova.";
         }
     }

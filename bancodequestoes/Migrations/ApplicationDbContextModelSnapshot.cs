@@ -47,6 +47,88 @@ namespace BancoQuestoes.Migrations
                     b.ToTable("AlternativasQuestao");
                 });
 
+            modelBuilder.Entity("BancoQuestoes.Models.Aluno", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativo")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("CriadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("InstituicaoId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Matricula")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Nome")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InstituicaoId");
+
+                    b.ToTable("Alunos");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.AplicacaoProva", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CodigoAcesso")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CriadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CriadoPorId")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DataLimite")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ProvaId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("TempoLimiteMinutos")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TurmaId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CodigoAcesso")
+                        .IsUnique();
+
+                    b.HasIndex("CriadoPorId");
+
+                    b.HasIndex("ProvaId");
+
+                    b.HasIndex("TurmaId");
+
+                    b.ToTable("AplicacoesProva");
+                });
+
             modelBuilder.Entity("BancoQuestoes.Models.ApplicationUser", b =>
                 {
                     b.Property<string>("Id")
@@ -172,6 +254,53 @@ namespace BancoQuestoes.Migrations
                     b.ToTable("Assuntos");
                 });
 
+            modelBuilder.Entity("BancoQuestoes.Models.ConfiguracaoIa", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ApiKeyNuvem")
+                        .HasColumnType("text");
+
+                    b.Property<string>("BaseUrlLocal")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("Habilitada")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("ModeloLocal")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModeloNuvem")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModeloVisaoLocal")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ModeloVisaoNuvem")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Modo")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("TimeoutSegundos")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TimeoutVisaoSegundos")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ConfiguracoesIa");
+                });
+
             modelBuilder.Entity("BancoQuestoes.Models.Curso", b =>
                 {
                     b.Property<int>("Id")
@@ -199,6 +328,39 @@ namespace BancoQuestoes.Migrations
                     b.ToTable("Cursos");
                 });
 
+            modelBuilder.Entity("BancoQuestoes.Models.CursoDisciplina", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Ativa")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("CargaHoraria")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CursoId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("DisciplinaId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("Semestre")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DisciplinaId");
+
+                    b.HasIndex("CursoId", "DisciplinaId")
+                        .IsUnique();
+
+                    b.ToTable("CursosDisciplinas");
+                });
+
             modelBuilder.Entity("BancoQuestoes.Models.Disciplina", b =>
                 {
                     b.Property<int>("Id")
@@ -206,6 +368,9 @@ namespace BancoQuestoes.Migrations
                         .HasColumnType("integer");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Codigo")
+                        .HasColumnType("text");
 
                     b.Property<string>("CriadoPorId")
                         .HasColumnType("text");
@@ -453,8 +618,14 @@ namespace BancoQuestoes.Migrations
                     b.Property<DateOnly?>("DataAplicacao")
                         .HasColumnType("date");
 
-                    b.Property<int>("DisciplinaId")
+                    b.Property<int?>("DisciplinaId")
                         .HasColumnType("integer");
+
+                    b.Property<int?>("MatrizReferenciaId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("MostrarValorNoEnunciado")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Observacoes")
                         .HasColumnType("text");
@@ -467,6 +638,12 @@ namespace BancoQuestoes.Migrations
 
                     b.Property<string>("Tipo")
                         .HasColumnType("text");
+
+                    b.Property<string>("TipoEscopo")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("Disciplina");
 
                     b.Property<string>("Titulo")
                         .IsRequired()
@@ -483,9 +660,38 @@ namespace BancoQuestoes.Migrations
 
                     b.HasIndex("DisciplinaId");
 
+                    b.HasIndex("MatrizReferenciaId");
+
                     b.HasIndex("TurmaId");
 
                     b.ToTable("Provas");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.ProvaDisciplina", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("DisciplinaId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("PercentualPlanejado")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ProvaId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DisciplinaId");
+
+                    b.HasIndex("ProvaId", "DisciplinaId")
+                        .IsUnique();
+
+                    b.ToTable("ProvasDisciplinas");
                 });
 
             modelBuilder.Entity("BancoQuestoes.Models.ProvaQuestao", b =>
@@ -541,14 +747,14 @@ namespace BancoQuestoes.Migrations
                     b.Property<string>("Bloom")
                         .HasColumnType("text");
 
+                    b.Property<string>("CodigoProvaOrigem")
+                        .HasColumnType("text");
+
                     b.Property<DateTime>("CriadoEm")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("CriadoPorId")
                         .HasColumnType("text");
-
-                    b.Property<int?>("CursoId")
-                        .HasColumnType("integer");
 
                     b.Property<string>("Dificuldade")
                         .IsRequired()
@@ -561,11 +767,17 @@ namespace BancoQuestoes.Migrations
                     b.Property<string>("Explicacao")
                         .HasColumnType("text");
 
+                    b.Property<string>("NumeroOriginal")
+                        .HasColumnType("text");
+
                     b.Property<string>("Origem")
                         .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("Referencia")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SecaoEnade")
                         .HasColumnType("text");
 
                     b.Property<string>("TipoQuestao")
@@ -582,11 +794,24 @@ namespace BancoQuestoes.Migrations
 
                     b.HasIndex("CriadoPorId");
 
-                    b.HasIndex("CursoId");
-
                     b.ToTable("Questoes", (string)null);
 
                     b.UseTptMappingStrategy();
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.QuestaoAreaCurso", b =>
+                {
+                    b.Property<int>("QuestaoId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("AreaCursoId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("QuestaoId", "AreaCursoId");
+
+                    b.HasIndex("AreaCursoId");
+
+                    b.ToTable("QuestoesAreasCurso", (string)null);
                 });
 
             modelBuilder.Entity("BancoQuestoes.Models.QuestaoHistorico", b =>
@@ -685,6 +910,115 @@ namespace BancoQuestoes.Migrations
                     b.ToTable("QuestoesItensMatriz", (string)null);
                 });
 
+            modelBuilder.Entity("BancoQuestoes.Models.RespostaLacunaOnline", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Correta")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Ordem")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RespostaQuestaoOnlineId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RespostaTexto")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RespostaQuestaoOnlineId");
+
+                    b.ToTable("RespostasLacunaOnline");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.RespostaProvaOnline", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AlunoId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("AplicacaoProvaId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("FinalizadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("IniciadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("LiberadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("MotivoEncerramento")
+                        .HasColumnType("text");
+
+                    b.Property<decimal?>("NotaTotal")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AlunoId");
+
+                    b.HasIndex("AplicacaoProvaId", "AlunoId")
+                        .IsUnique();
+
+                    b.ToTable("RespostasProvaOnline");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.RespostaQuestaoOnline", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<bool?>("Correta")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal?>("PontuacaoObtida")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("QuestaoId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool?>("RespostaCertoErrado")
+                        .HasColumnType("boolean");
+
+                    b.Property<char?>("RespostaMultiplaEscolha")
+                        .HasColumnType("character(1)");
+
+                    b.Property<decimal?>("RespostaNumerica")
+                        .HasColumnType("numeric");
+
+                    b.Property<int>("RespostaProvaOnlineId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuestaoId");
+
+                    b.HasIndex("RespostaProvaOnlineId");
+
+                    b.ToTable("RespostasQuestaoOnline");
+                });
+
             modelBuilder.Entity("BancoQuestoes.Models.Tag", b =>
                 {
                     b.Property<int>("Id")
@@ -752,6 +1086,36 @@ namespace BancoQuestoes.Migrations
                     b.HasIndex("DisciplinaId");
 
                     b.ToTable("Turmas");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.TurmaAluno", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AlunoId")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("Ativa")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("CriadoEm")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("TurmaId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AlunoId");
+
+                    b.HasIndex("TurmaId", "AlunoId")
+                        .IsUnique();
+
+                    b.ToTable("TurmasAlunos");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -984,6 +1348,41 @@ namespace BancoQuestoes.Migrations
                     b.Navigation("Questao");
                 });
 
+            modelBuilder.Entity("BancoQuestoes.Models.Aluno", b =>
+                {
+                    b.HasOne("BancoQuestoes.Models.Instituicao", "Instituicao")
+                        .WithMany()
+                        .HasForeignKey("InstituicaoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Instituicao");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.AplicacaoProva", b =>
+                {
+                    b.HasOne("BancoQuestoes.Models.ApplicationUser", "CriadoPor")
+                        .WithMany()
+                        .HasForeignKey("CriadoPorId");
+
+                    b.HasOne("BancoQuestoes.Models.Prova", "Prova")
+                        .WithMany()
+                        .HasForeignKey("ProvaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BancoQuestoes.Models.Turma", "Turma")
+                        .WithMany()
+                        .HasForeignKey("TurmaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CriadoPor");
+
+                    b.Navigation("Prova");
+
+                    b.Navigation("Turma");
+                });
+
             modelBuilder.Entity("BancoQuestoes.Models.ApplicationUser", b =>
                 {
                     b.HasOne("BancoQuestoes.Models.Instituicao", "Instituicao")
@@ -999,7 +1398,7 @@ namespace BancoQuestoes.Migrations
                     b.HasOne("BancoQuestoes.Models.Disciplina", "Disciplina")
                         .WithMany("Assuntos")
                         .HasForeignKey("DisciplinaId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Disciplina");
@@ -1010,7 +1409,7 @@ namespace BancoQuestoes.Migrations
                     b.HasOne("BancoQuestoes.Models.AreaCurso", "AreaCurso")
                         .WithMany()
                         .HasForeignKey("AreaCursoId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("BancoQuestoes.Models.Instituicao", "Instituicao")
                         .WithMany()
@@ -1021,6 +1420,25 @@ namespace BancoQuestoes.Migrations
                     b.Navigation("AreaCurso");
 
                     b.Navigation("Instituicao");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.CursoDisciplina", b =>
+                {
+                    b.HasOne("BancoQuestoes.Models.Curso", "Curso")
+                        .WithMany()
+                        .HasForeignKey("CursoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BancoQuestoes.Models.Disciplina", "Disciplina")
+                        .WithMany()
+                        .HasForeignKey("DisciplinaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Curso");
+
+                    b.Navigation("Disciplina");
                 });
 
             modelBuilder.Entity("BancoQuestoes.Models.Disciplina", b =>
@@ -1096,8 +1514,12 @@ namespace BancoQuestoes.Migrations
                     b.HasOne("BancoQuestoes.Models.Disciplina", "Disciplina")
                         .WithMany()
                         .HasForeignKey("DisciplinaId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("BancoQuestoes.Models.MatrizReferencia", "MatrizReferencia")
+                        .WithMany()
+                        .HasForeignKey("MatrizReferenciaId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("BancoQuestoes.Models.Turma", "Turma")
                         .WithMany()
@@ -1110,7 +1532,28 @@ namespace BancoQuestoes.Migrations
 
                     b.Navigation("Disciplina");
 
+                    b.Navigation("MatrizReferencia");
+
                     b.Navigation("Turma");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.ProvaDisciplina", b =>
+                {
+                    b.HasOne("BancoQuestoes.Models.Disciplina", "Disciplina")
+                        .WithMany()
+                        .HasForeignKey("DisciplinaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BancoQuestoes.Models.Prova", "Prova")
+                        .WithMany("ProvaDisciplinas")
+                        .HasForeignKey("ProvaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Disciplina");
+
+                    b.Navigation("Prova");
                 });
 
             modelBuilder.Entity("BancoQuestoes.Models.ProvaQuestao", b =>
@@ -1137,23 +1580,35 @@ namespace BancoQuestoes.Migrations
                     b.HasOne("BancoQuestoes.Models.Assunto", "Assunto")
                         .WithMany("Questoes")
                         .HasForeignKey("AssuntoId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("BancoQuestoes.Models.ApplicationUser", "CriadoPor")
                         .WithMany()
                         .HasForeignKey("CriadoPorId");
 
-                    b.HasOne("BancoQuestoes.Models.Curso", "Curso")
-                        .WithMany()
-                        .HasForeignKey("CursoId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.Navigation("Assunto");
 
                     b.Navigation("CriadoPor");
+                });
 
-                    b.Navigation("Curso");
+            modelBuilder.Entity("BancoQuestoes.Models.QuestaoAreaCurso", b =>
+                {
+                    b.HasOne("BancoQuestoes.Models.AreaCurso", "AreaCurso")
+                        .WithMany()
+                        .HasForeignKey("AreaCursoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BancoQuestoes.Models.Questao", "Questao")
+                        .WithMany()
+                        .HasForeignKey("QuestaoId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AreaCurso");
+
+                    b.Navigation("Questao");
                 });
 
             modelBuilder.Entity("BancoQuestoes.Models.QuestaoHistorico", b =>
@@ -1204,6 +1659,55 @@ namespace BancoQuestoes.Migrations
                     b.Navigation("Questao");
                 });
 
+            modelBuilder.Entity("BancoQuestoes.Models.RespostaLacunaOnline", b =>
+                {
+                    b.HasOne("BancoQuestoes.Models.RespostaQuestaoOnline", "RespostaQuestaoOnline")
+                        .WithMany("RespostasLacunas")
+                        .HasForeignKey("RespostaQuestaoOnlineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("RespostaQuestaoOnline");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.RespostaProvaOnline", b =>
+                {
+                    b.HasOne("BancoQuestoes.Models.Aluno", "Aluno")
+                        .WithMany()
+                        .HasForeignKey("AlunoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BancoQuestoes.Models.AplicacaoProva", "AplicacaoProva")
+                        .WithMany("Respostas")
+                        .HasForeignKey("AplicacaoProvaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Aluno");
+
+                    b.Navigation("AplicacaoProva");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.RespostaQuestaoOnline", b =>
+                {
+                    b.HasOne("BancoQuestoes.Models.Questao", "Questao")
+                        .WithMany()
+                        .HasForeignKey("QuestaoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BancoQuestoes.Models.RespostaProvaOnline", "RespostaProvaOnline")
+                        .WithMany("Respostas")
+                        .HasForeignKey("RespostaProvaOnlineId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Questao");
+
+                    b.Navigation("RespostaProvaOnline");
+                });
+
             modelBuilder.Entity("BancoQuestoes.Models.Turma", b =>
                 {
                     b.HasOne("BancoQuestoes.Models.ApplicationUser", "CriadoPor")
@@ -1227,6 +1731,25 @@ namespace BancoQuestoes.Migrations
                     b.Navigation("Curso");
 
                     b.Navigation("Disciplina");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.TurmaAluno", b =>
+                {
+                    b.HasOne("BancoQuestoes.Models.Aluno", "Aluno")
+                        .WithMany("TurmaAlunos")
+                        .HasForeignKey("AlunoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("BancoQuestoes.Models.Turma", "Turma")
+                        .WithMany()
+                        .HasForeignKey("TurmaId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Aluno");
+
+                    b.Navigation("Turma");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
@@ -1358,6 +1881,16 @@ namespace BancoQuestoes.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("BancoQuestoes.Models.Aluno", b =>
+                {
+                    b.Navigation("TurmaAlunos");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.AplicacaoProva", b =>
+                {
+                    b.Navigation("Respostas");
+                });
+
             modelBuilder.Entity("BancoQuestoes.Models.Assunto", b =>
                 {
                     b.Navigation("Questoes");
@@ -1375,12 +1908,24 @@ namespace BancoQuestoes.Migrations
 
             modelBuilder.Entity("BancoQuestoes.Models.Prova", b =>
                 {
+                    b.Navigation("ProvaDisciplinas");
+
                     b.Navigation("ProvaQuestoes");
                 });
 
             modelBuilder.Entity("BancoQuestoes.Models.Questao", b =>
                 {
                     b.Navigation("Imagens");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.RespostaProvaOnline", b =>
+                {
+                    b.Navigation("Respostas");
+                });
+
+            modelBuilder.Entity("BancoQuestoes.Models.RespostaQuestaoOnline", b =>
+                {
+                    b.Navigation("RespostasLacunas");
                 });
 
             modelBuilder.Entity("BancoQuestoes.Models.QuestaoAssociacao", b =>

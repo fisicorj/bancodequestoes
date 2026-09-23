@@ -6,24 +6,12 @@ using BancoQuestoes.Models;
 
 namespace BancoQuestoes.Importacao;
 
-// Interpreta um arquivo CSV/XLSX/JSON com itens de uma Matriz de Referência
-// (Perfil do Concluinte/Competências/Conteúdos/...) — só INTERPRETA, nunca
-// toca no banco (isso é MatrizReferenciaService.ImportarItensAsync). Mesmo
-// espírito/separação do antigo DiretrizImportParser (recurso anterior,
-// removido) — reaproveita inclusive a mesma técnica de leitura de .xlsx via
-// DocumentFormat.OpenXml, já usada no projeto pra exportação DOCX.
-//
-// Diferente do antigo parser de Diretriz, não existe CodigoPai pra resolver
-// (itens são flat), então não tem duas passadas nem checagem de ciclo — cada
-// linha vira um ItemMatrizImportado independente.
+// Interpreta um arquivo CSV/XLSX/JSON com itens de Matriz de Referência — só
+// INTERPRETA, nunca toca no banco (isso é MatrizReferenciaService.ImportarItensAsync).
 public static class ItemMatrizImportParser
 {
-    // --- CSV ---
-    //
-    // Cabeçalho obrigatório na primeira linha, com estas colunas (qualquer
-    // ordem, case-insensitive): Codigo, Titulo, Tipo, Descricao (opcional),
-    // Ordem (opcional). Separador vírgula, com suporte a campos entre aspas
-    // (pra texto que já contenha vírgula).
+    // CSV: cabeçalho obrigatório (Codigo, Titulo, Tipo, Descricao e Ordem
+    // opcionais, qualquer ordem, case-insensitive), separador vírgula com suporte a aspas.
     public static ResultadoImportacaoItens ParseCsv(string texto)
     {
         var resultado = new ResultadoImportacaoItens();
@@ -87,10 +75,8 @@ public static class ItemMatrizImportParser
     private static string CampoOuVazio(List<string> campos, int indice) =>
         indice >= 0 && indice < campos.Count ? campos[indice].Trim() : "";
 
-    // Parser CSV simples que respeita aspas (campo entre aspas pode conter
-    // vírgula; "" dentro de um campo entre aspas vira um " literal) — não
-    // pretende ser um parser CSV genérico completo (RFC 4180 inteiro), só o
-    // suficiente pra planilhas exportadas do Excel/Google Sheets.
+    // Parser CSV simples que respeita aspas (campo entre aspas pode conter vírgula;
+    // "" vira " literal) — não é RFC 4180 completo, só o suficiente pro Excel/Sheets.
     private static List<string> DividirLinhaCsv(string linha)
     {
         var campos = new List<string>();
@@ -136,10 +122,7 @@ public static class ItemMatrizImportParser
         return campos;
     }
 
-    // --- XLSX ---
-    //
-    // Mesmas colunas do CSV, na primeira planilha do arquivo, primeira linha
-    // como cabeçalho.
+    // XLSX: mesmas colunas do CSV, primeira planilha, primeira linha como cabeçalho.
     public static ResultadoImportacaoItens ParseXlsx(Stream arquivo)
     {
         var resultado = new ResultadoImportacaoItens();
@@ -172,11 +155,8 @@ public static class ItemMatrizImportParser
 
             var texto = celula.CellValue.InnerText;
 
-            // Célula de texto "compartilhado" (o padrão do Excel pra economizar
-            // espaço) guarda só um ÍNDICE na célula — o texto de verdade está
-            // na SharedStringTable do workbook, não na célula. Elements<>() é
-            // necessário aqui: SharedStringTable não é diretamente indexável
-            // por posição via ElementAtOrDefault sem passar por Elements<T>().
+            // Célula de texto "compartilhado" guarda só um ÍNDICE — o texto de
+            // verdade está na SharedStringTable do workbook, acessível só via Elements<T>().
             if (celula.DataType?.Value == CellValues.SharedString && sharedStrings is not null
                 && int.TryParse(texto, out var indice))
             {
@@ -239,9 +219,8 @@ public static class ItemMatrizImportParser
         return resultado;
     }
 
-    // "B7" -> 1 (coluna B, base zero) — usado porque células vazias no meio
-    // de uma linha do .xlsx às vezes simplesmente não aparecem no XML, então
-    // não dá pra confiar na posição da célula dentro de Row.Elements<Cell>().
+    // "B7" -> 1 (coluna B, base zero) — células vazias às vezes não aparecem no
+    // XML, então não dá pra confiar na posição dentro de Row.Elements<Cell>().
     private static int? IndiceColunaDaReferencia(string? referencia)
     {
         if (string.IsNullOrEmpty(referencia))
@@ -264,15 +243,8 @@ public static class ItemMatrizImportParser
         return indice - 1;
     }
 
-    // --- JSON ---
-    //
-    // Aceita duas formas:
-    //  1) Uma lista simples: [{"codigo":"C01","tipo":"Competencia","titulo":"...","descricao":"...","ordem":1}, ...]
-    //  2) O formato "matriz completa" (pensado pra futura criação de matriz +
-    //     itens num só arquivo): {"grupos":{"perfil":[...],"competencias":[...],
-    //     "conteudos":[...],"habilidades":[...],"objetosConhecimento":[...]}} —
-    //     cada item dentro de um grupo só precisa de codigo/titulo/descricao;
-    //     o Tipo é inferido do nome do grupo.
+    // JSON: aceita uma lista simples de {codigo,tipo,titulo,descricao,ordem} ou
+    // {"grupos":{"perfil":[...],"competencias":[...],...}}, onde o Tipo é inferido do nome do grupo.
     public static ResultadoImportacaoItens ParseJson(string texto)
     {
         var resultado = new ResultadoImportacaoItens();
@@ -318,17 +290,8 @@ public static class ItemMatrizImportParser
         }
     }
 
-    // --- JSON de MATRIZ COMPLETA (item 17 da 2ª rodada de revisão) ---
-    //
-    // Formato: {"curso":"...","tipo":"ENADE","ano":2023,"edicao":"...",
-    // "orgao":"INEP","documento":"...","urlFonte":"...","descricao":"...",
-    // "grupos":{"perfil":[...],"competencias":[...],"conteudos":[...]}} — os
-    // metadados no topo (curso/tipo/ano/...) são NOVOS em relação ao formato
-    // "só grupos" que ParseJson já aceitava; os itens dentro de "grupos"
-    // usam o MESMO ProcessarGrupoJson de sempre (nada duplicado). Sempre
-    // devolve um objeto (nunca lança) — erros de parse viram
-    // MatrizCompletaImportada.Itens.Erros, mesmo padrão dos outros parsers
-    // desta classe, pra tela de preview mostrar tudo de um jeito só.
+    // JSON de MATRIZ COMPLETA: mesmo formato de ParseJson mas com metadados no
+    // topo (curso/tipo/ano/...); sempre devolve um objeto, erros viram Itens.Erros.
     public static MatrizCompletaImportada ParseMatrizCompleta(string texto)
     {
         var resultadoItens = new ResultadoImportacaoItens();
@@ -446,12 +409,8 @@ public static class ItemMatrizImportParser
         });
     }
 
-    // Aceita tanto o nome do enum (ex.: "Competencia") quanto o rótulo em
-    // português (ex.: "Competência", "Competências") — planilhas feitas à
-    // mão tendem a usar o rótulo, exportações programáticas tendem a usar o
-    // nome do enum. Cai em "Outro" com aviso quando não reconhece, em vez de
-    // rejeitar a linha inteira — o professor ainda pode corrigir o Tipo
-    // depois, direto na tela de gestão de itens.
+    // Aceita nome do enum ou rótulo em português; cai em "Outro" com aviso quando
+    // não reconhece, em vez de rejeitar a linha (professor corrige depois na tela).
     private static (TipoItemMatriz Tipo, string? Aviso) ResolverTipo(string tipoTexto)
     {
         var texto = tipoTexto.Trim();

@@ -9,10 +9,97 @@
     <UserSecretsId>bancodequestoes-8f2a1c6e-3b9d-4e7a-9c1f-2d5e8a4b7f10</UserSecretsId>
   </PropertyGroup>
 
+  <!--
+    bancodequestoes.Tests/ (Etapa 8 dos testes de Escopo) vive DENTRO desta
+    mesma pasta — o SDK Web deste projeto (Microsoft.NET.Sdk.Web) faz um glob
+    implícito de **/*.cs a partir daqui, então sem essa exclusão explícita ele
+    tentava compilar os arquivos do projeto de teste (Xunit/EF InMemory)
+    junto do site, sem essas referências — daí os erros CS0246 (Xunit não
+    encontrado) no "dotnet build"/"dotnet ef database update" da raiz.
+    bancodequestoes.Tests.csproj continua sendo buildado normalmente (como
+    projeto próprio, via "dotnet test" dentro da pasta dele, ou se algum dia
+    entrar numa .sln) — só não deve ser compilado DENTRO deste projeto.
+  -->
+  <ItemGroup>
+    <Compile Remove="bancodequestoes.Tests\**\*.cs" />
+    <Content Remove="bancodequestoes.Tests\**\*" />
+    <None Remove="bancodequestoes.Tests\**\*" />
+    <EmbeddedResource Remove="bancodequestoes.Tests\**\*" />
+  </ItemGroup>
+
+  <!--
+    publish\ (gerado por publicar-producao.bat, via "dotnet publish -o publish"
+    dentro da própria pasta do projeto) é SAÍDA de build, não fonte — mas o SDK
+    Web faz glob implícito de conteúdo (Content/None) a partir daqui, então sem
+    essa exclusão ele pega os arquivos já publicados (ex.: os .razor.js
+    copiados pra publish\wwwroot\...) como se fossem itens do projeto. Isso
+    causava o erro BLAZOR106 ("JS module file... mas nenhum componente razor
+    associado foi encontrado") ao rodar "dotnet run"/"dotnet build" depois de
+    já ter publicado uma vez. Mesmo raciocínio da exclusão de
+    bancodequestoes.Tests acima.
+  -->
+  <ItemGroup>
+    <Compile Remove="publish\**\*.cs" />
+    <Content Remove="publish\**\*" />
+    <None Remove="publish\**\*" />
+    <EmbeddedResource Remove="publish\**\*" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- Geração dos arquivos exportados da prova. -->
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.3.0" />
     <PackageReference Include="PDFsharp-MigraDoc" Version="6.2.4" />
+    <!-- Leitura/extração de texto e imagens de PDF (importador de provas ENADE
+         — ver Importacao/EnadeProvaParser.cs). Não confundir com PDFsharp-
+         MigraDoc acima, que só GERA PDF (exportação de provas) e não lê PDF
+         nenhum. UglyToad.PdfPig: puro .NET, sem dependência nativa, MIT,
+         sem custo/licença comercial — critérios do pedido ("evite
+         dependência comercial obrigatória").
+
+         Versão: "0.1.8" (a versão originalmente escolhida, por ser uma
+         release estável "normal" na numeração histórica do projeto) NÃO
+         EXISTE no nuget.org — confirmado por "dotnet restore" de verdade
+         (erro NU1103) rodado pelo usuário, não só pela minha checagem
+         anterior (que já tinha achado o mesmo feed "estranho" e registrado
+         isso como incerteza aqui). No momento, o nuget.org só lista DUAS
+         versões do pacote: "1.7.0-custom-5" (mais nova — toda a família
+         PdfPig.Core/Tokens/Tokenization/DocumentLayoutAnalysis está na MESMA
+         versão, sugerindo ser a build atual publicada pelos mantenedores) e
+         "0.1.9-alpha001-patch1" (mais antiga, claramente um pacote alpha).
+         Nenhuma das duas é "estável" no sentido SemVer (por isso precisa da
+         versão EXATA aqui, sem operador de comparação — um range/mínimo como
+         antes cai de novo no erro "nenhum pacote estável encontrado").
+         Decisão tomada com o usuário: usar "1.7.0-custom-5". Meu código
+         (EnadeProvaParser/GabaritoEnadeParser) só usa APIs básicas e
+         historicamente estáveis da biblioteca (PdfDocument.Open/GetPages/
+         NumberOfPages, Page.Text/GetWords/GetImages/Number, Word.Text/
+         BoundingBox, PdfRectangle.Left/Right/Top/Centroid, IPdfImage.RawBytes)
+         — sem nenhum recurso exclusivo de versão recente —, então a troca de
+         0.1.x para 1.7.0 não deveria quebrar nada, mas isso só fica 100%
+         confirmado depois do "dotnet build" rodar com sucesso. -->
+    <PackageReference Include="UglyToad.PdfPig" Version="1.7.0-custom-5" />
+    <!-- Renderização de página PDF -> imagem (evolução "Padrão de Resposta +
+         modelo híbrido" do importador ENADE — ver Importacao/
+         PaginaEnadeRenderizador.cs). Usada SÓ para gerar a "Representação
+         Original" (snapshot da página de origem) que acompanha, sem
+         substituir, o conteúdo estruturado extraído por EnadeProvaParser —
+         nunca para extrair texto (isso continua sendo PdfPig, acima).
+
+         Biblioteca: PDFtoImage (autor "sungaila" no NuGet/GitHub), MIT,
+         open source, sem dependência comercial obrigatória — mesmo
+         critério já aplicado à escolha do PdfPig. Internamente usa PDFium
+         (motor do Chromium, nativo) + SkiaSharp para rasterizar. Histórico
+         de versões no nuget.org é normal/incremental (1.0.0 até 5.4.0,
+         dezenas de releases regulares) — diferente da situação anômala que
+         causou o erro real de "dotnet restore" com o PdfPig nesta mesma
+         sessão (ver comentário acima); ainda assim, a API pública abaixo
+         foi confirmada por LEITURA DIRETA do código-fonte oficial
+         (Conversion.ByteArray.cs e RenderOptions.cs em github.com/
+         sungaila/PDFtoImage, branch master) antes de escrever qualquer
+         código contra ela — não foi "adivinhada". Mesmo assim, sendo uma
+         dependência nova, o "dotnet build" real do usuário é que confirma
+         100% (mesmo processo já usado com sucesso 3x nesta sessão). -->
+    <PackageReference Include="PDFtoImage" Version="5.4.0" />
     <!-- Enunciado agora é Markdown (negrito, itálico, lista, código, tabela) + LaTeX;
          usado tanto na pré-visualização (Markdown -> HTML) quanto, via a árvore de
          sintaxe, na exportação DOCX/PDF (ver Exportacao/MarkdownConversor.cs). -->

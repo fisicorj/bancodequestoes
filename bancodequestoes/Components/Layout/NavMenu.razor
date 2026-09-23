@@ -22,17 +22,8 @@
                     </NavLink>
                 </div>
 
-                <div class="nav-section-title px-3">Conteúdo</div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="disciplinas">
-                        <i class="bi bi-book-fill" aria-hidden="true"></i> Disciplinas
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="assuntos">
-                        <i class="bi bi-tag-fill" aria-hidden="true"></i> Assuntos
-                    </NavLink>
-                </div>
+                <!-- Tarefa central do professor: criar e organizar questões. -->
+                <div class="nav-section-title px-3">Banco de Questões</div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="questoes">
                         <i class="bi bi-question-circle-fill" aria-hidden="true"></i> Questões
@@ -44,17 +35,54 @@
                     </NavLink>
                 </div>
 
-                <div class="nav-section-title px-3">Provas</div>
+                <!-- Montagem e geração de avaliações a partir do banco de questões. -->
+                <div class="nav-section-title px-3">Avaliações</div>
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="provas">
                         <i class="bi bi-file-earmark-text-fill" aria-hidden="true"></i> Provas
                     </NavLink>
                 </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="aplicacoes-prova">
+                        <i class="bi bi-laptop" aria-hidden="true"></i> Provas Online
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="alunos">
+                        <i class="bi bi-people-fill" aria-hidden="true"></i> Alunos
+                    </NavLink>
+                </div>
 
+                <!-- Diferencial do produto: aderência ENADE/matrizes curriculares —
+                     por isso tem grupo próprio, separado de "Configurações". -->
+                <div class="nav-section-title px-3">Aderência Curricular</div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="matrizes">
+                        <i class="bi bi-signpost-split-fill" aria-hidden="true"></i> Matrizes / ENADE
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="cobertura-curricular">
+                        <i class="bi bi-pie-chart-fill" aria-hidden="true"></i> Cobertura
+                    </NavLink>
+                </div>
+
+                <!-- Cadastros administrativos de apoio — ficam por último, em
+                     segundo plano em relação às tarefas do professor acima. -->
                 <div class="nav-section-title px-3">Configurações</div>
                 <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="instituicoes">
-                        <i class="bi bi-building-fill" aria-hidden="true"></i> Instituições
+                    <NavLink class="nav-link" href="disciplinas">
+                        <i class="bi bi-book-fill" aria-hidden="true"></i> Disciplinas
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="assuntos">
+                        <i class="bi bi-tag-fill" aria-hidden="true"></i> Assuntos
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="turmas">
+                        <i class="bi bi-collection-fill" aria-hidden="true"></i> Turmas
                     </NavLink>
                 </div>
                 <div class="nav-item px-3">
@@ -67,21 +95,6 @@
                         <i class="bi bi-globe-americas" aria-hidden="true"></i> Áreas de Curso
                     </NavLink>
                 </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="turmas">
-                        <i class="bi bi-collection-fill" aria-hidden="true"></i> Turmas
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="matrizes">
-                        <i class="bi bi-signpost-split-fill" aria-hidden="true"></i> Matrizes
-                    </NavLink>
-                </div>
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="cobertura-curricular">
-                        <i class="bi bi-pie-chart-fill" aria-hidden="true"></i> Cobertura
-                    </NavLink>
-                </div>
             </Authorized>
         </AuthorizeView>
 
@@ -89,8 +102,18 @@
             <Authorized>
                 <div class="nav-section-title px-3">Administração</div>
                 <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="instituicoes">
+                        <i class="bi bi-building-fill" aria-hidden="true"></i> Instituições
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
                     <NavLink class="nav-link" href="admin/usuarios">
                         <i class="bi bi-people-fill" aria-hidden="true"></i> Usuários
+                    </NavLink>
+                </div>
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="admin/configuracao-ia">
+                        <i class="bi bi-robot" aria-hidden="true"></i> Configuração de IA
                     </NavLink>
                 </div>
             </Authorized>

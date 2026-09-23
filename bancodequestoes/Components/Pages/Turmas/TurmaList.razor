@@ -7,11 +7,11 @@
 
 <PageTitle>Turmas</PageTitle>
 
-<h1>Turmas</h1>
-
-<p>
-    <a class="btn btn-primary" href="turmas/novo">+ Nova turma</a>
-</p>
+<PageHeader Titulo="Turmas">
+    <Acao>
+        <a class="btn btn-primary" href="turmas/novo">+ Nova turma</a>
+    </Acao>
+</PageHeader>
 
 @if (sucesso is not null)
 {
@@ -86,6 +86,7 @@ else
                     <td>@t.Curso?.Nome</td>
                     <td>@t.Curso?.Instituicao?.Nome</td>
                     <td>
+                        <a class="btn btn-sm btn-outline-secondary" href="@($"turmas/{t.Id}/alunos")">Alunos</a>
                         <a class="btn btn-sm btn-secondary" href="@($"turmas/editar/{t.Id}")">Editar</a>
                         <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(t)">Excluir</button>
                     </td>

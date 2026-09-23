@@ -1,0 +1,15 @@
+<!-- Editor do corpo específico de Numérica (Etapa 3 — extraído de QuestaoForm.razor, idêntico ao original). -->
+<div class="row">
+    <div class="col-md-6 form-floating mb-3">
+        <InputNumber @bind-Value="Modelo.NumericaEsperada" id="NumericaEsperada" class="form-control" placeholder="Resposta esperada" />
+        <label for="NumericaEsperada">Resposta esperada</label>
+    </div>
+    <div class="col-md-6 form-floating mb-3">
+        <InputNumber @bind-Value="Modelo.NumericaTolerancia" id="NumericaTolerancia" class="form-control" placeholder="Tolerância (± )" />
+        <label for="NumericaTolerancia">Tolerância (±, opcional)</label>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+}

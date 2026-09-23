@@ -1,0 +1,117 @@
+<!--
+    Seção "Imagens" do formulário de Questão (Etapa 3 da refatoração —
+    extraída de QuestaoForm.razor, markup e comportamento idênticos ao
+    original) — imagens já existentes (edição) + pendentes (upload ainda não
+    salvo) + input de arquivo.
+
+    ImagensExistentes/ImagensParaRemover/Pendentes continuam vivendo em
+    QuestaoForm.razor (SalvarAsync precisa deles pra chamar QuestaoService),
+    mas são coleções mutáveis passadas por referência — este componente
+    adiciona/remove itens direto nelas, sem precisar de EventCallback (mesmo
+    padrão já usado em QuestaoCard.razor/QuestaoFiltrosBar.razor pra
+    "Modelo"). ErroImagem e o tamanho máximo, por outro lado, são só desta
+    seção — ficaram totalmente locais.
+
+    Nota (documentada, não corrigida nesta etapa — ver
+    REFATORACAO-QUESTOES-PROVAS.md): o card de imagem existente e o card de
+    imagem pendente têm markup quase idêntico, duplicado aqui como já estava
+    no arquivo original — não colapsados num único template porque operam em
+    tipos diferentes (QuestaoImagem vs PendenteImagem) com origem de imagem
+    diferente (URL servida vs data-URI em memória) e ação de remover
+    diferente (marcar para remoção vs remover da lista de pendentes); unificar
+    ia exigir uma abstração nova, que é redesenho, não só mover código.
+-->
+<h5>Imagens</h5>
+@if (erroImagem is not null)
+{
+    <div class="alert alert-warning py-1">@erroImagem</div>
+}
+<div class="d-flex flex-wrap gap-2 mb-2">
+    @foreach (var img in ImagensExistentes.Where(i => !ImagensParaRemover.Contains(i.Id)))
+    {
+        <div class="border rounded p-2" style="width:220px;">
+            <div class="text-center mb-2">
+                <img src="@($"questoes/imagem/{img.Id}")" alt="@(img.TextoAlternativo ?? img.NomeArquivo)" style="max-width:100%; max-height:100px;" />
+            </div>
+            <input type="text" class="form-control form-control-sm mb-1" placeholder="Legenda" @bind="img.Legenda" @bind:event="oninput" />
+            <input type="text" class="form-control form-control-sm mb-1" placeholder="Texto alternativo" @bind="img.TextoAlternativo" @bind:event="oninput" />
+            <select class="form-select form-select-sm mb-1" @bind="img.Alinhamento">
+                <option value="">Alinhamento: padrão</option>
+                <option value="@AlinhamentoImagem.Esquerda">Esquerda</option>
+                <option value="@AlinhamentoImagem.Centralizado">Centralizado</option>
+                <option value="@AlinhamentoImagem.Direita">Direita</option>
+            </select>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Largura</span>
+                <input type="number" min="10" max="100" step="5" class="form-control" placeholder="60" @bind="img.LarguraPercentual" />
+                <span class="input-group-text">%</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger w-100" @onclick="() => ImagensParaRemover.Add(img.Id)">Remover</button>
+        </div>
+    }
+    @foreach (var p in Pendentes)
+    {
+        <div class="border rounded p-2" style="width:220px;">
+            <div class="text-center mb-2">
+                <img src="@($"data:{p.ContentType};base64,{Convert.ToBase64String(p.Conteudo)}")" alt="@(p.TextoAlternativo ?? p.NomeArquivo)" style="max-width:100%; max-height:100px;" />
+            </div>
+            <input type="text" class="form-control form-control-sm mb-1" placeholder="Legenda" @bind="p.Legenda" @bind:event="oninput" />
+            <input type="text" class="form-control form-control-sm mb-1" placeholder="Texto alternativo" @bind="p.TextoAlternativo" @bind:event="oninput" />
+            <select class="form-select form-select-sm mb-1" @bind="p.Alinhamento">
+                <option value="">Alinhamento: padrão</option>
+                <option value="@AlinhamentoImagem.Esquerda">Esquerda</option>
+                <option value="@AlinhamentoImagem.Centralizado">Centralizado</option>
+                <option value="@AlinhamentoImagem.Direita">Direita</option>
+            </select>
+            <div class="input-group input-group-sm mb-1">
+                <span class="input-group-text">Largura</span>
+                <input type="number" min="10" max="100" step="5" class="form-control" placeholder="60" @bind="p.LarguraPercentual" />
+                <span class="input-group-text">%</span>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger w-100" @onclick="() => Pendentes.Remove(p)">Remover</button>
+        </div>
+    }
+</div>
+<InputFile OnChange="OnImagensSelecionadasAsync" multiple accept="image/*" class="form-control mb-3" />
+
+@code {
+    [Parameter, EditorRequired] public List<QuestaoImagem> ImagensExistentes { get; set; } = new();
+    [Parameter, EditorRequired] public HashSet<int> ImagensParaRemover { get; set; } = new();
+    [Parameter, EditorRequired] public List<PendenteImagem> Pendentes { get; set; } = new();
+
+    private const long TamanhoMaximoImagem = 5 * 1024 * 1024; // 5 MB
+    private string? erroImagem;
+
+    private async Task OnImagensSelecionadasAsync(InputFileChangeEventArgs e)
+    {
+        erroImagem = null;
+        foreach (var arquivo in e.GetMultipleFiles(10))
+        {
+            if (arquivo.Size > TamanhoMaximoImagem)
+            {
+                erroImagem = $"\"{arquivo.Name}\" passa de 5 MB e foi ignorado.";
+                continue;
+            }
+
+            using var ms = new MemoryStream();
+            await arquivo.OpenReadStream(TamanhoMaximoImagem).CopyToAsync(ms);
+            var conteudo = ms.ToArray();
+
+            // Ignora o Content-Type declarado pelo navegador — confia só na assinatura
+            // real dos bytes (ver ValidadorImagem.cs).
+            var contentTypeReal = ValidadorImagem.DetectarContentType(conteudo);
+            if (contentTypeReal is null)
+            {
+                erroImagem = $"\"{arquivo.Name}\" não parece ser uma imagem válida (PNG, JPEG, GIF, WEBP ou BMP) e foi ignorado.";
+                continue;
+            }
+
+            Pendentes.Add(new PendenteImagem
+            {
+                NomeArquivo = arquivo.Name,
+                ContentType = contentTypeReal,
+                Conteudo = conteudo,
+            });
+        }
+    }
+}

@@ -1,0 +1,28 @@
+<!--
+    Editor do corpo específico de Associação (Etapa 3 — extraído de
+    QuestaoForm.razor, markup e comportamento idênticos ao original).
+    Adicionar/remover par só tocam Modelo.Pares — autocontido.
+-->
+<h5>Pares (termo → correspondente)</h5>
+@for (var i = 0; i < Modelo.Pares.Count; i++)
+{
+    var idx = i;
+    <div class="input-group mb-2">
+        <span class="input-group-text">@(idx + 1)</span>
+        <input class="form-control" @bind="Modelo.Pares[idx].Termo" placeholder="Termo (coluna A)" />
+        <span class="input-group-text">↔</span>
+        <input class="form-control" @bind="Modelo.Pares[idx].Correspondente" placeholder="Correspondente (coluna B)" />
+        @if (Modelo.Pares.Count > 2)
+        {
+            <button type="button" class="btn btn-outline-danger" @onclick="() => Modelo.Pares.RemoveAt(idx)">x</button>
+        }
+    </div>
+}
+@if (Modelo.Pares.Count < 12)
+{
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" @onclick="() => Modelo.Pares.Add(new ParAssociacaoInput())">+ Par</button>
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+}

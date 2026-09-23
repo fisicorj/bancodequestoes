@@ -5,13 +5,25 @@
 @using BancoQuestoes.Importacao
 @inject ImportacaoService ImportacaoService
 @inject DisciplinaService DisciplinaService
+@inject CursoService CursoService
 @inject AuthenticationStateProvider AuthProvider
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JS
+@inject ILogger<QuestaoImportar> Logger
 
 <PageTitle>Importar questões</PageTitle>
 
-<h1>Importar questões</h1>
-<p class="text-muted">Cole o texto no formato Aiken ou GIFT (ou envie um arquivo .txt), escolha o assunto de destino e confira a pré-visualização antes de importar.</p>
+<PageHeader Titulo="Importar questões" />
+<p class="text-muted">Cole o texto no formato Aiken ou GIFT (ou envie um arquivo .txt), escolha o assunto de destino e confira a pré-visualização antes de importar. No GIFT, linhas "$CATEGORY: código1, código2" antes de uma questão vinculam ela automaticamente aos itens de Alinhamento Curricular do Curso escolhido abaixo (ex.: "$CATEGORY: CT06, C01"). Linhas "$ASSUNTO: Disciplina / Assunto" roteiam a(s) questão(ões) seguinte(s) pra um Assunto diferente do escolhido no campo acima — útil quando um único lote cobre várias áreas (ex.: "$ASSUNTO: Engenharia de Computação / Algoritmos e Estruturas de Dados").</p>
+
+<p class="mb-3">
+    <button type="button" class="btn btn-sm btn-outline-secondary me-2" @onclick="BaixarModeloAikenAsync">
+        <i class="bi bi-download me-1" aria-hidden="true"></i>Baixar modelo Aiken (.txt)
+    </button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="BaixarModeloGiftAsync">
+        <i class="bi bi-download me-1" aria-hidden="true"></i>Baixar modelo GIFT (.txt)
+    </button>
+</p>
 
 @if (erro is not null)
 {
@@ -29,13 +41,25 @@
                 <label for="Formato">Formato</label>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-2">
             <div class="form-floating">
-                <select class="form-select" id="AssuntoId" @bind="assuntoId">
+                <select class="form-select" id="DisciplinaFiltro" @bind="disciplinaId" @bind:after="AoMudarDisciplina">
                     <option value="0">Selecione...</option>
-                    @foreach (var a in assuntos)
+                    @foreach (var d in disciplinas)
                     {
-                        <option value="@a.Id">@a.Disciplina?.Nome / @a.Nome</option>
+                        <option value="@d.Id">@d.Nome</option>
+                    }
+                </select>
+                <label for="DisciplinaFiltro">Disciplina</label>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <div class="form-floating">
+                <select class="form-select" id="AssuntoId" @bind="assuntoId" disabled="@(disciplinaId == 0)">
+                    <option value="0">@(disciplinaId == 0 ? "Escolha a disciplina..." : "Selecione...")</option>
+                    @foreach (var a in assuntos.Where(a => a.DisciplinaId == disciplinaId))
+                    {
+                        <option value="@a.Id">@a.Nome</option>
                     }
                 </select>
                 <label for="AssuntoId">Assunto de destino</label>
@@ -51,7 +75,24 @@
                 <label for="Dificuldade">Dificuldade (aplicada a todas)</label>
             </div>
         </div>
+        <div class="col-md-2">
+            <div class="form-floating">
+                <select class="form-select" id="CursoId" @bind="cursoId">
+                    <option value="0">Nenhum</option>
+                    @foreach (var c in cursos)
+                    {
+                        <option value="@c.Id">@c.Instituicao?.Nome / @c.Nome</option>
+                    }
+                </select>
+                <label for="CursoId">Curso (Alinhamento Curricular)</label>
+            </div>
+        </div>
     </div>
+
+    @if (formato == "Gift")
+    {
+        <p class="text-muted small">O campo Curso acima só é usado para resolver os códigos de "$CATEGORY:" do GIFT contra os itens de Alinhamento Curricular — sem ele, as questões são importadas normalmente, só sem vínculo curricular automático.</p>
+    }
 
     <div class="mb-3">
         <label class="form-label">Arquivo .txt (opcional — ou cole o texto abaixo)</label>
@@ -81,6 +122,83 @@
         </div>
     }
 
+    @if (resultado.GruposAssunto.Count > 0)
+    {
+        <div class="form-card mb-3">
+            <h5>Assunto por área (@resultado.GruposAssunto.Count grupo(s) de "$ASSUNTO:")</h5>
+            <p class="text-muted small">Pra cada Disciplina/Assunto sugerido no texto, escolha um Assunto já existente ou confirme a criação com o nome sugerido (editável). O Assunto escolhido no campo acima só é usado pelas questões que não têm "$ASSUNTO:" próprio.</p>
+            @foreach (var grupo in resultado.GruposAssunto)
+            {
+                <div class="border rounded p-2 mb-2">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div>
+                            <strong>@grupo.Disciplina / @grupo.Assunto</strong>
+                            <span class="text-muted small">— @grupo.QuantidadeQuestoes questão(ões)</span>
+                            @if (grupo.AssuntoIdEncontrado is not null)
+                            {
+                                <span class="badge bg-success ms-1">assunto existente encontrado</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-warning text-dark ms-1">não encontrado</span>
+                            }
+                        </div>
+                        <label class="form-check form-check-inline mb-0">
+                            <input class="form-check-input" type="checkbox" @bind="grupo.CriarNovo" />
+                            <span class="form-check-label">Criar novo</span>
+                        </label>
+                    </div>
+
+                    @if (grupo.DisciplinaHomonimaEncontradaId is not null)
+                    {
+                        <div class="alert alert-warning py-1 px-2 mt-1 mb-0 small">
+                            ⚠ Já existe uma Disciplina chamada "@grupo.DisciplinaHomonimaEncontradaNome" — o Assunto sugerido "@grupo.Assunto" tem o mesmo nome dela. Provavelmente você quer usar essa Disciplina, não criar "@grupo.Disciplina" com um Assunto de mesmo nome. Escolha o Assunto certo abaixo (dentro dela ou de outra), ou marque "Criar novo" só se for mesmo isso que você quer.
+                        </div>
+                    }
+
+                    @if (grupo.CriarNovo)
+                    {
+                        <div class="row g-2 mt-1">
+                            <div class="col-md-6">
+                                <label class="form-label small mb-0">Nome da Disciplina</label>
+                                <input class="form-control form-control-sm" @bind="grupo.NomeDisciplinaFinal" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small mb-0">Nome do Assunto</label>
+                                <input class="form-control form-control-sm" @bind="grupo.NomeAssuntoFinal" />
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="row g-2 mt-1">
+                            <div class="col-md-6">
+                                <label class="form-label small mb-0">Disciplina</label>
+                                <select class="form-select form-select-sm" @bind="grupo.DisciplinaIdFiltro" @bind:after="() => grupo.AssuntoIdEscolhido = 0">
+                                    <option value="0">Selecione...</option>
+                                    @foreach (var d in disciplinas)
+                                    {
+                                        <option value="@d.Id">@d.Nome</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small mb-0">Assunto existente</label>
+                                <select class="form-select form-select-sm" @bind="grupo.AssuntoIdEscolhido" disabled="@(grupo.DisciplinaIdFiltro == 0)">
+                                    <option value="0">@(grupo.DisciplinaIdFiltro == 0 ? "Escolha a disciplina..." : "Selecione...")</option>
+                                    @foreach (var a in assuntos.Where(a => a.DisciplinaId == grupo.DisciplinaIdFiltro))
+                                    {
+                                        <option value="@a.Id">@a.Nome</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+
     @if (resultado.Questoes.Count == 0)
     {
         <p><em>Nenhuma questão importável foi reconhecida.</em></p>
@@ -95,6 +213,8 @@
                     <th>Enunciado</th>
                     <th>Tipo</th>
                     <th>Detalhe</th>
+                    <th>Assunto</th>
+                    <th>Alinhamento Curricular</th>
                 </tr>
             </thead>
             <tbody>
@@ -111,6 +231,31 @@
                         </td>
                         <td>@RotuloTipo(q.Tipo)</td>
                         <td class="small text-muted">@Detalhe(q)</td>
+                        <td class="small text-muted">
+                            @(q.AssuntoSugerido is null ? "(assunto selecionado acima)" : $"{q.DisciplinaSugerida} / {q.AssuntoSugerido}")
+                        </td>
+                        <td class="small">
+                            @if (q.CodigosItemMatriz.Count == 0)
+                            {
+                                <span class="text-muted">—</span>
+                            }
+                            else if (cursoId == 0)
+                            {
+                                <span class="text-muted">@string.Join(", ", q.CodigosItemMatriz) (selecione um Curso acima)</span>
+                            }
+                            else
+                            {
+                                var vinculados = q.CodigosItemMatriz.Except(q.CodigosNaoEncontrados, StringComparer.OrdinalIgnoreCase);
+                                @if (vinculados.Any())
+                                {
+                                    <span class="text-success">@string.Join(", ", vinculados)</span>
+                                }
+                                @if (q.CodigosNaoEncontrados.Count > 0)
+                                {
+                                    <div class="text-warning">⚠ não encontrado(s) neste curso: @string.Join(", ", q.CodigosNaoEncontrados)</div>
+                                }
+                            }
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -121,12 +266,16 @@
             <div class="alert alert-success">@sucesso</div>
         }
 
-        <button type="button" class="btn btn-success" @onclick="ImportarAsync" disabled="@(assuntoId == 0 || !resultado.Questoes.Any(q => q.Selecionada))">
+        <button type="button" class="btn btn-success" @onclick="ImportarAsync" disabled="@(!PodeImportar())">
             Importar selecionadas (@resultado.Questoes.Count(q => q.Selecionada))
         </button>
-        @if (assuntoId == 0)
+        @if (PrecisaDoAssuntoDaTela() && assuntoId == 0)
         {
-            <span class="text-danger small ms-2">Selecione o assunto de destino acima.</span>
+            <span class="text-danger small ms-2">Selecione o assunto de destino acima (há questões sem "$ASSUNTO:" próprio).</span>
+        }
+        @if (GruposIncompletos())
+        {
+            <span class="text-danger small ms-2">Resolva todos os grupos de "Assunto por área" acima (escolha um existente ou confirme os nomes de criação).</span>
         }
     }
 }
@@ -135,18 +284,98 @@
 
 @code {
     private string formato = "Aiken";
+    private int disciplinaId;
     private int assuntoId;
     private Dificuldade dificuldade = Dificuldade.Media;
+    private int cursoId;
     private string textoOriginal = "";
+    private List<Disciplina> disciplinas = new();
     private List<Assunto> assuntos = new();
+    private List<Curso> cursos = new();
     private ResultadoImportacao? resultado;
     private string? erro;
     private string? sucesso;
 
     protected override async Task OnInitializedAsync()
     {
+        disciplinas = await DisciplinaService.ListarTodasAsync();
         assuntos = await DisciplinaService.ListarTodosAssuntosAsync();
+        cursos = await CursoService.ListarTodosAsync();
     }
+
+    // Trocar de Disciplina invalida o Assunto escolhido antes (evita ficar
+    // com um AssuntoId de outra Disciplina selecionado por baixo dos panos).
+    private void AoMudarDisciplina() => assuntoId = 0;
+
+    // Modelos de exemplo pro botão "Baixar modelo" — só demonstram a sintaxe
+    // aceita por cada parser (AikenParser.cs/GiftParser.cs); não têm efeito
+    // nenhum no sistema, o professor edita/substitui o conteúdo antes de colar
+    // de volta na tela. Aiken não suporta linha de comentário (qualquer linha
+    // que não seja opção/ANSWER vira uma nova questão), por isso o modelo
+    // Aiken é só exemplos limpos, sem anotações dentro do arquivo.
+    private const string ModeloAiken =
+        "Qual é a capital do Brasil?\n" +
+        "A) São Paulo\n" +
+        "B) Rio de Janeiro\n" +
+        "C) Brasília\n" +
+        "D) Salvador\n" +
+        "ANSWER: C\n" +
+        "\n" +
+        "Qual estrutura de dados usa a política LIFO (Last In, First Out)?\n" +
+        "A) Fila\n" +
+        "B) Pilha\n" +
+        "C) Lista encadeada\n" +
+        "D) Árvore binária\n" +
+        "ANSWER: B\n";
+
+    // GIFT aceita "// comentário" (linha ignorada pelo parser), por isso dá
+    // pra documentar a sintaxe dentro do próprio arquivo de exemplo.
+    private const string ModeloGift =
+        "// Modelo de importação em formato GIFT — apague estas linhas de\n" +
+        "// comentário (começam com \"//\") antes de importar de verdade.\n" +
+        "// Tipos aceitos: múltipla escolha, Certo/Errado, resposta breve, numérica e associação.\n" +
+        "\n" +
+        "// \"$CATEGORY:\" vincula as questões seguintes a Itens de Alinhamento Curricular/ENADE\n" +
+        "// por Código (separados por vírgula) — precisa de um Curso escolhido na tela de importação.\n" +
+        "$CATEGORY: CT06, C01\n" +
+        "\n" +
+        "// \"$ASSUNTO:\" manda as questões seguintes pra um Assunto específico\n" +
+        "// (formato \"Disciplina / Assunto\"), diferente do escolhido no campo da tela.\n" +
+        "$ASSUNTO: Engenharia de Computação / Algoritmos e Estruturas de Dados\n" +
+        "\n" +
+        "// Múltipla escolha: ::Título opcional:: antes do enunciado; \"=\" marca a\n" +
+        "// alternativa correta, \"~\" marca as erradas.\n" +
+        "::Pilha (LIFO)::Qual estrutura de dados usa a política LIFO (Last In, First Out)? {\n" +
+        "\t=Pilha\n" +
+        "\t~Fila\n" +
+        "\t~Lista encadeada\n" +
+        "\t~Árvore binária\n" +
+        "}\n" +
+        "\n" +
+        "// Certo/Errado: {T} ou {F}.\n" +
+        "A capital do Brasil é Brasília. {T}\n" +
+        "\n" +
+        "// Numérica: {#valor:tolerância} — aceita qualquer resposta dentro da faixa.\n" +
+        "Qual é o resultado de 7 + 5? {#12:0}\n" +
+        "\n" +
+        "// Associação: cada linha \"=termo -> correspondente\" dentro das chaves.\n" +
+        "Relacione cada linguagem ao paradigma principal. {\n" +
+        "\t=Haskell -> Funcional\n" +
+        "\t=Prolog -> Lógico\n" +
+        "\t=Java -> Orientado a objetos\n" +
+        "}\n" +
+        "\n" +
+        "// Resposta breve: só \"=resposta\", sem alternativas erradas.\n" +
+        "Quem propôs a Máquina de Turing? {=Alan Turing}\n" +
+        "\n" +
+        "// Discursiva: chaves vazias \"{}\" — o GIFT não guarda resposta esperada\n" +
+        "// pra esse tipo (nem o Moodle guarda); depois de importar, preencha a\n" +
+        "// resposta esperada na revisão de cada questão.\n" +
+        "Explique, com suas palavras, a diferença entre compilação e interpretação de linguagens de programação. {}\n";
+
+    private Task BaixarModeloAikenAsync() => JS.InvokeVoidAsync("bqDownloadText", "modelo-aiken.txt", ModeloAiken).AsTask();
+
+    private Task BaixarModeloGiftAsync() => JS.InvokeVoidAsync("bqDownloadText", "modelo-gift.txt", ModeloGift).AsTask();
 
     private async Task OnArquivoSelecionadoAsync(InputFileChangeEventArgs e)
     {
@@ -156,22 +385,41 @@
             using var reader = new StreamReader(e.File.OpenReadStream(2 * 1024 * 1024)); // até 2 MB
             textoOriginal = await reader.ReadToEndAsync();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Falha ao ler arquivo de importação Aiken/GIFT \"{Arquivo}\"", e.File.Name);
             erro = "Não foi possível ler o arquivo (verifique se é um .txt de até 2 MB).";
         }
     }
 
-    private void Analisar()
+    private async Task Analisar()
     {
         erro = null;
         sucesso = null;
         resultado = ImportacaoService.Analisar(textoOriginal, formato);
+        await ImportacaoService.AnotarItensMatrizAsync(resultado, cursoId);
+        await ImportacaoService.ResolverAssuntosAsync(resultado);
     }
+
+    // Espelha a validação de ImportacaoService.ImportarAsync só pra desabilitar
+    // o botão preventivamente; a validação de verdade continua no Service.
+    private bool PrecisaDoAssuntoDaTela() =>
+        resultado?.Questoes.Any(q => q.Selecionada && q.AssuntoSugerido is null) ?? false;
+
+    private bool GruposIncompletos() =>
+        resultado?.GruposAssunto.Any(g => g.CriarNovo
+            ? string.IsNullOrWhiteSpace(g.NomeDisciplinaFinal) || string.IsNullOrWhiteSpace(g.NomeAssuntoFinal)
+            : g.AssuntoIdEscolhido == 0) ?? false;
+
+    private bool PodeImportar() =>
+        resultado is not null
+        && resultado.Questoes.Any(q => q.Selecionada)
+        && !(PrecisaDoAssuntoDaTela() && assuntoId == 0)
+        && !GruposIncompletos();
 
     private async Task ImportarAsync()
     {
-        if (resultado is null || assuntoId == 0)
+        if (resultado is null || !PodeImportar())
         {
             return;
         }
@@ -183,7 +431,7 @@
             var authState = await AuthProvider.GetAuthenticationStateAsync();
             var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-            var importadas = await ImportacaoService.ImportarAsync(resultado, assuntoId, dificuldade, userId);
+            var importadas = await ImportacaoService.ImportarAsync(resultado, assuntoId, dificuldade, cursoId, userId);
 
             NavigationManager.NavigateTo($"questoes?msg={Uri.EscapeDataString($"{importadas} questão(ões) importada(s) com sucesso.")}");
         }
@@ -202,6 +450,7 @@
         TipoQuestao.RespostaBreve => "Resposta breve",
         TipoQuestao.Numerica => "Numérica",
         TipoQuestao.Associacao => "Associação",
+        TipoQuestao.Discursiva => "Discursiva",
         _ => tipo.ToString(),
     };
 
@@ -212,6 +461,7 @@
         TipoQuestao.RespostaBreve => $"Resposta: {q.RespostaBreveEsperada}",
         TipoQuestao.Numerica => $"Resposta: {q.NumericaEsperada} (±{q.NumericaTolerancia})",
         TipoQuestao.Associacao => $"{q.Pares.Count} pares",
+        TipoQuestao.Discursiva => "Sem resposta esperada — preencher depois",
         _ => "",
     };
 

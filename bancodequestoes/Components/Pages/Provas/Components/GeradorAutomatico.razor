@@ -17,21 +17,24 @@
     pre-calcular uma lista inteira de antemao) e dispara EventCallback pra
     cada interacao.
 
-    Diferenca importante em relacao aos lotes anteriores: aqui Gerador,
-    PercPorAssuntoGerador, PercPorBloomGerador e QuantidadePorTipoGerador sao
-    passados como a MESMA instancia que ProvaForm guarda (Dictionary/classe
-    sao tipos por referencia), entao os inputs binded direto neles (ex.:
-    Gerador.Quantidade) escrevem no objeto compartilhado sem precisar de
-    EventCallback so pra "salvar o valor". MESMO ASSIM quase todo input abaixo
-    tem um "afterwards" que chama OnAlterado (ou um EventCallback mais
-    especifico) - porque o card de Resumo aqui dentro, a tabela de
-    Dificuldade, a tabela de Assunto etc. dependem de contas feitas em
-    ProvaForm (parametros deste mesmo componente), e ProvaForm só recalcula
-    esses parametros quando ELE re-renderiza - o que só acontece quando um
-    EventCallback que aponta pra um metodo dela é invocado. Sem isso, editar
-    Gerador.Quantidade re-renderizaria só este componente, e os parametros
-    (Diagnostico, FaceisQtd etc.) ficariam com o valor antigo até outra
-    interacao qualquer forcar a atualizacao.
+    Diferenca importante em relacao aos lotes anteriores: aqui Gerador e
+    tudo dentro dele (incluindo os Dictionary Gerador.PercPorAssunto/
+    Gerador.PercPorBloom/Gerador.PercPorItem/Gerador.QuantidadePorTipo, que
+    ate a Etapa 4 da refatoracao eram passados como 4 parametros soltos
+    deste componente - ver REFATORACAO-QUESTOES-PROVAS.md) sao passados como
+    a MESMA instancia que ProvaForm guarda (GeradorInput e os Dictionary
+    dentro dele sao tipos por referencia), entao os inputs binded direto
+    neles (ex.: Gerador.Quantidade) escrevem no objeto compartilhado sem
+    precisar de EventCallback so pra "salvar o valor". MESMO ASSIM quase
+    todo input abaixo tem um "afterwards" que chama OnAlterado (ou um
+    EventCallback mais especifico) - porque o card de Resumo aqui dentro, a
+    tabela de Dificuldade, a tabela de Assunto etc. dependem de contas
+    feitas em ProvaForm (parametros deste mesmo componente), e ProvaForm só
+    recalcula esses parametros quando ELE re-renderiza - o que só acontece
+    quando um EventCallback que aponta pra um metodo dela é invocado. Sem
+    isso, editar Gerador.Quantidade re-renderizaria só este componente, e os
+    parametros (Diagnostico, FaceisQtd etc.) ficariam com o valor antigo até
+    outra interacao qualquer forcar a atualizacao.
 -->
 
 <div class="card mb-3">
@@ -69,15 +72,15 @@
             </div>
         </div>
 
-        <div class="row g-2 mb-3">
-            <div class="col-4">
-                <label class="form-label">Quantidade de questões</label>
-                <input type="number" min="0" class="form-control" @bind="Gerador.Quantidade" @bind:event="oninput" @bind:after="Notificar" />
+        <div class="gerador-grupo mb-3">
+            <h6 class="gerador-grupo-titulo">Quantidade e dificuldade</h6>
+            <div class="row g-2 mb-3">
+                <div class="col-4">
+                    <label class="form-label">Quantidade de questões</label>
+                    <input type="number" min="0" class="form-control" @bind="Gerador.Quantidade" @bind:event="oninput" @bind:after="Notificar" />
+                </div>
             </div>
-        </div>
 
-        <div class="mb-3">
-            <label class="form-label small mb-1 d-block">Distribuição por dificuldade</label>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-1" style="max-width: 420px;">
                     <thead>
@@ -115,8 +118,8 @@
             </div>
         </div>
 
-        <div class="mb-3">
-            <label class="form-label small mb-1 d-block">Distribuição de conteúdo</label>
+        <div class="gerador-grupo mb-3">
+            <h6 class="gerador-grupo-titulo">Conteúdo (assunto)</h6>
             @if (AssuntosDisponiveis.Count == 0)
             {
                 <span class="text-muted small">Nenhum assunto cadastrado nessa disciplina.</span>
@@ -137,7 +140,7 @@
                         <tbody>
                             @foreach (var a in AssuntosDisponiveis)
                             {
-                                var incluido = PercPorAssuntoGerador.ContainsKey(a.Id);
+                                var incluido = Gerador.PercPorAssunto.ContainsKey(a.Id);
                                 var disponiveis = DisponiveisPorAssunto(a.Id);
                                 var qtd = incluido ? QuantidadePorAssunto(a.Id) : 0;
                                 <tr>
@@ -150,7 +153,7 @@
                                         @if (incluido)
                                         {
                                             <input type="number" min="0" max="100" class="form-control form-control-sm" style="width:70px;"
-                                                   value="@PercPorAssuntoGerador[a.Id]"
+                                                   value="@Gerador.PercPorAssunto[a.Id]"
                                                    @oninput="e => DefinirPercAssunto(a.Id, e)" />
                                         }
                                     </td>
@@ -179,8 +182,8 @@
             }
         </div>
 
-        <div class="mb-2">
-            <label class="form-label small mb-1 d-block">Tipos</label>
+        <div class="gerador-grupo mb-3">
+            <h6 class="gerador-grupo-titulo">Tipos</h6>
             <div class="form-check form-check-inline">
                 <input class="form-check-input" type="checkbox" id="tipoME" @bind="Gerador.PermiteMultiplaEscolha" @bind:after="SincronizarTipo" />
                 <label class="form-check-label" for="tipoME">Múltipla escolha</label>
@@ -230,10 +233,10 @@
                             {
                                 <tr>
                                     <td>@tipo.Rotulo()</td>
-                                    <td class="@(QuantidadePorTipoGerador.GetValueOrDefault(tipo) > DisponiveisPorTipo(tipo) ? "text-danger fw-bold" : "text-muted")">@DisponiveisPorTipo(tipo)</td>
+                                    <td class="@(Gerador.QuantidadePorTipo.GetValueOrDefault(tipo) > DisponiveisPorTipo(tipo) ? "text-danger fw-bold" : "text-muted")">@DisponiveisPorTipo(tipo)</td>
                                     <td>
                                         <input type="number" min="0" class="form-control form-control-sm" style="width:80px;"
-                                               value="@QuantidadePorTipoGerador.GetValueOrDefault(tipo)"
+                                               value="@Gerador.QuantidadePorTipo.GetValueOrDefault(tipo)"
                                                @oninput="e => DefinirQuantidadeTipo(tipo, e)" />
                                     </td>
                                 </tr>
@@ -260,8 +263,8 @@
             }
         </div>
 
-        <details class="mb-2">
-            <summary class="fw-bold" style="cursor: pointer;">▸ Opções avançadas</summary>
+        <details class="details-secao mb-2">
+            <summary class="section-title">Configurações avançadas</summary>
             <div class="mt-2">
                 <div class="mb-2">
                     <label class="form-label small mb-1 d-block">
@@ -273,21 +276,21 @@
                             <div class="d-flex align-items-center gap-1">
                                 <div class="form-check mb-0">
                                     <input class="form-check-input" type="checkbox" id="@($"bloomGerador{nivel}")"
-                                           checked="@PercPorBloomGerador.ContainsKey(nivel)"
+                                           checked="@Gerador.PercPorBloom.ContainsKey(nivel)"
                                            @onchange="e => AlternarBloom(nivel, (bool)e.Value!)" />
                                     <label class="form-check-label" for="@($"bloomGerador{nivel}")">@nivel.Rotulo()</label>
                                 </div>
-                                @if (PercPorBloomGerador.ContainsKey(nivel))
+                                @if (Gerador.PercPorBloom.ContainsKey(nivel))
                                 {
                                     <input type="number" min="0" max="100" class="form-control form-control-sm" style="width: 65px;"
-                                           value="@PercPorBloomGerador[nivel]"
+                                           value="@Gerador.PercPorBloom[nivel]"
                                            @onchange="e => DefinirPercBloom(nivel, e)" />
                                     <span class="text-muted small">%</span>
                                 }
                             </div>
                         }
                     </div>
-                    @if (PercPorBloomGerador.Count > 0)
+                    @if (Gerador.PercPorBloom.Count > 0)
                     {
                         <span class="small @(TotalPercBloom == 100 ? "text-muted" : "text-danger fw-bold")">Total: @TotalPercBloom%</span>
                     }
@@ -403,7 +406,7 @@
                                     <tbody>
                                         @foreach (var item in ItensCurricular)
                                         {
-                                            var incluido = PercPorItemGerador.ContainsKey(item.Id);
+                                            var incluido = Gerador.PercPorItem.ContainsKey(item.Id);
                                             var disponiveis = DisponiveisPorItem(item.Id);
                                             var qtd = incluido ? QtdPlanejadaPorItemBlueprint.GetValueOrDefault(item.Id) : 0;
                                             <tr>
@@ -414,7 +417,7 @@
                                                     @if (incluido)
                                                     {
                                                         <input type="number" min="0" max="100" class="form-control form-control-sm" style="width:70px;"
-                                                               value="@PercPorItemGerador[item.Id]"
+                                                               value="@Gerador.PercPorItem[item.Id]"
                                                                @oninput="e => DefinirPercItemBlueprint(item.Id, e)" />
                                                     }
                                                 </td>
@@ -431,7 +434,7 @@
                                     </tfoot>
                                 </table>
                             </div>
-                            @if (PercPorItemGerador.Count > 0)
+                            @if (Gerador.PercPorItem.Count > 0)
                             {
                                 <p class="small mb-1">
                                     Questões distintas disponíveis para o conjunto selecionado: <strong>@DisponiveisDistintasSelecionadas</strong>
@@ -468,7 +471,7 @@
                      Dificeis="DificeisQtd"
                      ResumoConteudo="ResumoConteudo"
                      TiposTexto="TiposTexto"
-                     PercPorBloom="PercPorBloomGerador"
+                     PercPorBloom="Gerador.PercPorBloom"
                      EvitarRecentes="Gerador.EvitarRecentes"
                      CriterioRecentes="Gerador.CriterioRecentes"
                      ValorCriterioRecentes="Gerador.ValorCriterioRecentes" />
@@ -478,12 +481,52 @@
             <div class="alert alert-warning py-1">@AvisoGerador</div>
         }
 
-        <button type="button" class="btn btn-primary" @onclick="Gerar">🎲 Gerar prova</button>
+        <button type="button" class="btn btn-primary" @onclick="Gerar">🎲 Gerar proposta</button>
         @if (SelecionadasCount > 0)
         {
             <button type="button" class="btn btn-outline-primary" @onclick="AdicionarPeloGerador">+ Adicionar questões pelo gerador</button>
         }
-        <div class="form-text">"Gerar prova" substitui as questões já escolhidas pelo resultado do sorteio; "Adicionar" mantém as atuais e só sorteia o que falta.</div>
+        <div class="form-text">"Gerar proposta" substitui as questões já escolhidas pelo resultado do sorteio; "Adicionar" mantém as atuais e só sorteia o que falta.</div>
+
+        @if (SelecionadasCount > 0 && !propostaOculta)
+        {
+            <!--
+                Resumo "Proposta gerada" (item 7 do pedido) - so reaproveita numeros
+                ja calculados e passados como parametro (SelecionadasCount, Aderencia,
+                CoberturaCurricular), nenhuma conta nova em ProvaForm. Distribuicao
+                faceis/medias/dificeis vem das linhas de Aderencia por Dificuldade,
+                que so existem quando os percentuais de dificuldade somam 100 - se
+                nao somarem, a linha correspondente simplesmente nao aparece (nunca
+                inventamos o numero). "Usar esta proposta" nao existe como "estagio"
+                separado no modelo atual (o commit real continua sendo "Salvar
+                prova", no fim da pagina) - aqui ele so confirma e recolhe este
+                resumo, indicando que o professor aceitou o resultado e pode seguir
+                pra revisao/pontuacao/salvamento.
+            -->
+            <div class="proposta-gerada-card mt-3">
+                <div class="proposta-gerada-titulo">✓ Proposta gerada</div>
+                <div class="proposta-gerada-metricas">
+                    <span><strong>@SelecionadasCount</strong> questões</span>
+                    @if (CoberturaCurricular.Count > 0)
+                    {
+                        <span><strong>@CoberturaCurricular.Count(l => l.Quantidade > 0)</strong>/@CoberturaCurricular.Count itens curriculares com questões</span>
+                    }
+                    @{
+                        var faceisObtido = Aderencia.FirstOrDefault(l => l.Rotulo == Dificuldade.Facil.Rotulo());
+                        var mediasObtido = Aderencia.FirstOrDefault(l => l.Rotulo == Dificuldade.Media.Rotulo());
+                        var dificeisObtido = Aderencia.FirstOrDefault(l => l.Rotulo == Dificuldade.Dificil.Rotulo());
+                    }
+                    @if (faceisObtido is not null || mediasObtido is not null || dificeisObtido is not null)
+                    {
+                        <span>Distribuição: @(faceisObtido?.ObtidoQuantidade ?? 0) fáceis / @(mediasObtido?.ObtidoQuantidade ?? 0) médias / @(dificeisObtido?.ObtidoQuantidade ?? 0) difíceis</span>
+                    }
+                </div>
+                <div class="proposta-gerada-acoes">
+                    <a href="#questoes-selecionadas" class="btn btn-sm btn-outline-primary">Revisar questões</a>
+                    <button type="button" class="btn btn-sm btn-primary" @onclick="() => propostaOculta = true">Usar esta proposta</button>
+                </div>
+            </div>
+        }
 
         @if (SelecionadasCount > 0 && Aderencia.Count > 0)
         {
@@ -550,6 +593,27 @@
             <div class="card mt-3">
                 <div class="card-body py-2">
                     <h6 class="card-subtitle mb-2 text-muted">Cobertura Curricular</h6>
+                    <!--
+                        Resumo por Tipo (Etapa 4 UX/UI, item 3) - so agrupa/conta a
+                        MESMA lista CoberturaCurricular já recebida como parâmetro
+                        (nenhum cálculo novo), no formato "Competências: N com
+                        questões / M sem questões" — nunca um percentual sem
+                        denominador válido.
+                    -->
+                    <div class="d-flex flex-wrap gap-3 mb-2">
+                        @foreach (var grupoTipo in CoberturaCurricular.GroupBy(l => l.Item.Tipo))
+                        {
+                            var semQuestaoGrupo = grupoTipo.Count(l => l.Quantidade == 0);
+                            <div class="small">
+                                <strong>@grupoTipo.Key.RotuloPlural()</strong>:
+                                @grupoTipo.Count(l => l.Quantidade > 0) com questões
+                                @if (semQuestaoGrupo > 0)
+                                {
+                                    <span class="text-warning">· @semQuestaoGrupo sem questões</span>
+                                }
+                            </div>
+                        }
+                    </div>
                     <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
                             <thead>
@@ -578,72 +642,69 @@
 @code {
     private static readonly NivelBloom[] niveisBloom = Enum.GetValues<NivelBloom>();
 
-    [Parameter, EditorRequired] public GeradorInput Gerador { get; set; } = null!;
-    [Parameter] public DiagnosticoBanco Diagnostico { get; set; } = new();
-    [Parameter] public int FaceisQtd { get; set; }
-    [Parameter] public int MediasQtd { get; set; }
-    [Parameter] public int DificeisQtd { get; set; }
-    [Parameter] public int TotalPercDificuldade { get; set; }
+    // Etapa 2b da redução de tamanho: os ~37 [Parameter] soltos viraram um
+    // único objeto (GeradorAutomaticoDados.cs, na mesma pasta) — ProvaForm
+    // monta ele inteiro em MontarDadosGerador(). Os nomes de sempre abaixo
+    // (Gerador, Diagnostico, FaceisQtd etc.) são só pass-through pra dentro
+    // do objeto, então TUDO no resto deste arquivo (markup e @code) continua
+    // exatamente igual — nenhuma outra linha muda.
+    [Parameter, EditorRequired] public GeradorAutomaticoDados Dados { get; set; } = null!;
 
-    [Parameter] public List<Assunto> AssuntosDisponiveis { get; set; } = new();
-    [Parameter, EditorRequired] public Dictionary<int, int> PercPorAssuntoGerador { get; set; } = new();
-    [Parameter, EditorRequired] public Func<int, int> DisponiveisPorAssunto { get; set; } = _ => 0;
-    [Parameter, EditorRequired] public Func<int, int> QuantidadePorAssunto { get; set; } = _ => 0;
-    [Parameter] public int TotalPercAssuntos { get; set; }
-    [Parameter] public List<string> AvisosDisponibilidade { get; set; } = new();
+    private GeradorInput Gerador => Dados.Gerador;
+    private DiagnosticoBanco Diagnostico => Dados.Diagnostico;
+    private int FaceisQtd => Dados.FaceisQtd;
+    private int MediasQtd => Dados.MediasQtd;
+    private int DificeisQtd => Dados.DificeisQtd;
+    private int TotalPercDificuldade => Dados.TotalPercDificuldade;
 
-    [Parameter] public List<TipoQuestao> TiposPermitidosAtuais { get; set; } = new();
-    [Parameter, EditorRequired] public Func<TipoQuestao, int> DisponiveisPorTipo { get; set; } = _ => 0;
-    [Parameter, EditorRequired] public Dictionary<TipoQuestao, int> QuantidadePorTipoGerador { get; set; } = new();
-    [Parameter] public int SomaQuantidadePorTipo { get; set; }
-    [Parameter] public List<string> AvisosPorTipo { get; set; } = new();
+    private List<Assunto> AssuntosDisponiveis => Dados.AssuntosDisponiveis;
+    private Func<int, int> DisponiveisPorAssunto => Dados.DisponiveisPorAssunto;
+    private Func<int, int> QuantidadePorAssunto => Dados.QuantidadePorAssunto;
+    private int TotalPercAssuntos => Dados.TotalPercAssuntos;
+    private List<string> AvisosDisponibilidade => Dados.AvisosDisponibilidade;
 
-    [Parameter, EditorRequired] public Dictionary<NivelBloom, int> PercPorBloomGerador { get; set; } = new();
-    [Parameter] public int TotalPercBloom { get; set; }
+    private List<TipoQuestao> TiposPermitidosAtuais => Dados.TiposPermitidosAtuais;
+    private Func<TipoQuestao, int> DisponiveisPorTipo => Dados.DisponiveisPorTipo;
+    private int SomaQuantidadePorTipo => Dados.SomaQuantidadePorTipo;
+    private List<string> AvisosPorTipo => Dados.AvisosPorTipo;
 
-    [Parameter] public int QuantidadeQualidadeAtende { get; set; }
+    private int TotalPercBloom => Dados.TotalPercBloom;
 
-    // Alinhamento Curricular / ENADE (opcional/avançado) — itens (flat, de
-    // todas as matrizes vinculáveis) já escopados ao Curso da prova (ver
-    // ProvaForm.CarregarItensDoCursoProvaAsync); vazio quando a prova não tem
-    // Curso escolhido, e a seção some sozinha (ver "@if (ItensCurricular.Count
-    // > 0)" na marcação acima). Gerador.ItemMatrizIdsDesejados (dentro do
-    // parâmetro Gerador já existente) é o HashSet compartilhado que
-    // ItemMatrizChecklist muta direto — mesmo padrão de referência
-    // compartilhada já usado aqui pra PercPorAssuntoGerador/QuantidadePorTipoGerador.
-    [Parameter] public List<ItemMatrizReferencia> ItensCurricular { get; set; } = new();
-    [Parameter, EditorRequired] public Func<int, int> DisponiveisPorItem { get; set; } = _ => 0;
-    [Parameter] public List<LinhaCoberturaItem> CoberturaCurricular { get; set; } = new();
-    [Parameter] public int DisponiveisDistintasSelecionadas { get; set; }
+    private int QuantidadeQualidadeAtende => Dados.QuantidadeQualidadeAtende;
 
-    // Modo Blueprint Curricular (item 2/3/4/5/6 da 2ª rodada de revisão) —
-    // mesmo padrão de referência compartilhada de PercPorAssuntoGerador
-    // acima (Dictionary mutado direto por este componente).
-    [Parameter, EditorRequired] public Dictionary<int, int> PercPorItemGerador { get; set; } = new();
-    [Parameter] public Dictionary<int, int> QtdPlanejadaPorItemBlueprint { get; set; } = new();
-    [Parameter] public bool BlueprintCurricularViavel { get; set; }
-    [Parameter] public List<string> AvisosBlueprintCurricular { get; set; } = new();
-    [Parameter] public List<LinhaBlueprintCurricular> AderenciaBlueprintCurricular { get; set; } = new();
-    [Parameter] public int AderenciaBlueprintCurricularPercentual { get; set; }
-    [Parameter] public EventCallback<(int ItemId, bool Marcado)> OnAlternarItemBlueprint { get; set; }
+    // Itens (flat, de todas as matrizes vinculáveis) já escopados ao Curso da
+    // prova; vazio quando não há Curso escolhido, e a seção some sozinha.
+    private List<ItemMatrizReferencia> ItensCurricular => Dados.ItensCurricular;
+    private Func<int, int> DisponiveisPorItem => Dados.DisponiveisPorItem;
+    private List<LinhaCoberturaItem> CoberturaCurricular => Dados.CoberturaCurricular;
+    private int DisponiveisDistintasSelecionadas => Dados.DisponiveisDistintasSelecionadas;
 
-    private int TotalPercItensBlueprint => PercPorItemGerador.Values.Sum();
+    // Gerador.PercPorItem é mutado direto por este componente, mesmo padrão
+    // de referência compartilhada usado em ItemMatrizIdsDesejados acima.
+    private Dictionary<int, int> QtdPlanejadaPorItemBlueprint => Dados.QtdPlanejadaPorItemBlueprint;
+    private bool BlueprintCurricularViavel => Dados.BlueprintCurricularViavel;
+    private List<string> AvisosBlueprintCurricular => Dados.AvisosBlueprintCurricular;
+    private List<LinhaBlueprintCurricular> AderenciaBlueprintCurricular => Dados.AderenciaBlueprintCurricular;
+    private int AderenciaBlueprintCurricularPercentual => Dados.AderenciaBlueprintCurricularPercentual;
+    private EventCallback<(int ItemId, bool Marcado)> OnAlternarItemBlueprint => Dados.OnAlternarItemBlueprint;
 
-    [Parameter] public int? TempoMinutos { get; set; }
-    [Parameter] public string ResumoConteudo { get; set; } = "";
-    [Parameter] public string TiposTexto { get; set; } = "";
-    [Parameter] public string? AvisoGerador { get; set; }
-    [Parameter] public int SelecionadasCount { get; set; }
-    [Parameter] public List<LinhaAderencia> Aderencia { get; set; } = new();
+    private int TotalPercItensBlueprint => Gerador.PercPorItem.Values.Sum();
 
-    [Parameter] public EventCallback OnAlterado { get; set; }
-    [Parameter] public EventCallback<(int AssuntoId, bool Marcado)> OnAlternarAssunto { get; set; }
-    [Parameter] public EventCallback OnSincronizarQuantidadePorTipo { get; set; }
-    [Parameter] public EventCallback OnAlternarDefinirQuantidadePorTipo { get; set; }
-    [Parameter] public EventCallback<(NivelBloom Nivel, bool Marcado)> OnAlternarBloom { get; set; }
-    [Parameter] public EventCallback OnAtualizarDiagnosticoRecentes { get; set; }
-    [Parameter] public EventCallback OnGerar { get; set; }
-    [Parameter] public EventCallback OnAdicionarPeloGerador { get; set; }
+    private int? TempoMinutos => Dados.TempoMinutos;
+    private string ResumoConteudo => Dados.ResumoConteudo;
+    private string TiposTexto => Dados.TiposTexto;
+    private string? AvisoGerador => Dados.AvisoGerador;
+    private int SelecionadasCount => Dados.SelecionadasCount;
+    private List<LinhaAderencia> Aderencia => Dados.Aderencia;
+
+    private EventCallback OnAlterado => Dados.OnAlterado;
+    private EventCallback<(int AssuntoId, bool Marcado)> OnAlternarAssunto => Dados.OnAlternarAssunto;
+    private EventCallback OnSincronizarQuantidadePorTipo => Dados.OnSincronizarQuantidadePorTipo;
+    private EventCallback OnAlternarDefinirQuantidadePorTipo => Dados.OnAlternarDefinirQuantidadePorTipo;
+    private EventCallback<(NivelBloom Nivel, bool Marcado)> OnAlternarBloom => Dados.OnAlternarBloom;
+    private EventCallback OnAtualizarDiagnosticoRecentes => Dados.OnAtualizarDiagnosticoRecentes;
+    private EventCallback OnGerar => Dados.OnGerar;
+    private EventCallback OnAdicionarPeloGerador => Dados.OnAdicionarPeloGerador;
 
     private Task Notificar() => OnAlterado.InvokeAsync();
 
@@ -651,7 +712,7 @@
 
     private async Task DefinirPercAssunto(int assuntoId, ChangeEventArgs e)
     {
-        PercPorAssuntoGerador[assuntoId] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+        Gerador.PercPorAssunto[assuntoId] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
         await Notificar();
     }
 
@@ -661,7 +722,7 @@
 
     private async Task DefinirQuantidadeTipo(TipoQuestao tipo, ChangeEventArgs e)
     {
-        QuantidadePorTipoGerador[tipo] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+        Gerador.QuantidadePorTipo[tipo] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
         await Notificar();
     }
 
@@ -669,15 +730,13 @@
 
     private async Task DefinirPercBloom(NivelBloom nivel, ChangeEventArgs e)
     {
-        PercPorBloomGerador[nivel] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+        Gerador.PercPorBloom[nivel] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
         await Notificar();
     }
 
     private Task AtualizarRecentes() => OnAtualizarDiagnosticoRecentes.InvokeAsync();
 
-    // Busca um item marcado (por Id) na lista recebida via parâmetro — usada
-    // só pra exibir código/título no resuminho de disponibilidade abaixo dos
-    // checkboxes.
+    // Só pra exibir código/título no resumo de disponibilidade abaixo dos checkboxes.
     private ItemMatrizReferencia? ItemPorId(int id) =>
         ItensCurricular.FirstOrDefault(i => i.Id == id);
 
@@ -692,7 +751,7 @@
 
     private async Task DefinirPercItemBlueprint(int itemId, ChangeEventArgs e)
     {
-        PercPorItemGerador[itemId] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
+        Gerador.PercPorItem[itemId] = int.TryParse(e.Value?.ToString(), out var v) ? v : 0;
         await Notificar();
     }
 
@@ -702,7 +761,16 @@
         await Notificar();
     }
 
-    private Task Gerar() => OnGerar.InvokeAsync();
+    // Estado puramente visual do resumo "Proposta gerada" abaixo - não é
+    // parâmetro porque não precisa ser lido por nenhum componente irmão;
+    // volta a aparecer sempre que uma nova proposta é sorteada.
+    private bool propostaOculta;
+
+    private async Task Gerar()
+    {
+        propostaOculta = false;
+        await OnGerar.InvokeAsync();
+    }
 
     private Task AdicionarPeloGerador() => OnAdicionarPeloGerador.InvokeAsync();
 }

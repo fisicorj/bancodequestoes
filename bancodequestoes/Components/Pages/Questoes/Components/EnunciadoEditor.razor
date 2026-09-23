@@ -1,0 +1,121 @@
+@using BancoQuestoes.Exportacao
+<!--
+    Editor do Enunciado (toolbar Markdown/LaTeX + textarea + pré-visualização)
+    do formulário de Questão (Etapa 3 da refatoração — extraído de
+    QuestaoForm.razor, markup e comportamento idênticos ao original).
+
+    A tipografia matemática (MathJax, via "bqTypesetMath") continua disparada
+    pelo OnAfterRenderAsync de QuestaoForm.razor, não daqui — o JS localiza o
+    elemento por id ("preview-enunciado"), que continua existindo no DOM
+    normalmente mesmo vindo de um componente filho, então não precisa mover
+    esse lifecycle hook junto.
+-->
+<div class="mb-1 d-flex flex-wrap gap-1 align-items-center">
+    <button type="button" class="btn btn-sm btn-outline-secondary" title="Negrito" @onclick='() => AplicarFormatacaoAsync("negrito")'><strong>B</strong></button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" title="Itálico" @onclick='() => AplicarFormatacaoAsync("italico")'><em>I</em></button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" title="Lista" @onclick='() => AplicarFormatacaoAsync("lista")'><i class="bi bi-list-ul" aria-hidden="true"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" title="Código" @onclick='() => AplicarFormatacaoAsync("codigo-linha")'><i class="bi bi-code" aria-hidden="true"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" title="Bloco de código" @onclick='() => AplicarFormatacaoAsync("codigo-bloco")'><i class="bi bi-code-square" aria-hidden="true"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" title="Tabela" @onclick='() => AplicarFormatacaoAsync("tabela")'><i class="bi bi-table" aria-hidden="true"></i></button>
+    <button type="button" class="btn btn-sm btn-outline-secondary" title="Fórmula (LaTeX)" @onclick='() => AplicarFormatacaoAsync("formula")'><i class="bi bi-superscript" aria-hidden="true"></i></button>
+    <label class="btn btn-sm btn-outline-secondary mb-0" title="Inserir imagem na posição do cursor" style="cursor:pointer;">
+        <i class="bi bi-image" aria-hidden="true"></i>
+        <InputFile OnChange="OnImagemSelecionadaAsync" accept="image/*" style="position:absolute; width:1px; height:1px; opacity:0; overflow:hidden;" />
+    </label>
+</div>
+@if (erroImagemEnunciado is not null)
+{
+    <div class="alert alert-warning py-1 px-2 small mb-1">@erroImagemEnunciado</div>
+}
+
+<div class="form-floating mb-2">
+    <InputTextArea @bind-Value="Modelo.Enunciado" @oninput="OnEnunciadoInput" id="enunciado-textarea" class="form-control" style="height: 100px;" placeholder="Enunciado" />
+    <label for="enunciado-textarea">Enunciado</label>
+    <ValidationMessage For="() => Modelo.Enunciado" class="text-danger" />
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Modelo.Enunciado))
+{
+    <div class="mb-3">
+        <span class="form-label small text-muted d-block mb-1">Pré-visualização — Markdown (negrito, itálico, lista, código, tabela, imagem) e fórmulas entre <code>$...$</code> ou <code>$$...$$</code></span>
+        <div class="border rounded p-2 bg-white markdown-preview" id="preview-enunciado">@RenderizarPreview(Modelo.Enunciado)</div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+
+    // Mesma lista mutável (por referência) que QuestaoImagensEditor recebe; o botão
+    // "Imagem" adiciona aqui pro upload normal do Salvar e pra prévia resolver o data-URI.
+    [Parameter, EditorRequired] public List<PendenteImagem> Pendentes { get; set; } = new();
+
+    [Inject] private IJSRuntime JS { get; set; } = null!;
+
+    // Compartilhada com o modal de prévia da listagem; passa Pendentes pra
+    // resolver imagens recém-inseridas (sem Id de banco ainda) na prévia.
+    private MarkupString RenderizarPreview(string markdown) => (MarkupString)MarkdownPreview.ParaHtml(markdown, Pendentes);
+
+    private const long TamanhoMaximoImagemEnunciado = 5 * 1024 * 1024; // 5 MB — mesmo limite do upload "solto" (QuestaoImagensEditor).
+    private string? erroImagemEnunciado;
+
+    // Guarda como PendenteImagem (com Token, diferenciando da "solta" da seção
+    // Imagens) e insere a referência Markdown; só vira QuestaoImagem de verdade no Salvar.
+    private async Task OnImagemSelecionadaAsync(InputFileChangeEventArgs e)
+    {
+        erroImagemEnunciado = null;
+        var arquivo = e.File;
+
+        if (arquivo.Size > TamanhoMaximoImagemEnunciado)
+        {
+            erroImagemEnunciado = $"\"{arquivo.Name}\" passa de 5 MB e não foi inserido.";
+            return;
+        }
+
+        using var ms = new MemoryStream();
+        await arquivo.OpenReadStream(TamanhoMaximoImagemEnunciado).CopyToAsync(ms);
+        var conteudo = ms.ToArray();
+
+        // Ignora o Content-Type que o navegador declarou — confia só na assinatura real
+        // dos bytes, senão um arquivo disfarçado de imagem ficaria salvo e seria servido
+        // de volta com Content-Type de imagem (ver ValidadorImagem.cs).
+        var contentTypeReal = ValidadorImagem.DetectarContentType(conteudo);
+        if (contentTypeReal is null)
+        {
+            erroImagemEnunciado = $"\"{arquivo.Name}\" não parece ser uma imagem válida (PNG, JPEG, GIF, WEBP ou BMP).";
+            return;
+        }
+
+        var token = Guid.NewGuid().ToString("N");
+        Pendentes.Add(new PendenteImagem
+        {
+            NomeArquivo = arquivo.Name,
+            ContentType = contentTypeReal,
+            Conteudo = conteudo,
+            Token = token,
+        });
+
+        // Linha em branco antes E depois de propósito: sem ela a imagem cola no
+        // texto vizinho e deixa de ser reconhecida como "parágrafo só com imagem".
+        var trecho = $"\n\n![{arquivo.Name}](imagem:pendente:{token})\n\n";
+        var novoValor = await JS.InvokeAsync<string?>("bqInserirTexto", "enunciado-textarea", trecho);
+        if (novoValor is not null)
+        {
+            Modelo.Enunciado = novoValor;
+        }
+    }
+
+    // Handler manual porque "@bind-Value:event=oninput" quebra em InputTextArea
+    // (bug conhecido do Blazor); InputTextArea fica no binding padrão (onchange).
+    private void OnEnunciadoInput(ChangeEventArgs e) => Modelo.Enunciado = e.Value?.ToString() ?? "";
+
+    // Envolve a seleção do textarea com a marcação da toolbar (ou insere exemplo);
+    // o JS só calcula o texto, quem atualiza Modelo.Enunciado é o C#.
+    private async Task AplicarFormatacaoAsync(string acao)
+    {
+        var novoValor = await JS.InvokeAsync<string?>("bqToolbarAction", "enunciado-textarea", acao);
+        if (novoValor is not null)
+        {
+            Modelo.Enunciado = novoValor;
+        }
+    }
+}

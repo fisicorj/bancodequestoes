@@ -1,0 +1,282 @@
+@page "/admin/configuracao-ia"
+@attribute [Authorize(Roles = "Admin")]
+@rendermode InteractiveServer
+@using BancoQuestoes.Models
+@using BancoQuestoes.Services
+@inject ConfiguracaoIaService ConfiguracaoIaService
+@inject SugestaoIaService SugestaoIaService
+@inject AuthenticationStateProvider AuthProvider
+
+<PageTitle>Configuração de IA</PageTitle>
+
+<PageHeader Titulo="Configuração de IA" />
+<p class="text-muted">
+    Controla como o sistema chama a IA de sugestão de metadados (Bloom, Tags, Assunto, Alinhamento
+    Curricular ENADE — ver botões "Sugerir com IA" no formulário de questão) e, opcionalmente, a
+    retranscrição visual de página no Importador ENADE (exige um modelo de visão à parte). Vale pro
+    sistema inteiro e tem efeito imediato ao salvar, sem precisar reiniciar o app.
+</p>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+
+@if (modelo is null)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-7">
+            <div class="form-card">
+                <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+                    <div class="form-check mb-3">
+                        <InputCheckbox @bind-Value="modelo.Habilitada" id="Habilitada" class="form-check-input" />
+                        <label class="form-check-label" for="Habilitada">Habilitada (mostra os botões "Sugerir com IA" pros professores)</label>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label d-block">Onde rodar o modelo</label>
+                        <div class="form-check form-check-inline">
+                            <InputRadioGroup @bind-Value="modelo.Modo">
+                                <label class="form-check form-check-inline">
+                                    <InputRadio Value="ModoExecucaoIa.Local" class="form-check-input" />
+                                    Local (Ollama na própria máquina)
+                                </label>
+                                <label class="form-check form-check-inline ms-3">
+                                    <InputRadio Value="ModoExecucaoIa.Nuvem" class="form-check-input" />
+                                    Nuvem (Ollama Cloud, com API key)
+                                </label>
+                            </InputRadioGroup>
+                        </div>
+                    </div>
+
+                    @if (modelo.Modo == ModoExecucaoIa.Local)
+                    {
+                        <p class="text-muted small">
+                            Roda inteiramente na máquina onde este app está hospedado — nada sai da rede, mas depende do
+                            hardware local (CPU sem GPU dedicada costuma ser bem mais lento, ver TimeoutSegundos abaixo).
+                        </p>
+
+                        <div class="form-floating mb-3">
+                            <InputText @bind-Value="modelo.BaseUrlLocal" id="BaseUrlLocal" class="form-control" placeholder="URL do Ollama" />
+                            <label for="BaseUrlLocal">URL do Ollama local</label>
+                        </div>
+
+                        <div class="form-floating mb-3">
+                            <InputText @bind-Value="modelo.ModeloLocal" id="ModeloLocal" class="form-control" placeholder="Modelo" />
+                            <label for="ModeloLocal">Modelo (ex.: qwen3:8b — precisa já ter sido baixado com "ollama pull")</label>
+                        </div>
+
+                        <div class="form-floating mb-3">
+                            <InputText @bind-Value="modelo.ModeloVisaoLocal" id="ModeloVisaoLocal" class="form-control" placeholder="Modelo de visão" />
+                            <label for="ModeloVisaoLocal">Modelo de visão (opcional)</label>
+                        </div>
+                        <p class="text-muted small mt-n2">
+                            Só usado pela retranscrição visual de página no Importador ENADE — a maioria dos modelos de texto (como o qwen3:8b acima) não lê imagem.
+                            Precisa de um modelo com suporte a visão, já baixado (ex.: <code>ollama pull qwen2.5vl:7b</code>, ou <code>gemma3</code>/<code>llava</code>). Deixe em branco pra manter essa função desligada.
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="text-muted small">
+                            Roda nos servidores da Ollama (<a href="https://ollama.com" target="_blank" rel="noopener">ollama.com</a>),
+                            autenticado com uma API key — não depende do hardware local, mas o enunciado das questões trafega até lá.
+                            Gere uma chave em <a href="https://ollama.com/settings/keys" target="_blank" rel="noopener">ollama.com/settings/keys</a>.
+                        </p>
+
+                        <div class="form-floating mb-3">
+                            <InputText type="password" @bind-Value="modelo.ApiKeyNuvem" id="ApiKeyNuvem" class="form-control" placeholder="API key" autocomplete="off" />
+                            <label for="ApiKeyNuvem">API key da Ollama Cloud</label>
+                        </div>
+
+                        <div class="form-floating mb-3">
+                            <InputText @bind-Value="modelo.ModeloNuvem" id="ModeloNuvem" class="form-control" placeholder="Modelo" />
+                            <label for="ModeloNuvem">Modelo na nuvem (ex.: gpt-oss:120b)</label>
+                        </div>
+
+                        <div class="form-floating mb-3">
+                            <InputText @bind-Value="modelo.ModeloVisaoNuvem" id="ModeloVisaoNuvem" class="form-control" placeholder="Modelo de visão" />
+                            <label for="ModeloVisaoNuvem">Modelo de visão na nuvem (opcional)</label>
+                        </div>
+                        <p class="text-muted small mt-n2">
+                            Só usado pela retranscrição visual de página no Importador ENADE. Deixe em branco pra manter essa função desligada.
+                        </p>
+                    }
+
+                    <div class="d-flex gap-3 flex-wrap mb-3">
+                        <div class="form-floating" style="max-width: 220px;">
+                            <InputNumber @bind-Value="modelo.TimeoutSegundos" id="TimeoutSegundos" class="form-control" />
+                            <label for="TimeoutSegundos">Timeout (segundos)</label>
+                        </div>
+                        <div class="form-floating" style="max-width: 260px;">
+                            <InputNumber @bind-Value="modelo.TimeoutVisaoSegundos" id="TimeoutVisaoSegundos" class="form-control" />
+                            <label for="TimeoutVisaoSegundos">Timeout da retranscrição visual (s)</label>
+                        </div>
+                    </div>
+                    <p class="text-muted small mt-n2 mb-3">
+                        O timeout da retranscrição visual é separado (e maior por padrão) porque inferência com imagem costuma ser bem mais lenta que texto — a primeira chamada ainda paga o custo de carregar o modelo de visão na memória.
+                    </p>
+
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="submit" class="btn btn-primary" disabled="@salvando">
+                            @if (salvando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Salvar
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" disabled="@testandoTexto" @onclick="TestarTextoAsync">
+                            @if (testandoTexto)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Testar modelo de texto
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" disabled="@testandoVisao" @onclick="TestarVisaoAsync">
+                            @if (testandoVisao)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Testar modelo de visão
+                        </button>
+                    </div>
+
+                    <p class="text-muted small mt-2 mb-0">Os testes usam a configuração já salva — salve antes de testar se acabou de mudar algo acima. São modelos diferentes: testar um não garante nada sobre o outro.</p>
+
+                    @if (resultadoTesteTexto is not null)
+                    {
+                        <p class="small mt-2 mb-0 @(resultadoTesteTexto.Value.Sucesso ? "text-success" : "text-danger")">
+                            Modelo de texto: @resultadoTesteTexto.Value.Mensagem
+                        </p>
+                    }
+                    @if (resultadoTesteVisao is not null)
+                    {
+                        <p class="small mt-2 mb-0 @(resultadoTesteVisao.Value.Sucesso ? "text-success" : "text-danger")">
+                            Modelo de visão: @resultadoTesteVisao.Value.Mensagem
+                        </p>
+                    }
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ConfiguracaoIa? modelo;
+    private bool ehAdmin;
+    private bool salvando;
+    private bool testandoTexto;
+    private bool testandoVisao;
+    private string? erro;
+    private string? sucesso;
+    private (bool Sucesso, string Mensagem)? resultadoTesteTexto;
+    private (bool Sucesso, string Mensagem)? resultadoTesteVisao;
+
+    // Modelo de visão da configuração JÁ SALVA — só pra decidir a mensagem do
+    // teste sem round-trip; atualizado de novo depois de um Salvar bem-sucedido.
+    private string? modeloVisaoEfetivoSalvo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        ehAdmin = authState.User.IsInRole("Admin");
+
+        var atual = await ConfiguracaoIaService.ObterAsync();
+        // Cópia (não o objeto rastreado pelo EF): edita livremente até Salvar,
+        // que aplica via ConfiguracaoIaService.AtualizarAsync com validação.
+        modelo = new ConfiguracaoIa
+        {
+            Id = atual.Id,
+            Habilitada = atual.Habilitada,
+            Modo = atual.Modo,
+            BaseUrlLocal = atual.BaseUrlLocal,
+            ModeloLocal = atual.ModeloLocal,
+            ApiKeyNuvem = atual.ApiKeyNuvem,
+            ModeloNuvem = atual.ModeloNuvem,
+            ModeloVisaoLocal = atual.ModeloVisaoLocal,
+            ModeloVisaoNuvem = atual.ModeloVisaoNuvem,
+            TimeoutSegundos = atual.TimeoutSegundos,
+            TimeoutVisaoSegundos = atual.TimeoutVisaoSegundos,
+        };
+        modeloVisaoEfetivoSalvo = atual.ModeloVisaoEfetivo;
+    }
+
+    private async Task SalvarAsync()
+    {
+        if (modelo is null)
+        {
+            return;
+        }
+
+        erro = null;
+        sucesso = null;
+        resultadoTesteTexto = null;
+        resultadoTesteVisao = null;
+        salvando = true;
+        try
+        {
+            await ConfiguracaoIaService.AtualizarAsync(modelo, ehAdmin);
+            sucesso = "Configuração salva — já vale pra próxima sugestão pedida, sem precisar reiniciar.";
+            modeloVisaoEfetivoSalvo = modelo.ModeloVisaoEfetivo;
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+        finally
+        {
+            salvando = false;
+        }
+    }
+
+    private async Task TestarTextoAsync()
+    {
+        erro = null;
+        sucesso = null;
+        resultadoTesteTexto = null;
+        testandoTexto = true;
+        try
+        {
+            // Testa a configuração JÁ SALVA (não o rascunho no formulário) —
+            // salve antes de testar se acabou de mudar algo.
+            resultadoTesteTexto = await SugestaoIaService.TestarConexaoAsync();
+        }
+        finally
+        {
+            testandoTexto = false;
+        }
+    }
+
+    private async Task TestarVisaoAsync()
+    {
+        erro = null;
+        sucesso = null;
+        resultadoTesteVisao = null;
+
+        // Modelo diferente do de texto (ver ConfiguracaoIa.ModeloVisaoEfetivo) —
+        // sem ele configurado e salvo, nem vale a pena chamar o Ollama.
+        if (string.IsNullOrWhiteSpace(modeloVisaoEfetivoSalvo))
+        {
+            resultadoTesteVisao = (false, "Nenhum modelo de visão salvo — preencha o campo \"Modelo de visão\" acima e salve antes de testar.");
+            return;
+        }
+
+        testandoVisao = true;
+        try
+        {
+            resultadoTesteVisao = await SugestaoIaService.TestarConexaoAsync(modeloVisaoEfetivoSalvo);
+        }
+        finally
+        {
+            testandoVisao = false;
+        }
+    }
+}

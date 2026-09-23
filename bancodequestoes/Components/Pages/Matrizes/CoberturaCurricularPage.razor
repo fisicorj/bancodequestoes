@@ -18,8 +18,7 @@
 
 @if (MatrizId is null)
 {
-    <h1>Cobertura Curricular</h1>
-    <p class="text-muted">Selecione um curso e uma matriz de referência para ver o quanto o banco de questões já cobre dela.</p>
+    <PageHeader Titulo="Cobertura Curricular" Subtitulo="Selecione um curso e uma matriz de referência para ver o quanto o banco de questões já cobre dela." />
 
     <div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
         <div class="col-12 col-md-6">
@@ -52,8 +51,14 @@ else if (carregando)
 }
 else if (resultado is not null)
 {
-    <h1>Cobertura Curricular</h1>
-    <h5 class="text-muted">@(resultado.Matriz.Curso?.Nome ?? resultado.Matriz.AreaCurso?.Nome) / @resultado.Matriz.Nome</h5>
+    <PageHeader Titulo="Cobertura Curricular"
+                Subtitulo="@($"{resultado.Matriz.Curso?.Nome ?? resultado.Matriz.AreaCurso?.Nome} / {resultado.Matriz.Nome}")" />
+
+    @if (resultado.Matriz.Tipo == TipoMatrizReferencia.ENADE)
+    {
+        <p class="mb-2"><EnadeBadge Ano="resultado.Matriz.Ano" Area="@resultado.Matriz.AreaCurso?.Nome" /></p>
+    }
+
     <p>
         <a href="cobertura-curricular" class="btn btn-sm btn-link px-0">&laquo; Escolher outra matriz</a>
     </p>
@@ -75,8 +80,13 @@ else if (resultado is not null)
         {
             <div class="col-md-3">
                 <div class="p-3 border rounded text-center">
-                    <div class="fs-3 fw-bold">@grupo.PercentualCobertura%</div>
-                    <div class="text-muted small">@grupo.Tipo.RotuloPlural() cobertos (@grupo.ItensComQuestao/@grupo.TotalItens)</div>
+                    <div class="fs-3 fw-bold">@grupo.ItensComQuestao</div>
+                    <div class="text-muted small">@grupo.Tipo.RotuloPlural() com questões (de @grupo.TotalItens)</div>
+                    @{ var semQuestaoNoGrupo = grupo.TotalItens - grupo.ItensComQuestao; }
+                    @if (semQuestaoNoGrupo > 0)
+                    {
+                        <div class="text-warning small">@semQuestaoNoGrupo sem questões</div>
+                    }
                 </div>
             </div>
         }

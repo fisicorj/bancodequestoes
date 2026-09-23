@@ -47,6 +47,73 @@ window.bqToolbarAction = (textareaId, action) => {
     return el.value.substring(0, start) + antes + texto + depois + el.value.substring(end);
 };
 
+// Insere um texto EXATO (já pronto, calculado no C#) na posição do cursor —
+// diferente de bqToolbarAction, que decide o texto a partir de uma ação
+// nomeada fixa. Usado pelo botão "Imagem" do EnunciadoEditor: o C# só sabe o
+// token/id gerado pro upload depois de processar o arquivo, então precisa
+// mandar o texto pronto pro JS em vez de um nome de ação.
+window.bqInserirTexto = (textareaId, texto) => {
+    const el = document.getElementById(textareaId);
+    if (!el) {
+        return null;
+    }
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    return el.value.substring(0, start) + texto + el.value.substring(end);
+};
+
+// Torna um elemento arrastável pelo "cabeçalho" (handle) — usado pela janela
+// flutuante de "Ver original da prova/padrão" no Importador ENADE, pra dar
+// pra posicionar a imagem original ao lado do campo que está sendo editado
+// em vez de ficar presa no fluxo da página. Tudo em Pointer Events puro, sem
+// nenhum round-trip com o servidor durante o arrasto (só JS -> DOM direto);
+// o dataset guarda "já configurado" pra sobreviver a re-renders do Blazor sem
+// duplicar listener (o mesmo nó de DOM some/reaparece conforme o toggle,
+// então essa função é chamada de novo a cada render enquanto a janela está aberta).
+window.bqTornarArrastavel = (containerId, handleId) => {
+    const container = document.getElementById(containerId);
+    const handle = document.getElementById(handleId);
+    if (!container || !handle || container.dataset.arrastavelPronto === '1') {
+        return;
+    }
+    container.dataset.arrastavelPronto = '1';
+
+    let offsetX = 0;
+    let offsetY = 0;
+
+    const aoMoverPonteiro = (e) => {
+        const maxX = window.innerWidth - container.offsetWidth;
+        const maxY = window.innerHeight - container.offsetHeight;
+        container.style.left = Math.max(0, Math.min(e.clientX - offsetX, maxX)) + 'px';
+        container.style.top = Math.max(0, Math.min(e.clientY - offsetY, maxY)) + 'px';
+    };
+
+    const aoSoltarPonteiro = () => {
+        document.removeEventListener('pointermove', aoMoverPonteiro);
+        document.removeEventListener('pointerup', aoSoltarPonteiro);
+    };
+
+    handle.addEventListener('pointerdown', (e) => {
+        // Botão "Fechar" fica dentro do cabeçalho — não inicia arrasto.
+        if (e.target.closest('.janela-flutuante-fechar')) {
+            return;
+        }
+
+        const rect = container.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        // Trava a posição em left/top absolutos (estava solta em right/top
+        // por padrão via CSS) antes do primeiro movimento.
+        container.style.left = rect.left + 'px';
+        container.style.top = rect.top + 'px';
+        container.style.right = 'auto';
+
+        document.addEventListener('pointermove', aoMoverPonteiro);
+        document.addEventListener('pointerup', aoSoltarPonteiro);
+        e.preventDefault();
+    });
+};
+
 // Manda o MathJax (re)processar as fórmulas dentro de um elemento — usado na
 // pré-visualização ao vivo do enunciado da questão. MathJax carrega de forma
 // assíncrona (via CDN), então espera a promise de inicialização antes de

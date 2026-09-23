@@ -1,0 +1,187 @@
+@page "/alunos"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AlunoService AlunoService
+@inject InstituicaoService InstituicaoService
+@inject IJSRuntime JS
+
+<PageTitle>Alunos</PageTitle>
+
+<PageHeader Titulo="Alunos">
+    <Acao>
+        <a class="btn btn-outline-secondary" href="alunos/importar">Importar CSV</a>
+        <a class="btn btn-primary" href="alunos/novo">+ Novo aluno</a>
+    </Acao>
+</PageHeader>
+
+@if (sucesso is not null)
+{
+    <div class="alert alert-success">@sucesso</div>
+}
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
+    <div class="col-12 col-md-5">
+        <label class="form-label small mb-1">Buscar por nome, email ou matrícula</label>
+        <input type="text" class="form-control" placeholder="Digite para buscar..."
+               @bind="filtroTexto" @bind:event="oninput" @bind:after="AplicarFiltroAsync" />
+    </div>
+    <div class="col-8 col-md-5">
+        <label class="form-label small mb-1">Instituição</label>
+        <select class="form-select" @bind="filtroInstituicaoId" @bind:after="AplicarFiltroAsync">
+            <option value="0">Todas</option>
+            @foreach (var i in instituicoes)
+            {
+                <option value="@i.Id">@i.Nome</option>
+            }
+        </select>
+    </div>
+    <div class="col-4 col-md-2">
+        <button type="button" class="btn btn-sm btn-outline-secondary w-100" @onclick="LimparFiltrosAsync">Limpar</button>
+    </div>
+</div>
+
+@if (alunos is null)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (alunos.Count == 0)
+{
+    <p><em>Nenhum aluno encontrado com os filtros atuais.</em></p>
+}
+else
+{
+    <p class="text-muted small">
+        Mostrando @((pagina - 1) * TamanhoPagina + 1)–@((pagina - 1) * TamanhoPagina + alunos.Count) de @totalRegistros aluno(s).
+    </p>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Nome</th>
+                <th>Email</th>
+                <th>Matrícula</th>
+                <th>Instituição</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var a in alunos)
+            {
+                <tr class="@(a.Ativo ? "" : "text-muted")">
+                    <td>@a.Nome</td>
+                    <td>@a.Email</td>
+                    <td>@a.Matricula</td>
+                    <td>@a.Instituicao?.Nome</td>
+                    <td>
+                        @if (a.Ativo)
+                        {
+                            <span class="badge bg-success">Ativo</span>
+                        }
+                        else
+                        {
+                            <span class="badge bg-secondary">Inativo</span>
+                        }
+                    </td>
+                    <td>
+                        <a class="btn btn-sm btn-secondary" href="@($"alunos/editar/{a.Id}")">Editar</a>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => AlternarAtivoAsync(a)">
+                            @(a.Ativo ? "Desativar" : "Ativar")
+                        </button>
+                        <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(a)">Excluir</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <Paginacao Pagina="pagina" TamanhoPagina="TamanhoPagina" TotalRegistros="totalRegistros" PaginaChanged="MudarPaginaAsync" />
+}
+
+@code {
+    private List<Aluno>? alunos;
+    private List<Instituicao> instituicoes = new();
+    private string? erro;
+    private string? sucesso;
+
+    private string filtroTexto = "";
+    private int filtroInstituicaoId;
+
+    private const int TamanhoPagina = 20;
+    private int pagina = 1;
+    private int totalRegistros;
+
+    [SupplyParameterFromQuery(Name = "msg")]
+    private string? Msg { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        sucesso = Msg;
+        instituicoes = await InstituicaoService.ListarTodasAsync();
+        await CarregarAsync();
+    }
+
+    private async Task AplicarFiltroAsync()
+    {
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task LimparFiltrosAsync()
+    {
+        filtroTexto = "";
+        filtroInstituicaoId = 0;
+        pagina = 1;
+        await CarregarAsync();
+    }
+
+    private async Task MudarPaginaAsync(int novaPagina)
+    {
+        pagina = novaPagina;
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        var resultado = await AlunoService.ListarAsync(filtroTexto, filtroInstituicaoId, filtroTurmaId: 0, pagina, TamanhoPagina);
+        alunos = resultado.Itens;
+        totalRegistros = resultado.Total;
+    }
+
+    private async Task AlternarAtivoAsync(Aluno a)
+    {
+        erro = null;
+        sucesso = null;
+        await AlunoService.AlternarAtivoAsync(a);
+        sucesso = $"\"{a.Nome}\" {(a.Ativo ? "ativado" : "desativado")} com sucesso.";
+    }
+
+    private async Task ConfirmarExcluirAsync(Aluno a)
+    {
+        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir o aluno \"{a.Nome}\"? Essa ação não pode ser desfeita.");
+        if (confirmado)
+        {
+            await ExcluirAsync(a);
+        }
+    }
+
+    private async Task ExcluirAsync(Aluno a)
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await AlunoService.ExcluirAsync(a);
+            sucesso = $"\"{a.Nome}\" excluído com sucesso.";
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

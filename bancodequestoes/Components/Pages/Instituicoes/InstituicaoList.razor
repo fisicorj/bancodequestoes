@@ -1,16 +1,16 @@
 @page "/instituicoes"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject InstituicaoService InstituicaoService
 @inject IJSRuntime JS
 
 <PageTitle>Instituições</PageTitle>
 
-<h1>Instituições</h1>
-
-<p>
-    <a class="btn btn-primary" href="instituicoes/novo">+ Nova instituição</a>
-</p>
+<PageHeader Titulo="Instituições">
+    <Acao>
+        <a class="btn btn-primary" href="instituicoes/novo">+ Nova instituição</a>
+    </Acao>
+</PageHeader>
 
 @if (sucesso is not null)
 {

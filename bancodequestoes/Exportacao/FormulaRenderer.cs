@@ -2,22 +2,16 @@ using System.Text.RegularExpressions;
 
 namespace BancoQuestoes.Exportacao;
 
-// Fórmulas em LaTeX (entre $...$ ou $$...$$) escritas no enunciado precisam
-// virar imagem para aparecer certinho no DOCX/PDF — nenhum dos dois exportadores
-// tem um motor de composição matemática embutido. Em vez de implementar um,
-// usamos um serviço público de renderização (CodeCogs), que devolve um PNG
-// pronto pra cada fórmula. Isso exige internet no momento da exportação; se a
-// chamada falhar (sem rede, serviço fora do ar), mantemos o LaTeX bruto como
-// texto em vez de perder o conteúdo da questão.
+// Fórmulas LaTeX ($...$/$$...$$) viram imagem via serviço público (CodeCogs),
+// já que DOCX/PDF não têm motor de composição matemática; se a chamada falhar, mantém o LaTeX bruto.
 public static class FormulaRenderer
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(8) };
 
     private static readonly Regex FormulaRegex = new(@"\$\$(.+?)\$\$|\$(?!\$)(.+?)\$", RegexOptions.Singleline | RegexOptions.Compiled);
 
-    // Divide um texto em trechos alternados de texto puro e imagem renderizada
-    // de fórmula, na ordem em que aparecem — permite que os exportadores montem
-    // um único parágrafo misturando texto normal com as fórmulas inline.
+    // Divide um texto em trechos alternados de texto puro e imagem de fórmula,
+    // na ordem em que aparecem — permite montar um parágrafo com fórmulas inline.
     public static async Task<List<TrechoTexto>> DividirEmTrechosAsync(string texto)
     {
         var partes = new List<TrechoTexto>();
@@ -58,14 +52,8 @@ public static class FormulaRenderer
         return partes;
     }
 
-    // Igual a DividirEmTrechosAsync, mas pra uso pelo MarkdownConversor: recebe
-    // um trecho de texto que já sabe se está em negrito/itálico/código (herdado
-    // da formatação Markdown ao redor) e carimba isso em cada TrechoTexto de
-    // texto resultante (as fórmulas viram imagem de qualquer forma, então não
-    // faz sentido "negrito" ou "itálico" nelas). Se o texto não tiver nenhuma
-    // fórmula, devolve ele inteiro como um único trecho — diferente de
-    // DividirEmTrechosAsync, que devolve lista vazia nesse caso (seu contrato
-    // é "vazio = nada a fazer, use o texto bruto direto").
+    // Igual a DividirEmTrechosAsync, mas carimba a formatação herdada (negrito/itálico/código)
+    // em cada trecho de TEXTO e sempre devolve ao menos um trecho.
     public static async Task<List<TrechoTexto>> DividirComFormatacaoAsync(string texto, bool negrito, bool italico, bool codigoInline)
     {
         var partes = await DividirEmTrechosAsync(texto);

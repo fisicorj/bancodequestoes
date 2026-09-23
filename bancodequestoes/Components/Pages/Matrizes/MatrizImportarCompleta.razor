@@ -9,10 +9,11 @@
 @inject AreaCursoService AreaCursoService
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthProvider
+@inject ILogger<MatrizImportarCompleta> Logger
 
 <PageTitle>Importar matriz completa</PageTitle>
 
-<h1>Importar matriz completa (JSON)</h1>
+<PageHeader Titulo="Importar matriz completa (JSON)" />
 <p class="text-muted">
     Cria uma Matriz de Referência nova (curso + tipo + itens) a partir de um único arquivo JSON — útil pra importar de uma vez uma matriz ENADE/DCN/PPC inteira em vez de cadastrar item por item.
 </p>
@@ -218,12 +219,8 @@
         areasCurso = await AreaCursoService.ListarAtivasAsync();
     }
 
-    // Tipo já resolvido/confirmado na tela decide se o seletor certo é
-    // Área de Curso (ENADE/DCN, nacional) ou Curso (demais) — ver
-    // TipoMatrizReferenciaExtensions.EhEscopoNacional. Sem Tipo ainda
-    // resolvido/selecionado, mostra o de Curso (comportamento de antes desta
-    // rodada, e o mais comum na prática — a maioria das importações não é
-    // ENADE/DCN).
+    // Decide se o seletor certo é Área de Curso (ENADE/DCN, nacional) ou Curso
+    // (demais); sem Tipo selecionado ainda, mostra o de Curso (caso mais comum).
     private bool TipoSelecionadoNacional() =>
         Enum.TryParse<TipoMatrizReferencia>(tipoSelecionado, out var t) && t.EhEscopoNacional();
 
@@ -235,8 +232,9 @@
             using var reader = new StreamReader(e.File.OpenReadStream(5 * 1024 * 1024));
             textoOriginal = await reader.ReadToEndAsync();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Falha ao ler arquivo de importação de matriz completa \"{Arquivo}\"", e.File.Name);
             erro = "Não foi possível ler o arquivo (verifique o tamanho, até 5 MB).";
         }
     }

@@ -3,9 +3,8 @@ using BancoQuestoes.Models;
 
 namespace BancoQuestoes.Importacao;
 
-// Exportação simétrica ao AikenParser: só múltipla escolha tem equivalente
-// no formato Aiken, então qualquer outro tipo é reportado em "Ignoradas"
-// em vez de gerar uma linha quebrada no arquivo.
+// Exportação simétrica ao AikenParser: só múltipla escolha tem equivalente no
+// formato Aiken; outros tipos são reportados em "Ignoradas" em vez de quebrar o arquivo.
 public static class AikenExporter
 {
     public static (string Conteudo, List<string> Ignoradas) Gerar(List<Questao> questoes)

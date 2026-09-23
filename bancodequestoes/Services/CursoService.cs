@@ -4,13 +4,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BancoQuestoes.Services;
 
-// Curso e Turma moram no mesmo Service de propósito: Turma não faz sentido
-// sem um Curso (é sempre "oferta de uma disciplina dentro de um curso"),
-// mesmo raciocínio do Disciplina+Assunto no DisciplinaService.
-//
-// ProvaForm/ProvaService reusam ListarTodosAsync/ListarTodasTurmasAsync
-// daqui em vez de duplicar essas consultas — mesmo padrão de ProvaForm
-// injetar DisciplinaService direto pra lista de disciplinas.
+// Curso e Turma moram no mesmo Service porque Turma sempre pertence a um
+// Curso; ProvaForm/ProvaService reusam as listagens daqui.
 public class CursoService(ApplicationDbContext db)
 {
     // --- Curso ---
@@ -39,27 +34,11 @@ public class CursoService(ApplicationDbContext db)
         return new PaginaResultado<Curso> { Itens = itens, Total = total };
     }
 
-    // Usado pelos seletores (Turma, Prova) que precisam de "todos os cursos"
-    // com a Instituição já carregada, sem paginação.
-    //
-    // ATENÇÃO (item 10 da 2ª rodada de revisão): isso lista cursos de
-    // QUALQUER instituição, sem nenhum filtro por usuário — é um gap
-    // pré-existente (Curso/Instituicao/Turma nunca tiveram escopo por
-    // usuário no projeto) que permanece aqui, fora do escopo desta rodada
-    // (que tratou só as telas de Matriz de Referência). Continua sendo o
-    // método certo pra telas que já são globais por natureza (ex.: Admin) ou
-    // pra Turma/Prova, que não foram tocadas nesta rodada. Pra Matriz de
-    // Referência, use ListarPorInstituicaoAsync abaixo em vez deste.
+    // ATENÇÃO: lista cursos de QUALQUER instituição, sem filtro por usuário. Pra Matriz, use ListarPorInstituicaoAsync abaixo.
     public Task<List<Curso>> ListarTodosAsync() =>
         db.Cursos.Include(c => c.Instituicao).OrderBy(c => c.Nome).ToListAsync();
 
-    // Cursos da MESMA instituição do usuário — usado pelos seletores de
-    // Curso nas telas de Matriz de Referência (MatrizesPage/MatrizForm/
-    // CoberturaCurricularPage), pra um professor não conseguir nem LISTAR
-    // cursos de outra instituição no dropdown (item 8/9/10 do pedido). Sem
-    // instituição definida no perfil, devolve lista vazia — a tela orienta a
-    // definir a instituição no perfil, mesmo padrão já usado em
-    // QuestaoForm.razor pra Visibilidade Institucional.
+    // Cursos da mesma instituição do usuário; sem instituição no perfil, devolve lista vazia.
     public Task<List<Curso>> ListarPorInstituicaoAsync(int? instituicaoId) =>
         instituicaoId is null
             ? Task.FromResult(new List<Curso>())
@@ -177,6 +156,10 @@ public class CursoService(ApplicationDbContext db)
         };
 
         db.Turmas.Add(turma);
+
+        // Mantém CursoDisciplina em sincronia com a Turma (ver GarantirCursoDisciplinaAsync abaixo).
+        await GarantirCursoDisciplinaAsync(modelo.CursoId, modelo.DisciplinaId);
+
         await db.SaveChangesAsync();
         return turma;
     }
@@ -194,6 +177,9 @@ public class CursoService(ApplicationDbContext db)
         turma.Ano = modelo.Ano;
         turma.Semestre = modelo.Semestre;
         turma.Bimestre = modelo.Bimestre;
+
+        await GarantirCursoDisciplinaAsync(modelo.CursoId, modelo.DisciplinaId);
+
         await db.SaveChangesAsync();
     }
 
@@ -211,9 +197,7 @@ public class CursoService(ApplicationDbContext db)
         }
     }
 
-    // Bimestre só é obrigatório quando a Instituição do Curso escolhido usa
-    // SemestralComBimestres — daí precisar ir ao banco (deixou de ser
-    // síncrono) pra descobrir isso a partir do CursoId antes de validar.
+    // Bimestre só é obrigatório quando a Instituição do Curso usa SemestralComBimestres.
     private async Task ValidarTurmaAsync(TurmaInput modelo)
     {
         if (modelo.CursoId == 0)
@@ -237,17 +221,98 @@ public class CursoService(ApplicationDbContext db)
         }
     }
 
-    // --- Alinhamento Curricular / ENADE ---
-    //
-    // A gestão de Matriz de Referência / Item de Matriz / Cobertura
-    // Curricular NÃO mora aqui (diferente da antiga DiretrizCurricular, que
-    // vivia neste Service) — vive em MatrizReferenciaService à parte. Motivo:
-    // ali existe um conceito novo (versionamento — várias matrizes por
-    // curso, com Status Rascunho/Ativa/Historica) e uma superfície bem maior
-    // (matriz + itens + validação de vínculo questão/curso + cobertura), que
-    // deixaria este Service, já grande com Curso+Turma, difícil de navegar.
-    // Este Service continua sendo quem CursoForm/CursoList injetam pra
-    // Curso/Turma; a área "Matrizes de Referência" da tela de Curso injeta
-    // MatrizReferenciaService à parte.
+    // Matriz de Referência/Item/Cobertura Curricular moram em MatrizReferenciaService à parte.
 
+    // CursoDisciplina fica aqui por ser pequeno; preenchido automaticamente
+    // por GarantirCursoDisciplinaAsync a cada Turma criada/editada.
+
+    public Task<List<CursoDisciplina>> ListarDisciplinasDoCursoAsync(int cursoId) =>
+        db.CursosDisciplinas
+            .Include(cd => cd.Disciplina)
+            .Where(cd => cd.CursoId == cursoId)
+            .OrderBy(cd => cd.Disciplina!.Nome)
+            .ToListAsync();
+
+    public Task<CursoDisciplina?> ObterCursoDisciplinaAsync(int id) =>
+        db.CursosDisciplinas.Include(cd => cd.Curso).Include(cd => cd.Disciplina).FirstOrDefaultAsync(cd => cd.Id == id);
+
+    public async Task<CursoDisciplina> CriarCursoDisciplinaAsync(CursoDisciplinaInput modelo)
+    {
+        await ValidarCursoDisciplinaAsync(modelo, editandoId: null);
+
+        var vinculo = new CursoDisciplina
+        {
+            CursoId = modelo.CursoId,
+            DisciplinaId = modelo.DisciplinaId,
+            Semestre = modelo.Semestre,
+            CargaHoraria = modelo.CargaHoraria,
+            Ativa = modelo.Ativa,
+        };
+
+        db.CursosDisciplinas.Add(vinculo);
+        await db.SaveChangesAsync();
+        return vinculo;
+    }
+
+    public async Task AtualizarCursoDisciplinaAsync(int id, CursoDisciplinaInput modelo)
+    {
+        await ValidarCursoDisciplinaAsync(modelo, editandoId: id);
+
+        var vinculo = await db.CursosDisciplinas.FindAsync(id)
+            ?? throw new OperacaoInvalidaException("Vínculo Curso/Disciplina não encontrado.");
+
+        vinculo.CursoId = modelo.CursoId;
+        vinculo.DisciplinaId = modelo.DisciplinaId;
+        vinculo.Semestre = modelo.Semestre;
+        vinculo.CargaHoraria = modelo.CargaHoraria;
+        vinculo.Ativa = modelo.Ativa;
+        await db.SaveChangesAsync();
+    }
+
+    // Índice único (CursoId, DisciplinaId) garante isso numa corrida real —
+    // checagem aqui é só pra mensagem amigável.
+    private async Task ValidarCursoDisciplinaAsync(CursoDisciplinaInput modelo, int? editandoId)
+    {
+        if (modelo.CursoId == 0)
+        {
+            throw new OperacaoInvalidaException("Selecione um curso.");
+        }
+
+        if (modelo.DisciplinaId == 0)
+        {
+            throw new OperacaoInvalidaException("Selecione uma disciplina.");
+        }
+
+        var jaExiste = await db.CursosDisciplinas.AnyAsync(cd =>
+            cd.Id != (editandoId ?? 0) && cd.CursoId == modelo.CursoId && cd.DisciplinaId == modelo.DisciplinaId);
+
+        if (jaExiste)
+        {
+            throw new OperacaoInvalidaException("Essa disciplina já está na grade deste curso.");
+        }
+    }
+
+    public async Task ExcluirCursoDisciplinaAsync(CursoDisciplina vinculo)
+    {
+        try
+        {
+            db.CursosDisciplinas.Remove(vinculo);
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateException)
+        {
+            throw new OperacaoInvalidaException(
+                "Não foi possível excluir esse vínculo: verifique se ainda existem Turmas dessa disciplina nesse curso.");
+        }
+    }
+
+    // Upsert lógico: cria CursoDisciplina quando a Turma usa um par novo, sem nunca bloquear a Turma.
+    private async Task GarantirCursoDisciplinaAsync(int cursoId, int disciplinaId)
+    {
+        var existe = await db.CursosDisciplinas.AnyAsync(cd => cd.CursoId == cursoId && cd.DisciplinaId == disciplinaId);
+        if (!existe)
+        {
+            db.CursosDisciplinas.Add(new CursoDisciplina { CursoId = cursoId, DisciplinaId = disciplinaId, Ativa = true });
+        }
+    }
 }

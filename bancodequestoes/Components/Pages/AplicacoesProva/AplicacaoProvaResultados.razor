@@ -1,0 +1,186 @@
+@page "/aplicacoes-prova/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AplicacaoProvaService AplicacaoProvaService
+@inject RespostaProvaOnlineService RespostaProvaOnlineService
+
+<PageTitle>Resultados da aplicação</PageTitle>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (aplicacao is null)
+{
+    <div class="alert alert-danger">Aplicação não encontrada.</div>
+}
+else
+{
+    <PageHeader Titulo="@($"Resultados — {aplicacao.Prova?.Titulo}")" Subtitulo="@($"Turma {aplicacao.Turma?.Rotulo} — código de acesso {aplicacao.CodigoAcesso}")" />
+    <p><a href="aplicacoes-prova" class="btn btn-sm btn-link px-0">&laquo; Voltar às aplicações</a></p>
+
+    @if (sucesso is not null)
+    {
+        <div class="alert alert-success">@sucesso</div>
+    }
+
+    @if (tentativas.Count == 0)
+    {
+        <p><em>Nenhum aluno respondeu essa aplicação ainda.</em></p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Aluno</th>
+                    <th>Status</th>
+                    <th>Nota</th>
+                    <th>Encerramento</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in tentativas)
+                {
+                    <tr>
+                        <td>@t.Aluno?.Nome</td>
+                        <td>@RotuloStatus(t.Status)</td>
+                        <td>@(t.NotaTotal?.ToString("0.##") ?? "—")</td>
+                        <td>@(t.MotivoEncerramento is { } m ? m.Rotulo() : "—")</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => AlternarDetalheAsync(t.Id)">
+                                @(detalhesExpandidos.Contains(t.Id) ? "Ocultar respostas" : "Ver respostas")
+                            </button>
+                            @if (t.Status == StatusRespostaProvaOnline.Enviada)
+                            {
+                                <button class="btn btn-sm btn-success" @onclick="() => LiberarAsync(t)">Liberar nota</button>
+                            }
+                        </td>
+                    </tr>
+                    @if (detalhesExpandidos.Contains(t.Id) && detalhes.TryGetValue(t.Id, out var detalhe))
+                    {
+                        <tr>
+                            <td colspan="5" class="bg-light">
+                                <table class="table table-sm mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Questão</th>
+                                            <th>Resposta do aluno</th>
+                                            <th>Resultado</th>
+                                            <th>Pontos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var r in detalhe.Respostas)
+                                        {
+                                            <tr>
+                                                <td>@Truncar(r.Questao?.Enunciado)</td>
+                                                <td>@DescreverResposta(r)</td>
+                                                <td>
+                                                    @if (r.Correta is true)
+                                                    {
+                                                        <span class="badge bg-success">Certa</span>
+                                                    }
+                                                    else if (r.Correta is false)
+                                                    {
+                                                        <span class="badge bg-danger">Errada</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted">—</span>
+                                                    }
+                                                </td>
+                                                <td>@(r.PontuacaoObtida?.ToString("0.##") ?? "—")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private AplicacaoProva? aplicacao;
+    private List<RespostaProvaOnline> tentativas = new();
+    private Dictionary<int, RespostaProvaOnline> detalhes = new();
+    private HashSet<int> detalhesExpandidos = new();
+    private bool carregando = true;
+    private string? sucesso;
+
+    protected override async Task OnInitializedAsync()
+    {
+        aplicacao = await AplicacaoProvaService.ObterAsync(Id);
+        if (aplicacao is not null)
+        {
+            tentativas = await RespostaProvaOnlineService.ListarPorAplicacaoAsync(Id);
+        }
+
+        carregando = false;
+    }
+
+    private async Task AlternarDetalheAsync(int tentativaId)
+    {
+        if (detalhesExpandidos.Contains(tentativaId))
+        {
+            detalhesExpandidos.Remove(tentativaId);
+            return;
+        }
+
+        if (!detalhes.ContainsKey(tentativaId))
+        {
+            var detalhe = await RespostaProvaOnlineService.ObterDetalheAsync(tentativaId);
+            if (detalhe is not null)
+            {
+                detalhes[tentativaId] = detalhe;
+            }
+        }
+
+        detalhesExpandidos.Add(tentativaId);
+    }
+
+    private async Task LiberarAsync(RespostaProvaOnline tentativa)
+    {
+        sucesso = null;
+        await RespostaProvaOnlineService.LiberarAsync(tentativa);
+        sucesso = $"Nota de \"{tentativa.Aluno?.Nome}\" liberada.";
+    }
+
+    private static string RotuloStatus(StatusRespostaProvaOnline status) => status.Rotulo();
+
+    private static string Truncar(string? texto) =>
+        string.IsNullOrEmpty(texto) ? "" : texto.Length > 80 ? texto[..80] + "..." : texto;
+
+    private static string DescreverResposta(RespostaQuestaoOnline r)
+    {
+        if (r.RespostaMultiplaEscolha is { } letra)
+        {
+            return letra.ToString();
+        }
+
+        if (r.RespostaCertoErrado is { } certoErrado)
+        {
+            return certoErrado ? "Certo" : "Errado";
+        }
+
+        if (r.RespostaNumerica is { } numero)
+        {
+            return numero.ToString("0.####");
+        }
+
+        if (r.RespostasLacunas.Count > 0)
+        {
+            return string.Join(" | ", r.RespostasLacunas.OrderBy(l => l.Ordem).Select(l => l.RespostaTexto));
+        }
+
+        return "—";
+    }
+}

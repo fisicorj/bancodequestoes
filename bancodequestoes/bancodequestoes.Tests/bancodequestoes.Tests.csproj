@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Projeto de testes automatizados (Etapa 8 da evolução funcional de Escopo
+    de Prova — Disciplina/Multidisciplinar/Curso). Não existia NENHUM projeto
+    de teste no repositório antes desta etapa (confirmado por busca no
+    filesystem) — este é o primeiro.
+
+    Cobre especificamente o novo Escopo (EscopoProvaConfig/EscopoQuestoes,
+    QuestaoQueryService.ObterCandidatasAsync/ValidarQuestaoIdsNoEscopoAsync,
+    GeradorProvaService.SortearPorDisciplina/AlocarPorItemMaisRaroPrimeiro,
+    ProvaService.CriarAsync/AtualizarAsync/GerarAsync com os três modos) — NÃO
+    é uma suíte de regressão completa do sistema inteiro, que ficaria fora do
+    tamanho razoável desta etapa (documentado como pendência no relatório
+    final, junto com a lista de cenários adicionais que valeria cobrir depois:
+    exportação DOCX/PDF, importação GIFT/Aiken, autenticação/autorização por
+    Instituição fora do escopo de Prova).
+
+    Usa o provider InMemory do EF Core (Microsoft.EntityFrameworkCore.InMemory)
+    em vez de Postgres real — rápido, sem infraestrutura externa, roda em
+    qualquer máquina/CI. Ressalva importante (documentada de novo nos
+    comentários de TestDbFactory.cs): o provider InMemory não traduz alguns
+    recursos específicos do Npgsql (ex.: EF.Functions.ILike, usado em
+    ProvaService.ListarAsync/QuestaoQueryService.ListarAsync) — os testes
+    aqui evitam deliberadamente esses caminhos; se algum teste futuro precisar
+    deles, use o provider Sqlite in-memory (Microsoft.EntityFrameworkCore.Sqlite,
+    connection ":memory:") em vez do InMemory puro.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>BancoQuestoes.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\bancodequestoes.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,19 +1,30 @@
 @page "/areas-curso"
 @attribute [Authorize]
 @rendermode InteractiveServer
+@using System.Security.Claims
 @using BancoQuestoes.Models
 @inject AreaCursoService AreaCursoService
+@inject AuthenticationStateProvider AuthProvider
 @inject IJSRuntime JS
 
 <PageTitle>Áreas de Curso</PageTitle>
 
-<h1>Áreas de Curso</h1>
-<p class="text-muted">
+<h1 class="page-title">Áreas de Curso</h1>
+<p class="page-subtitle">
     Catálogo NACIONAL de área de curso (ex.: "Engenharia de Computação", "Análise e Desenvolvimento de Sistemas") —
     é o que permite uma matriz ENADE/DCN cadastrada uma única vez ser compartilhada por vários cursos, de várias
     instituições, sem precisar ser recadastrada em cada um. Não confundir com <a href="cursos">Curso</a>, que
     continua sendo específico de uma instituição — em <a href="cursos">Cursos</a> você escolhe a Área de Curso que o
     curso da sua instituição representa.
+</p>
+<p class="text-muted small">
+    As colunas Cursos/Matrizes/Questões abaixo ajudam a notar duplicidade histórica — duas linhas com nomes
+    parecidos (ex.: "Eng. da Computação" e "Engenharia de Computação") e contagens diferentes de zero nas duas
+    provavelmente são a mesma área nacional cadastrada duas vezes.
+    @if (ehAdmin)
+    {
+        <text> Use "Mesclar" pra unificá-las (só Admin) — a mesclagem nunca é automática, você sempre escolhe qual das duas é a canônica.</text>
+    }
 </p>
 
 @if (sucesso is not null)
@@ -69,8 +80,11 @@ else
         <thead>
             <tr>
                 <th>Nome</th>
-                <th style="width:120px">Status</th>
-                <th style="width:260px"></th>
+                <th style="width:90px">Status</th>
+                <th style="width:80px" class="text-end">Cursos</th>
+                <th style="width:90px" class="text-end">Matrizes</th>
+                <th style="width:90px" class="text-end">Questões</th>
+                <th style="width:280px"></th>
             </tr>
         </thead>
         <tbody>
@@ -86,6 +100,7 @@ else
                                 <label class="form-check-label small" for="@($"ativo{a.Id}")">Ativa</label>
                             </div>
                         </td>
+                        <td colspan="3"></td>
                         <td>
                             <button class="btn btn-sm btn-success" @onclick="SalvarEdicaoAsync">Salvar</button>
                             <button class="btn btn-sm btn-link" @onclick="() => editandoId = null">Cancelar</button>
@@ -106,11 +121,46 @@ else
                                 <span class="badge text-bg-secondary">Inativa</span>
                             }
                         </td>
+                        <td class="text-end">@Estatistica(a.Id).Cursos</td>
+                        <td class="text-end">@Estatistica(a.Id).Matrizes</td>
+                        <td class="text-end">@Estatistica(a.Id).Questoes</td>
                         <td>
                             <button class="btn btn-sm btn-secondary" @onclick="() => AbrirEdicao(a)">Editar</button>
                             <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(a)">Excluir</button>
+                            @if (ehAdmin && areas.Count > 1)
+                            {
+                                <button class="btn btn-sm btn-outline-warning" @onclick="() => AbrirMesclagem(a)">Mesclar</button>
+                            }
                         </td>
                     </tr>
+                    @if (mesclandoOrigemId == a.Id)
+                    {
+                        <tr>
+                            <td colspan="6">
+                                <div class="border rounded p-2 bg-light">
+                                    <div class="row g-2 align-items-end">
+                                        <div class="col-auto">
+                                            <label class="form-label small mb-1">Mesclar "@a.Nome" em:</label>
+                                            <select class="form-select form-select-sm" @bind="mesclagemDestinoId">
+                                                <option value="0">Selecione a área canônica (destino)...</option>
+                                                @foreach (var destino in areas.Where(x => x.Id != a.Id))
+                                                {
+                                                    <option value="@destino.Id">@destino.Nome</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-auto">
+                                            <button class="btn btn-sm btn-warning" @onclick="() => ConfirmarMesclagemAsync(a)">Confirmar mesclagem</button>
+                                            <button class="btn btn-sm btn-link" @onclick="() => mesclandoOrigemId = null">Cancelar</button>
+                                        </div>
+                                    </div>
+                                    <p class="text-muted small mb-0 mt-1">
+                                        Todos os Cursos, Matrizes e Questões vinculados a "@a.Nome" passam a apontar pra área escolhida, e "@a.Nome" é excluída. Os itens de matriz não são mesclados — se as duas áreas tiverem matrizes ENADE próprias, revise manualmente qual fica Ativa depois.
+                                    </p>
+                                </div>
+                            </td>
+                        </tr>
+                    }
                 }
             }
         </tbody>
@@ -119,8 +169,10 @@ else
 
 @code {
     private List<AreaCurso>? areas;
+    private Dictionary<int, EstatisticasAreaCurso> estatisticas = new();
     private string? erro;
     private string? sucesso;
+    private bool ehAdmin;
 
     private bool mostrarFormNovo;
     private AreaCursoInput novaArea = new();
@@ -128,14 +180,72 @@ else
     private int? editandoId;
     private AreaCursoInput? areaEditada;
 
+    // Mesclagem (só Admin, ver AreaCursoService.MesclarAsync) — estado do
+    // mini-formulário inline que aparece sob a linha da área de origem.
+    private int? mesclandoOrigemId;
+    private int mesclagemDestinoId;
+
+    private static readonly EstatisticasAreaCurso EstatisticaVazia = new();
+
+    private EstatisticasAreaCurso Estatistica(int areaCursoId) =>
+        estatisticas.GetValueOrDefault(areaCursoId, EstatisticaVazia);
+
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        ehAdmin = authState.User.IsInRole("Admin");
         await CarregarAsync();
     }
 
     private async Task CarregarAsync()
     {
         areas = await AreaCursoService.ListarTodasAsync();
+        estatisticas = await AreaCursoService.ObterEstatisticasAsync();
+    }
+
+    private void AbrirMesclagem(AreaCurso area)
+    {
+        erro = null;
+        sucesso = null;
+        mesclandoOrigemId = area.Id;
+        mesclagemDestinoId = 0;
+    }
+
+    private async Task ConfirmarMesclagemAsync(AreaCurso origem)
+    {
+        if (mesclagemDestinoId == 0)
+        {
+            erro = "Selecione a área de destino (canônica) antes de confirmar.";
+            return;
+        }
+
+        var destino = areas!.First(a => a.Id == mesclagemDestinoId);
+        var confirmado = await JS.InvokeAsync<bool>("confirm",
+            $"Mesclar \"{origem.Nome}\" em \"{destino.Nome}\"? \"{origem.Nome}\" será excluída e tudo que apontava pra ela passa a apontar pra \"{destino.Nome}\". Essa ação não pode ser desfeita.");
+        if (!confirmado)
+        {
+            return;
+        }
+
+        erro = null;
+        sucesso = null;
+        try
+        {
+            var resultado = await AreaCursoService.MesclarAsync(origem.Id, mesclagemDestinoId, ehAdmin);
+            sucesso = $"\"{resultado.NomeOrigem}\" mesclada em \"{resultado.NomeDestino}\": " +
+                $"{resultado.CursosMovidos} curso(s), {resultado.MatrizesMovidas} matriz(es) e {resultado.QuestoesMovidas} questão(ões) movidos.";
+            if (resultado.RevisarMatrizesEnadeAtivasNoDestino)
+            {
+                sucesso += " Atenção: agora existe mais de uma Matriz ENADE Ativa em \"" + resultado.NomeDestino +
+                    "\" — revise na tela de Matrizes qual deve continuar Ativa.";
+            }
+            mesclandoOrigemId = null;
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
     }
 
     private void AbrirNova()

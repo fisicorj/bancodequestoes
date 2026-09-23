@@ -1,0 +1,217 @@
+<!--
+    "Escopo da avaliação" (evolução funcional — TipoEscopoProva) — progressive
+    disclosure entre os três modos (item 62/63 do pedido): Uma disciplina
+    (comportamento de sempre), Várias disciplinas (Multidisciplinar, com
+    distribuição percentual OPCIONAL) e Curso/Simulado ENADE (Matriz de
+    Referência opcional, nenhuma disciplina exigida).
+
+    Mesmo padrão "burro" de DadosProva.razor: só UI/estado (marca Modelo
+    diretamente, já que é a MESMA instância de ProvaInput que ProvaForm
+    guarda) + EventCallback pra tudo que precisa recarregar dado de banco
+    (ProvaForm é quem decide o que fazer — confirmar antes de descartar
+    seleção, recarregar pool de candidatas, recarregar itens de matriz etc.).
+    Nenhuma validação "de verdade" mora aqui — isso é responsabilidade de
+    EscopoProvaConfig.Validar (forma) e ProvaService.ValidarEscopoAsync
+    (banco/IDOR), ambos do lado do servidor.
+-->
+
+<div class="form-card mb-3">
+    <label class="form-label fw-semibold mb-2">Escopo da avaliação</label>
+
+    <div class="d-flex flex-wrap gap-3 mb-3">
+        <div class="form-check">
+            <input class="form-check-input" type="radio" name="tipoEscopoProva" id="escopoTipoDisciplina"
+                   checked="@(Modelo.TipoEscopo == TipoEscopoProva.Disciplina)"
+                   @onchange="() => MudarTipoAsync(TipoEscopoProva.Disciplina)" />
+            <label class="form-check-label" for="escopoTipoDisciplina">Uma disciplina</label>
+        </div>
+        <div class="form-check">
+            <input class="form-check-input" type="radio" name="tipoEscopoProva" id="escopoTipoMultidisciplinar"
+                   checked="@(Modelo.TipoEscopo == TipoEscopoProva.Multidisciplinar)"
+                   @onchange="() => MudarTipoAsync(TipoEscopoProva.Multidisciplinar)" />
+            <label class="form-check-label" for="escopoTipoMultidisciplinar">Várias disciplinas</label>
+        </div>
+        <div class="form-check">
+            <input class="form-check-input" type="radio" name="tipoEscopoProva" id="escopoTipoCurso"
+                   checked="@(Modelo.TipoEscopo == TipoEscopoProva.Curso)"
+                   @onchange="() => MudarTipoAsync(TipoEscopoProva.Curso)" />
+            <label class="form-check-label" for="escopoTipoCurso">Curso / Simulado ENADE</label>
+        </div>
+    </div>
+
+    @if (Modelo.TipoEscopo == TipoEscopoProva.Disciplina)
+    {
+        <div class="form-floating" style="max-width: 420px;">
+            <InputSelect @bind-Value="Modelo.DisciplinaId" id="EscopoDisciplinaId" class="form-select" @bind-Value:after="MudarDisciplina">
+                <option value="0">Selecione...</option>
+                @foreach (var d in Disciplinas)
+                {
+                    <option value="@d.Id">@d.Nome</option>
+                }
+            </InputSelect>
+            <label for="EscopoDisciplinaId">Disciplina</label>
+        </div>
+    }
+    else if (Modelo.TipoEscopo == TipoEscopoProva.Multidisciplinar)
+    {
+        <p class="text-muted small mb-2">
+            Selecione ao menos 2 disciplinas — as questões do pool são a união de todas elas.
+            A distribuição por disciplina abaixo é opcional: sem ela, o gerador escolhe livremente entre as marcadas.
+        </p>
+
+        @if (Disciplinas.Count == 0)
+        {
+            <p class="text-muted small"><em>Nenhuma disciplina cadastrada.</em></p>
+        }
+        else
+        {
+            <div class="row row-cols-2 row-cols-md-3 g-2 mb-3">
+                @foreach (var d in Disciplinas)
+                {
+                    <div class="col">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="escopoDisc-@d.Id"
+                                   checked="@Modelo.DisciplinaIds.Contains(d.Id)"
+                                   @onchange="e => AlternarDisciplinaAsync(d.Id, (bool)e.Value!)" />
+                            <label class="form-check-label" for="escopoDisc-@d.Id">@d.Nome</label>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @if (Modelo.DisciplinaIds.Count > 0)
+        {
+            <div class="table-responsive" style="max-width: 480px;">
+                <table class="table table-sm align-middle">
+                    <thead>
+                        <tr>
+                            <th>Disciplina</th>
+                            <th style="width: 130px;">% planejado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var id in Modelo.DisciplinaIds.OrderBy(id => Disciplinas.FirstOrDefault(d => d.Id == id)?.Nome))
+                        {
+                            var disciplinaId = id;
+                            <tr>
+                                <td>@(Disciplinas.FirstOrDefault(d => d.Id == disciplinaId)?.Nome ?? $"#{disciplinaId}")</td>
+                                <td>
+                                    <InputNumber class="form-control form-control-sm"
+                                                 Value="Modelo.DistribuicaoDisciplinas.GetValueOrDefault(disciplinaId)"
+                                                 ValueExpression="@(() => Modelo.DistribuicaoDisciplinas.GetValueOrDefault(disciplinaId))"
+                                                 ValueChanged="@((int v) => DefinirPercentualAsync(disciplinaId, v))" />
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+                @{ var soma = Modelo.DistribuicaoDisciplinas.Values.Sum(); }
+                <span class="text-muted small">
+                    @if (soma == 0)
+                    {
+                        <text>Sem distribuição configurada — o gerador escolhe livremente entre as disciplinas marcadas.</text>
+                    }
+                    else if (soma != 100)
+                    {
+                        <text>Soma atual: @soma% — precisa somar 100% (ou ficar zerada) para valer como distribuição planejada.</text>
+                    }
+                    else
+                    {
+                        <text>Soma atual: 100% ✓</text>
+                    }
+                </span>
+            </div>
+        }
+    }
+    else
+    {
+        <p class="text-muted small mb-2">
+            Todas as questões vinculadas a este curso entram no pool — sem exigir uma disciplina específica.
+            Opcionalmente, escolha uma Matriz de Referência (ex.: ENADE) para orientar a geração por competências/conteúdos.
+        </p>
+
+        @if (Modelo.CursoId == 0)
+        {
+            <p class="text-warning small"><em>Escolha um Curso acima antes de configurar este escopo.</em></p>
+        }
+        else
+        {
+            <div class="form-floating" style="max-width: 420px;">
+                <InputSelect @bind-Value="Modelo.MatrizReferenciaId" id="EscopoMatrizId" class="form-select" @bind-Value:after="MudarMatriz">
+                    <option value="">Nenhuma (curso livre)</option>
+                    @foreach (var m in MatrizesDoCurso)
+                    {
+                        <option value="@m.Id">@m.Tipo — @m.Nome (@m.Ano)</option>
+                    }
+                </InputSelect>
+                <label for="EscopoMatrizId">Matriz de Referência</label>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ProvaInput Modelo { get; set; } = null!;
+    [Parameter] public List<Disciplina> Disciplinas { get; set; } = new();
+    [Parameter] public List<MatrizReferencia> MatrizesDoCurso { get; set; } = new();
+
+    // Só propõe a troca de tipo de escopo; ProvaForm decide se confirma
+    // (descarta seleção atual) ou desfaz se o professor cancelar.
+    [Parameter] public EventCallback OnMudarTipoEscopo { get; set; }
+
+    // Trocar a Disciplina única (modo Disciplina) — mesmo fluxo de sempre
+    // (AoMudarDisciplinaAsync, com confirmação de descarte).
+    [Parameter] public EventCallback OnMudarDisciplina { get; set; }
+
+    // Ajusta a composição dentro do mesmo modo (marcar disciplina, editar %) sem
+    // descartar a seleção já feita — só recarrega o pool.
+    [Parameter] public EventCallback OnMudarComposicao { get; set; }
+
+    // Trocar a Matriz de Referência (modo Curso/ENADE) — invalida os itens
+    // de matriz já marcados no gerador (ver AoMudarMatrizAsync).
+    [Parameter] public EventCallback OnMudarMatriz { get; set; }
+
+    private Task MudarTipoAsync(TipoEscopoProva tipo)
+    {
+        if (Modelo.TipoEscopo == tipo)
+        {
+            return Task.CompletedTask;
+        }
+
+        Modelo.TipoEscopo = tipo;
+        return OnMudarTipoEscopo.InvokeAsync();
+    }
+
+    private Task MudarDisciplina() => OnMudarDisciplina.InvokeAsync();
+    private Task MudarMatriz() => OnMudarMatriz.InvokeAsync();
+
+    private Task AlternarDisciplinaAsync(int disciplinaId, bool marcado)
+    {
+        if (marcado)
+        {
+            Modelo.DisciplinaIds.Add(disciplinaId);
+        }
+        else
+        {
+            Modelo.DisciplinaIds.Remove(disciplinaId);
+            Modelo.DistribuicaoDisciplinas.Remove(disciplinaId);
+        }
+
+        return OnMudarComposicao.InvokeAsync();
+    }
+
+    private Task DefinirPercentualAsync(int disciplinaId, int valor)
+    {
+        if (valor <= 0)
+        {
+            Modelo.DistribuicaoDisciplinas.Remove(disciplinaId);
+        }
+        else
+        {
+            Modelo.DistribuicaoDisciplinas[disciplinaId] = valor;
+        }
+
+        return OnMudarComposicao.InvokeAsync();
+    }
+}

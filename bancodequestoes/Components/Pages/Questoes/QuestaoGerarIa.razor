@@ -1,0 +1,268 @@
+@page "/questoes/gerar-ia"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using BancoQuestoes.Importacao
+@inject SugestaoIaService SugestaoIa
+@inject DisciplinaService DisciplinaService
+@inject RascunhoQuestaoIaService RascunhoIa
+@inject NavigationManager NavigationManager
+@inject ILogger<QuestaoGerarIa> Logger
+
+<PageTitle>Gerar questão com IA</PageTitle>
+
+<PageHeader Titulo="Gerar questão com IA" />
+<p class="text-muted">
+    Cole o texto de um slide/material (ou envie um PDF) pra IA propor uma questão baseada nele — ou, se
+    preferir, escreva direto um pedido pra IA, tipo "crie uma questão sobre recursão em Python, nível difícil".
+    Nada é salvo aqui — a próxima tela abre o formulário normal de questão já preenchido, pra você revisar
+    e ajustar (inclusive a resposta correta) antes de salvar de verdade.
+</p>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (!iaHabilitada)
+{
+    <div class="alert alert-warning">
+        A sugestão/geração por IA está desabilitada no momento. Peça a um administrador pra habilitar em
+        <a href="admin/configuracao-ia">Configuração de IA</a>.
+    </div>
+}
+else
+{
+    <div class="row">
+        <div class="col-lg-7">
+            <div class="form-card mb-3">
+                <div class="form-floating mb-3">
+                    <select class="form-select" id="Disciplina" @bind="disciplinaId" disabled="@gerando">
+                        <option value="0">Selecione...</option>
+                        @foreach (var d in disciplinas)
+                        {
+                            <option value="@d.Id">@d.Nome</option>
+                        }
+                    </select>
+                    <label for="Disciplina">Disciplina</label>
+                </div>
+                <p class="text-muted small mt-n2 mb-3">
+                    Usada pra sugerir um Assunto já cadastrado nessa Disciplina — se nenhum bater bem, o campo
+                    fica livre pra você escolher na revisão.
+                </p>
+
+                <div class="mb-3">
+                    <label for="Material" class="form-label">Material de referência — ou um pedido pra IA</label>
+                    <textarea id="Material" class="form-control" rows="10" @bind="material" @bind:event="oninput"
+                              placeholder="Cole aqui o texto do slide/material (ou envie um PDF abaixo)... ou escreva um pedido, tipo &quot;crie uma questão sobre pilhas e filas, nível médio&quot;" disabled="@gerando"></textarea>
+                    <div class="form-text">
+                        Pode ser um texto de referência (a IA testa compreensão dele, sem inventar conteúdo) ou um
+                        pedido direto (a IA cria a questão a partir do que você pediu). Texto muito longo é
+                        cortado nos primeiros ~6.000 caracteres antes de ir pra IA.
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="PdfMaterial" class="form-label">Ou envie um PDF (substitui o texto acima)</label>
+                    <InputFile id="PdfMaterial" OnChange="OnPdfSelecionadoAsync" accept="application/pdf,.pdf" class="form-control" disabled="@gerando" />
+                    @if (nomeArquivoPdf is not null)
+                    {
+                        <div class="form-text">Texto extraído de "@nomeArquivoPdf".</div>
+                    }
+                </div>
+
+                @if (erro is not null)
+                {
+                    <div class="alert alert-danger">@erro</div>
+                }
+
+                <button type="button" class="btn btn-primary" disabled="@(gerando || disciplinaId == 0 || string.IsNullOrWhiteSpace(material))" @onclick="GerarAsync">
+                    @if (gerando)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    <i class="bi bi-stars me-1"></i>
+                    Gerar questão
+                </button>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            @if (questaoGerada is not null)
+            {
+                <div class="form-card mb-3">
+                    <h5>Prévia</h5>
+                    <p style="white-space: pre-line">@questaoGerada.Enunciado</p>
+                    <ol type="A" class="mb-3">
+                        @for (var i = 0; i < questaoGerada.Alternativas.Count; i++)
+                        {
+                            var indice = i;
+                            <li class="@(indice == questaoGerada.RespostaCorretaIndex ? "text-success fw-bold" : "")">
+                                @questaoGerada.Alternativas[indice]
+                                @if (indice == questaoGerada.RespostaCorretaIndex)
+                                {
+                                    <i class="bi bi-check-circle-fill ms-1" title="Correta"></i>
+                                }
+                            </li>
+                        }
+                    </ol>
+
+                    <div class="d-flex flex-wrap gap-1 mb-3">
+                        @if (questaoGerada.Bloom is { } nivel)
+                        {
+                            <span class="badge text-bg-secondary">Bloom: @nivel</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(questaoGerada.AssuntoRotulo))
+                        {
+                            <span class="badge text-bg-@(questaoGerada.AssuntoId is not null ? "info" : "warning")">
+                                Assunto: @questaoGerada.AssuntoRotulo@(questaoGerada.AssuntoId is null ? " (não encontrado)" : "")
+                            </span>
+                        }
+                        @foreach (var tag in questaoGerada.Tags)
+                        {
+                            <span class="badge text-bg-light border">@tag</span>
+                        }
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-success" @onclick="UsarQuestaoGerada">
+                            <i class="bi bi-arrow-right-circle me-1"></i> Usar esta questão
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" disabled="@gerando" @onclick="GerarAsync">
+                            @if (gerando)
+                            {
+                                <span class="spinner-border spinner-border-sm me-1"></span>
+                            }
+                            Gerar outra
+                        </button>
+                    </div>
+                    <p class="text-muted small mt-2 mb-0">
+                        Nada foi salvo ainda — "Usar esta questão" só leva os campos pro formulário normal, onde
+                        você confere/edita tudo (inclusive a resposta correta) antes de salvar.
+                    </p>
+                </div>
+            }
+            else
+            {
+                <div class="form-card mb-3 text-muted small">
+                    A prévia da questão gerada aparece aqui.
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private List<Disciplina> disciplinas = new();
+    private List<Assunto> todosAssuntos = new();
+    private int disciplinaId;
+    private string material = "";
+    private string? nomeArquivoPdf;
+
+    private bool carregando = true;
+    private bool iaHabilitada;
+    private bool gerando;
+    private string? erro;
+    private QuestaoGeradaDto? questaoGerada;
+
+    private const long TamanhoMaximoPdf = 10 * 1024 * 1024; // 10 MB
+
+    protected override async Task OnInitializedAsync()
+    {
+        disciplinas = await DisciplinaService.ListarTodasAsync();
+        todosAssuntos = await DisciplinaService.ListarTodosAssuntosAsync();
+        iaHabilitada = await SugestaoIa.HabilitadaAsync();
+        carregando = false;
+    }
+
+    private async Task OnPdfSelecionadoAsync(InputFileChangeEventArgs e)
+    {
+        erro = null;
+        questaoGerada = null;
+        var arquivo = e.File;
+
+        if (!arquivo.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            erro = "Selecione um arquivo .pdf.";
+            return;
+        }
+        if (arquivo.Size == 0)
+        {
+            erro = "O arquivo está vazio.";
+            return;
+        }
+        if (arquivo.Size > TamanhoMaximoPdf)
+        {
+            erro = $"O arquivo passa do tamanho máximo permitido ({TamanhoMaximoPdf / 1024 / 1024} MB).";
+            return;
+        }
+
+        try
+        {
+            using var ms = new MemoryStream();
+            await arquivo.OpenReadStream(TamanhoMaximoPdf).CopyToAsync(ms);
+            var texto = ExtratorTextoPdf.Extrair(ms.ToArray());
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                erro = "Não foi possível extrair texto desse PDF (pode ser um PDF de imagens escaneadas, sem texto real).";
+                return;
+            }
+
+            material = texto;
+            nomeArquivoPdf = arquivo.Name;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Falha ao ler PDF de material \"{Arquivo}\"", arquivo.Name);
+            erro = "Não foi possível ler o PDF (verifique se não está corrompido ou protegido por senha).";
+        }
+    }
+
+    private async Task GerarAsync()
+    {
+        erro = null;
+        gerando = true;
+        try
+        {
+            var assuntosDisponiveis = todosAssuntos
+                .Where(a => a.DisciplinaId == disciplinaId)
+                .Select(a => (a.Id, Rotulo: a.Nome))
+                .ToList();
+
+            questaoGerada = await SugestaoIa.GerarQuestaoMultiplaEscolhaAsync(material, assuntosDisponiveis);
+            if (questaoGerada is null)
+            {
+                erro = "Não foi possível gerar a questão agora — pode ser o Ollama fora do ar, um timeout (material grande demora mais), ou a resposta da IA não veio no formato esperado. Tente de novo, ou reduza o material.";
+            }
+        }
+        finally
+        {
+            gerando = false;
+        }
+    }
+
+    private void UsarQuestaoGerada()
+    {
+        if (questaoGerada is null)
+        {
+            return;
+        }
+
+        var rascunho = new QuestaoInput
+        {
+            TipoQuestao = TipoQuestao.MultiplaEscolha,
+            Enunciado = questaoGerada.Enunciado,
+            Alternativas = questaoGerada.Alternativas.Select(a => new AlternativaInput { Texto = a }).ToList(),
+            RespostaCorretaIndex = questaoGerada.RespostaCorretaIndex,
+            Bloom = questaoGerada.Bloom,
+            Tags = questaoGerada.Tags,
+            AssuntoId = questaoGerada.AssuntoId ?? 0,
+            // Preenchido automaticamente aqui, mas continua editável na revisão final
+            // como qualquer outro campo.
+            Origem = OrigemQuestao.Ia,
+        };
+
+        // MapearQuestaoGerada já rejeita respostas da IA com menos de 2 alternativas,
+        // então não precisa replicar essa garantia aqui.
+        RascunhoIa.Definir(rascunho, disciplinaId);
+        NavigationManager.NavigateTo("questoes/novo");
+    }
+}

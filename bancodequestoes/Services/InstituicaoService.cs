@@ -4,9 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BancoQuestoes.Services;
 
-// Mesmo padrão do DisciplinaService: consulta EF + regra de negócio de
-// Instituição (incluindo upload/remoção de logo). InstituicaoList.razor e
-// InstituicaoForm.razor ficam só com UI + binding.
+// Consulta EF + regra de negócio de Instituição (incluindo logo).
 public class InstituicaoService(ApplicationDbContext db)
 {
     public async Task<PaginaResultado<Instituicao>> ListarAsync(string? filtroTexto, int pagina, int tamanhoPagina)
@@ -107,10 +105,7 @@ public class InstituicaoService(ApplicationDbContext db)
 
     private static string? NuloSeVazio(string? valor) => string.IsNullOrWhiteSpace(valor) ? null : valor;
 
-    // Defesa em profundidade: o DataAnnotationsValidator do EditForm já
-    // bloqueia o submit sem escolher o sistema de períodos, mas o Service não
-    // pode depender só disso — mesmo padrão do resto do sistema (validar de
-    // novo aqui, não confiar só na tela).
+    // Defesa em profundidade: o EditForm já bloqueia, mas o Service valida de novo.
     private static void ValidarSistemaPeriodos(InstituicaoInput modelo)
     {
         if (modelo.SistemaPeriodos is null)

@@ -1,0 +1,215 @@
+<!--
+    Card de uma questão na listagem /questoes (Etapa 2 UX/UI — Banco de
+    Questões: reduzir ruído, uma ação principal + menu).
+
+    O que muda em relação à versão anterior (documentado, não é bug):
+    - Tipo e Dificuldade viram badges neutros (informação categórica, não
+      status) em vez de texto corrido — ficam junto do enunciado, que é o
+      que deve dominar visualmente.
+    - Badge "Ativa/Inativa" só aparece quando Inativa — "Ativa" é o estado
+      esperado, marcá-lo sempre era ruído.
+    - Visibilidade, uso/última utilização, alinhamento curricular e tags
+      continuam todos visíveis (nada foi removido), só descem pra uma linha
+      de metadados secundários, discreta, abaixo do essencial.
+    - Ação principal agora é só "Visualizar"; Editar/Duplicar/Ativar-
+      Desativar/Excluir foram para um menu "⋮" (Excluir fica separado por um
+      divisor e em vermelho). Mesmos EventCallback de antes, nenhuma ação foi
+      removida.
+
+    Continua um componente "burro": recebe a Questao e os números já
+    calculados pelo pai, só dispara EventCallback pras ações.
+-->
+<div class="card questao-card">
+    <div class="card-body">
+        <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <input type="checkbox" class="form-check-input mt-0" checked="@Selecionada" aria-label="Selecionar esta questão" @onchange="e => OnToggleSelecao.InvokeAsync((bool)e.Value!)" />
+                <span class="badge text-bg-light border">@Questao.TipoQuestao.Rotulo()</span>
+                <span class="badge text-bg-light border">@Questao.Dificuldade.Rotulo()</span>
+                @if (Questao.Origem == OrigemQuestao.Enade)
+                {
+                    <EnadeBadge Ano="Questao.Ano" Titulo="@(string.IsNullOrWhiteSpace(Questao.CodigoProvaOrigem) ? null : $"Caderno: {Questao.CodigoProvaOrigem}")" />
+                }
+                @if (Usos >= LimiarAltaExposicao)
+                {
+                    <span class="badge text-bg-warning" title="Usada @Usos vezes — considere dar preferência a questões menos usadas.">⚠ Alta exposição</span>
+                }
+            </div>
+            <div class="d-flex align-items-center gap-1 flex-shrink-0">
+                @{ var qualidadeQ = QualidadeQuestao.Calcular(Questao); }
+                <span class="badge text-bg-@qualidadeQ.CorFarol" title="@(qualidadeQ.CriteriosFaltando.Count > 0 ? "Faltando: " + string.Join(", ", qualidadeQ.CriteriosFaltando) : "Todos os critérios atendidos")">
+                    Qualidade: @qualidadeQ.Percentual%
+                </span>
+                @if (!Questao.Ativa)
+                {
+                    <span class="badge text-bg-secondary">Inativa</span>
+                }
+            </div>
+        </div>
+
+        <p class="mb-2 questao-card-enunciado">@Truncar(Questao.Enunciado)</p>
+
+        <p class="text-muted small mb-2">
+            @Questao.Assunto?.Disciplina?.Nome <i class="bi bi-chevron-right" aria-hidden="true" style="font-size:0.65em;"></i> @Questao.Assunto?.Nome
+            @if (Questao.Bloom is { } bloom)
+            {
+                <text> · Bloom: @bloom.Rotulo()</text>
+            }
+        </p>
+
+        <!-- Metadados secundários — discretos de propósito (fonte menor, cor
+             muted), mas nada foi tirado: proveniência ENADE detalhada,
+             visibilidade, uso, alinhamento curricular e tags continuam
+             todos aqui, só sem competir com enunciado/tipo/dificuldade. -->
+        <div class="questao-card-meta text-muted small">
+            <span title="@(Minha ? "" : "Criada por outro professor")">@RotuloVisibilidade(Questao.Visibilidade)</span>
+            <span>·</span>
+            <span>@(Usos > 0 ? $"Usada {Usos} vez(es)" : "Nunca usada")</span>
+            @if (UltimoUso is not null)
+            {
+                <span>·</span>
+                <span>Última utilização: @UltimoUso.Rotulo</span>
+            }
+            <span>·</span>
+            <span>Atualizada @TempoRelativo(Questao.AtualizadoEm ?? Questao.CriadoEm)</span>
+            @if (Questao.Origem == OrigemQuestao.Enade && (Questao.SecaoEnade is not null || !string.IsNullOrWhiteSpace(Questao.NumeroOriginal)))
+            {
+                <span>·</span>
+                <span>@(Questao.SecaoEnade is { } secaoEnade ? secaoEnade.Rotulo() : "")@(string.IsNullOrWhiteSpace(Questao.NumeroOriginal) ? "" : $" · Questão {Questao.NumeroOriginal}")</span>
+            }
+
+            @if (Questao.ItensMatriz.Count > 0)
+            {
+                <div class="mt-1 d-flex flex-wrap align-items-center gap-1">
+                    <span>Aderência:</span>
+                    @foreach (var grupoMatriz in Questao.ItensMatriz.GroupBy(i => i.MatrizReferencia).OrderBy(g => g.Key?.Nome))
+                    {
+                        @if (grupoMatriz.Key?.Tipo == TipoMatrizReferencia.ENADE)
+                        {
+                            <EnadeBadge Ano="grupoMatriz.Key.Ano" Area="@grupoMatriz.Key.AreaCurso?.Nome" />
+                        }
+                        else
+                        {
+                            <span>@(grupoMatriz.Key?.Nome ?? "Matriz"):</span>
+                        }
+                        @foreach (var item in grupoMatriz.OrderBy(i => i.Codigo))
+                        {
+                            <span class="badge text-bg-light border" title="@($"{item.Tipo.Rotulo()} — {item.Titulo}")">@item.Codigo</span>
+                        }
+                    }
+                </div>
+            }
+
+            @if (Questao.Tags.Count > 0)
+            {
+                <div class="d-flex flex-wrap gap-1 mt-1">
+                    @foreach (var tag in Questao.Tags.OrderBy(t => t.Nome))
+                    {
+                        <span class="badge text-bg-light border">@tag.Nome</span>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="d-flex align-items-center justify-content-between mt-3">
+            <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => OnPreview.InvokeAsync()">
+                <i class="bi bi-eye" aria-hidden="true"></i> Visualizar
+            </button>
+
+            <div class="dropdown-simples">
+                <button type="button" class="btn btn-sm btn-outline-secondary" title="Mais ações" aria-label="Mais ações" aria-haspopup="true" aria-expanded="@menuAberto" @onclick="() => menuAberto = !menuAberto">
+                    <i class="bi bi-three-dots" aria-hidden="true"></i>
+                </button>
+                @if (menuAberto)
+                {
+                    <div class="dropdown-simples-menu">
+                        @if (Minha)
+                        {
+                            <a class="dropdown-simples-item" href="@($"questoes/editar/{Questao.Id}")">
+                                <i class="bi bi-pencil" aria-hidden="true"></i> Editar
+                            </a>
+                        }
+                        <button type="button" class="dropdown-simples-item" @onclick="() => OnDuplicar.InvokeAsync()">
+                            <i class="bi bi-copy" aria-hidden="true"></i> Duplicar
+                        </button>
+                        @if (Minha)
+                        {
+                            <button type="button" class="dropdown-simples-item" @onclick="() => OnAlternarAtiva.InvokeAsync()">
+                                <i class="bi @(Questao.Ativa ? "bi-eye-slash" : "bi-eye")" aria-hidden="true"></i>
+                                @(Questao.Ativa ? "Desativar" : "Reativar")
+                            </button>
+                            <hr class="dropdown-simples-divider" />
+                            <button type="button" class="dropdown-simples-item dropdown-simples-item-perigo" @onclick="() => OnExcluir.InvokeAsync()">
+                                <i class="bi bi-trash" aria-hidden="true"></i> Excluir
+                            </button>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Questao Questao { get; set; } = null!;
+    [Parameter] public bool Selecionada { get; set; }
+    [Parameter] public bool Minha { get; set; }
+    [Parameter] public int Usos { get; set; }
+    [Parameter] public UltimoUsoInfo? UltimoUso { get; set; }
+    [Parameter] public int LimiarAltaExposicao { get; set; }
+
+    [Parameter] public EventCallback<bool> OnToggleSelecao { get; set; }
+    [Parameter] public EventCallback OnDuplicar { get; set; }
+    [Parameter] public EventCallback OnPreview { get; set; }
+    [Parameter] public EventCallback OnAlternarAtiva { get; set; }
+    [Parameter] public EventCallback OnExcluir { get; set; }
+
+    // Estado puramente visual do menu "⋮" deste card — não é parâmetro
+    // porque cada card tem o seu, independente dos outros.
+    private bool menuAberto;
+
+    private static string Truncar(string texto) => texto.Length > 160 ? texto[..160] + "..." : texto;
+
+    // Texto relativo curto ("há 5 dias", "ontem"...) — idêntico ao helper de QuestaoList.razor.
+    private static string TempoRelativo(DateTime dataUtc)
+    {
+        var diff = DateTime.UtcNow - dataUtc;
+        if (diff.TotalMinutes < 1)
+        {
+            return "agora mesmo";
+        }
+        if (diff.TotalMinutes < 60)
+        {
+            return $"há {(int)diff.TotalMinutes} min";
+        }
+        if (diff.TotalHours < 24)
+        {
+            return $"há {(int)diff.TotalHours}h";
+        }
+        if (diff.TotalDays < 2)
+        {
+            return "ontem";
+        }
+        if (diff.TotalDays < 30)
+        {
+            return $"há {(int)diff.TotalDays} dias";
+        }
+        if (diff.TotalDays < 365)
+        {
+            var meses = (int)(diff.TotalDays / 30);
+            return $"há {meses} {(meses == 1 ? "mês" : "meses")}";
+        }
+        var anos = (int)(diff.TotalDays / 365);
+        return $"há {anos} {(anos == 1 ? "ano" : "anos")}";
+    }
+
+    // Mantém o emoji (diferente do VisibilidadeQuestaoExtensions.Rotulo()
+    // central, que não tem emoji) — comportamento original de QuestaoList.razor.
+    private static string RotuloVisibilidade(VisibilidadeQuestao visibilidade) => visibilidade switch
+    {
+        VisibilidadeQuestao.Privada => "🔒 Só eu",
+        VisibilidadeQuestao.Institucional => "👥 Instituição",
+        VisibilidadeQuestao.Compartilhada => "🌐 Todos",
+        _ => visibilidade.ToString(),
+    };
+}

@@ -2,21 +2,8 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace BancoQuestoes.Models;
 
-// Turma = uma oferta específica de uma Disciplina dentro de um Curso, num
-// período (ano/semestre) — ex.: "EC3A" de Arquitetura de Computadores no
-// curso de Engenharia da Computação, 2026/2. Junto com Curso.Instituicao,
-// completa a hierarquia Instituição > Curso > Disciplina > Turma.
-//
-// CursoId e DisciplinaId são obrigatórios (nunca nulos) de propósito: uma
-// Turma sem Curso ou sem Disciplina não faz sentido nessa modelagem — por
-// isso as duas FKs são Restrict no ApplicationDbContext (apagar um Curso ou
-// Disciplina com turmas vinculadas falha, em vez de apagar a turma junto ou
-// deixá-la "solta").
-//
-// Existe pra preparar o sistema pra funcionalidades futuras (alunos vinculados
-// à turma, resultados de prova por turma, análise de desempenho) — por
-// enquanto só serve pra Prova.TurmaId (opcional) marcar "essa prova é dessa
-// turma", que já ajuda a organizar/filtrar as provas.
+// Turma = oferta de uma Disciplina dentro de um Curso, num período (ano/semestre).
+// CursoId/DisciplinaId são obrigatórios e Restrict (apagar um com turmas vinculadas falha).
 public class Turma
 {
     public int Id { get; set; }
@@ -25,11 +12,8 @@ public class Turma
     public int Ano { get; set; }
     public int Semestre { get; set; } = 1;
 
-    // Só usado (e só obrigatório — ver CursoService.ValidarTurmaAsync) quando
-    // a Instituição do Curso usa SistemaPeriodos.SemestralComBimestres: qual
-    // dos dois bimestres DENTRO desse Semestre (1º ou 2º), não um número de
-    // 1 a 4 pro ano inteiro. Continua null pra instituições puramente
-    // semestrais.
+    // Só usado/obrigatório (ver CursoService.ValidarTurmaAsync) quando a Instituição usa
+    // SemestralComBimestres: qual bimestre DENTRO do Semestre (1º/2º), não 1-4 no ano.
     public int? Bimestre { get; set; }
 
     public int CursoId { get; set; }
@@ -43,9 +27,7 @@ public class Turma
 
     public DateTime CriadoEm { get; set; } = DateTime.UtcNow;
 
-    // "EC3A — 2026/2" — não é uma coluna no banco, só uma forma conveniente
-    // de exibir o período junto do nome sem repetir essa formatação em cada
-    // tela (lista de turmas, seletor na prova, cabeçalho da exportação).
+    // "EC3A — 2026/2": não é coluna no banco, evita repetir a formatação em cada tela.
     [NotMapped]
     public string Rotulo => Bimestre is { } bim
         ? $"{Nome} — {Ano}/{Semestre} ({bim}º bim)"

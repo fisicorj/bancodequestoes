@@ -10,7 +10,7 @@
 
 <PageTitle>@(Id is null ? "Nova turma" : "Editar turma")</PageTitle>
 
-<h1>@(Id is null ? "Nova turma" : "Editar turma")</h1>
+<PageHeader Titulo="@(Id is null ? "Nova turma" : "Editar turma")" />
 
 @if (erro is not null)
 {

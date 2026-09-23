@@ -1,8 +1,6 @@
 namespace BancoQuestoes.Services;
 
-// Resultado completo do painel de Estatisticas.razor — a tela só cuida de
-// desenhar as barras de progresso (escala/percentual), os números e
-// agrupamentos já vêm prontos do EstatisticaService.
+// Resultado completo do painel de Estatisticas.razor, já pronto do EstatisticaService.
 public sealed class PainelEstatisticas
 {
     public required int TotalQuestoesAtivas { get; init; }
@@ -23,11 +21,8 @@ public sealed class ItemContagem
     public int Quantidade { get; init; }
 }
 
-// Uma linha do painel de cobertura (Estatisticas.razor) — quantas questões
-// ATIVAS e VISÍVEIS pro professor cada Assunto tem, e como elas se
-// distribuem entre os níveis de Bloom. Inclui assuntos com Total = 0 de
-// propósito: o objetivo desse painel é achar justamente os assuntos com
-// pouca ou nenhuma questão, não só listar os que já têm.
+// Uma linha do painel de cobertura: questões ativas/visíveis por Assunto e
+// nível de Bloom. Inclui Total = 0 de propósito, pra achar assuntos carentes.
 public sealed class CoberturaAssunto
 {
     public required string Disciplina { get; init; }

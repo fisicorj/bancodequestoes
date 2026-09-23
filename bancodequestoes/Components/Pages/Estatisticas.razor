@@ -7,7 +7,7 @@
 
 <PageTitle>Estatísticas</PageTitle>
 
-<h1>Painel</h1>
+<PageHeader Titulo="Painel" Subtitulo="Estatísticas do seu banco de questões e provas." />
 
 @if (carregando)
 {
@@ -243,9 +243,8 @@ else
         carregando = false;
     }
 
-    // O Math.Max(4, ...) é só pra manter uma lasquinha visível de barra quando
-    // a quantidade é pequena perto do máximo — mas só se realmente houver pelo
-    // menos 1 item, senão uma categoria zerada pareceria ter alguma coisa.
+    // Math.Max(4, ...) mantém uma lasquinha visível quando a quantidade é pequena,
+    // mas só se houver pelo menos 1 item (senão categoria zerada pareceria ter algo).
     private static int Percentual(int quantidade, int maximo)
     {
         if (maximo <= 0 || quantidade <= 0)

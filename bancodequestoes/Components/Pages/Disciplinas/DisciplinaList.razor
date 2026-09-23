@@ -6,11 +6,11 @@
 
 <PageTitle>Disciplinas</PageTitle>
 
-<h1>Disciplinas</h1>
-
-<p>
-    <a class="btn btn-primary" href="disciplinas/novo">+ Nova disciplina</a>
-</p>
+<PageHeader Titulo="Disciplinas">
+    <Acao>
+        <a class="btn btn-primary" href="disciplinas/novo">+ Nova disciplina</a>
+    </Acao>
+</PageHeader>
 
 @if (sucesso is not null)
 {
@@ -120,7 +120,13 @@ else
 
     private async Task ConfirmarExcluirAsync(Disciplina d)
     {
-        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir a disciplina \"{d.Nome}\"? Essa ação não pode ser desfeita.");
+        // d.Assuntos já vem carregado (Include em ListarAsync) — mesmo raciocínio de
+        // AssuntoList.ConfirmarExcluirAsync: com a FK Restrict, excluir com Assuntos
+        // vinculados vai falhar mesmo, melhor avisar antes do que só depois do clique.
+        var aviso = d.Assuntos.Count > 0
+            ? $"Excluir a disciplina \"{d.Nome}\"? Ela tem {d.Assuntos.Count} assunto(s) vinculado(s) — a exclusão será recusada até eles serem movidos ou excluídos."
+            : $"Excluir a disciplina \"{d.Nome}\"? Essa ação não pode ser desfeita.";
+        var confirmado = await JS.InvokeAsync<bool>("confirm", aviso);
         if (confirmado)
         {
             await ExcluirAsync(d);

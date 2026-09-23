@@ -6,7 +6,21 @@
    (filtro avançado do gerador) — mesmo espírito de outros componentes
    compartilhados em Components/Pages/Provas/Components. Itens são FLAT (sem
    hierarquia), então, diferente do antigo DiretrizCheckboxNode.razor, não
-   precisa ser recursivo. *@
+   precisa ser recursivo.
+
+   "Ajuste final — Vínculos históricos de itens de matriz": um item pode vir
+   em Itens mesmo estando Ativo=false ou pertencendo a uma matriz em
+   Status=Rascunho — isso só acontece quando o item já estava vinculado à
+   questão antes de virar inativo/Rascunho (ver QuestaoForm.razor/
+   ItensHistoricos em QuestaoAlinhamentoCurricularSection.razor; quem monta
+   Itens é sempre o chamador, nunca este componente). Nesse caso o checkbox
+   continua aparecendo (e pode ser desmarcado — é assim que o professor
+   remove o vínculo histórico), mas ganha um aviso deixando claro que não
+   pode ser (re)associado a outra questão enquanto estiver nesse estado — ver
+   EhVinculoHistorico/MotivoHistorico abaixo. No uso pelo GeradorAutomatico
+   isso nunca dispara na prática: os itens vêm de listagens que já filtram
+   Ativo/Rascunho (não há conceito de "vínculo histórico" fora de uma questão
+   já salva). *@
 @using BancoQuestoes.Models
 
 <div class="form-floating mb-2" style="max-width: 420px;">
@@ -40,6 +54,10 @@ else
                     <label class="form-check-label small" for="@($"item-matriz-{item.Id}")">
                         <code>@item.Codigo</code> — @item.Titulo
                     </label>
+                    @if (EhVinculoHistorico(item))
+                    {
+                        <div class="text-warning small">⚠ @MotivoHistorico(item) — vínculo histórico</div>
+                    }
                 </div>
             }
         }
@@ -105,4 +123,12 @@ else
             await OnAlterado.InvokeAsync();
         }
     }
+
+    // Só decide se mostra o aviso; o checkbox continua funcionando normalmente
+    // (é assim que o professor remove um vínculo histórico).
+    private static bool EhVinculoHistorico(ItemMatrizReferencia item) =>
+        !item.Ativo || item.MatrizReferencia is null || !item.MatrizReferencia.PodeSerUtilizadaEmNovoVinculo();
+
+    private static string MotivoHistorico(ItemMatrizReferencia item) =>
+        !item.Ativo ? "Item inativo" : "Matriz em Rascunho";
 }

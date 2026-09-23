@@ -1,0 +1,56 @@
+<!--
+    Editor do corpo específico de Múltipla Escolha (Etapa 3 da refatoração —
+    extraído de QuestaoForm.razor, markup e comportamento idênticos ao
+    original). Totalmente autocontido: Adicionar/Remover alternativa só
+    tocam Modelo.Alternativas/Modelo.RespostaCorretaIndex, nenhum outro
+    estado do formulário depende disso.
+-->
+<h5>Alternativas</h5>
+<InputRadioGroup @bind-Value="Modelo.RespostaCorretaIndex" Name="respostaCorreta">
+    @for (var i = 0; i < Modelo.Alternativas.Count; i++)
+    {
+        var idx = i;
+        <div class="input-group mb-2">
+            <span class="input-group-text">@LetraDaAlternativa(idx)</span>
+            <input class="form-control" @bind="Modelo.Alternativas[idx].Texto" placeholder="Texto da alternativa" />
+            <span class="input-group-text">
+                <InputRadio Value="idx" /> <span class="ms-1">Correta</span>
+            </span>
+            @if (Modelo.Alternativas.Count > 2)
+            {
+                <button type="button" class="btn btn-outline-danger" @onclick="() => RemoverAlternativa(idx)">x</button>
+            }
+        </div>
+    }
+</InputRadioGroup>
+@if (Modelo.Alternativas.Count < 8)
+{
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" @onclick="AdicionarAlternativa">+ Alternativa</button>
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+
+    private void AdicionarAlternativa()
+    {
+        if (Modelo.Alternativas.Count < 8)
+        {
+            Modelo.Alternativas.Add(new AlternativaInput());
+        }
+    }
+
+    private void RemoverAlternativa(int idx)
+    {
+        if (Modelo.Alternativas.Count <= 2)
+        {
+            return;
+        }
+        Modelo.Alternativas.RemoveAt(idx);
+        if (Modelo.RespostaCorretaIndex >= Modelo.Alternativas.Count)
+        {
+            Modelo.RespostaCorretaIndex = Modelo.Alternativas.Count - 1;
+        }
+    }
+
+    private static string LetraDaAlternativa(int idx) => ((char)('A' + idx)).ToString();
+}

@@ -3,17 +3,8 @@ using BancoQuestoes.Models;
 
 namespace BancoQuestoes.Services;
 
-// Heurística simples (sem IA) pra sugerir o nível de Bloom mais provável de
-// uma questão a partir do verbo/comando do enunciado — não é ciência exata,
-// é só um ponto de partida pra reduzir trabalho manual. QuestaoService só usa
-// isso pra preencher questões que ainda estão SEM Bloom; o professor revisa
-// depois em QuestaoForm normalmente.
-//
-// Ordem de checagem: do nível mais "sofisticado" (Criar) pro mais básico
-// (Lembrar) — verbos de nível alto são mais específicos e raros, então
-// checá-los primeiro evita que uma palavra genérica tipo "explique" (que
-// pode aparecer solta em qualquer canto do enunciado) mascare um comando
-// mais preciso que também esteja presente.
+// Heurística sem IA: sugere o nível de Bloom pelo verbo do enunciado. Checa
+// do nível mais sofisticado (Criar) pro mais básico, pra não mascarar comandos precisos.
 public static class ClassificadorBloom
 {
     private static readonly (NivelBloom Nivel, string[] Palavras)[] Niveis =

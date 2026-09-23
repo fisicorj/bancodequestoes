@@ -4,11 +4,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BancoQuestoes.Services;
 
-// Wrapper fino sobre BancoQuestoes.Exportacao (ProvaExportLoader,
-// ProvaDocxExporter, ProvaPdfExporter) — a lógica de carregar/gerar em si
-// não é reescrita aqui, só invocada. O que este Service acrescenta é a
-// checagem de posse (provas são privadas por professor) que antes vivia
-// solta em Program.cs, junto dos endpoints de exportação.
+// Wrapper fino sobre BancoQuestoes.Exportacao — só invoca a geração e
+// acrescenta a checagem de posse (provas são privadas por professor).
 public class ExportacaoService(ApplicationDbContext db)
 {
     public async Task<bool> EhDonoDaProvaAsync(int provaId, string? meuId)
@@ -31,9 +28,7 @@ public class ExportacaoService(ApplicationDbContext db)
 
     public static byte[] GerarVariacoesPdf(ProvaExportDto prova, int quantidadeVersoes) => ProvaPdfExporter.GerarVariacoes(prova, quantidadeVersoes);
 
-    // Gabarito comentado: documento à parte (questão + resposta certa +
-    // explicação do professor, quando preenchida) — não é a prova em branco
-    // que o aluno recebe, é material de estudo/revisão ou apoio na correção.
+    // Gabarito comentado: documento à parte com resposta certa + explicação, não a prova em branco do aluno.
     public static byte[] GerarGabaritoComentadoDocx(ProvaExportDto prova) => ProvaDocxExporter.GerarGabaritoComentado(prova);
 
     public static byte[] GerarGabaritoComentadoPdf(ProvaExportDto prova) => ProvaPdfExporter.GerarGabaritoComentado(prova);

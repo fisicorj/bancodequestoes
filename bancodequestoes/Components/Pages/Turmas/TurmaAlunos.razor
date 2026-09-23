@@ -1,0 +1,170 @@
+@page "/turmas/{TurmaId:int}/alunos"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject CursoService CursoService
+@inject AlunoService AlunoService
+@inject IJSRuntime JS
+
+<PageTitle>Alunos da turma</PageTitle>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (turma is null)
+{
+    <div class="alert alert-danger">Turma não encontrada.</div>
+}
+else
+{
+    <PageHeader Titulo="@($"Alunos — {turma.Rotulo}")" />
+    <p><a href="turmas" class="btn btn-sm btn-link px-0">&laquo; Voltar às turmas</a></p>
+
+    @if (erro is not null)
+    {
+        <div class="alert alert-danger">@erro</div>
+    }
+
+    @if (sucesso is not null)
+    {
+        <div class="alert alert-success">@sucesso</div>
+    }
+
+    <div class="form-card mb-3">
+        <h6>Matricular aluno</h6>
+        <div class="row g-2 align-items-end">
+            <div class="col-md-8">
+                <select class="form-select" @bind="alunoParaMatricular">
+                    <option value="0">Selecione um aluno...</option>
+                    @foreach (var a in alunosDisponiveis)
+                    {
+                        <option value="@a.Id">@a.Nome @(a.Matricula is not null ? $"({a.Matricula})" : "")</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="button" class="btn btn-primary w-100" @onclick="MatricularAsync" disabled="@(alunoParaMatricular == 0)">
+                    Matricular
+                </button>
+            </div>
+        </div>
+        <p class="text-muted small mt-2">
+            Não achou o aluno? <a href="alunos/novo">Cadastre um novo</a> ou <a href="alunos/importar">importe uma lista em CSV</a>.
+        </p>
+    </div>
+
+    @if (matriculas.Count == 0)
+    {
+        <p><em>Nenhum aluno matriculado nessa turma ainda.</em></p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Aluno</th>
+                    <th>Email</th>
+                    <th>Matrícula</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var m in matriculas)
+                {
+                    <tr class="@(m.Ativa ? "" : "text-muted")">
+                        <td>@m.Aluno?.Nome</td>
+                        <td>@m.Aluno?.Email</td>
+                        <td>@m.Aluno?.Matricula</td>
+                        <td>
+                            @if (m.Ativa)
+                            {
+                                <span class="badge bg-success">Matriculado</span>
+                            }
+                            else
+                            {
+                                <span class="badge bg-secondary">Desmatriculado</span>
+                            }
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => AlternarAtivoAsync(m)">
+                                @(m.Ativa ? "Desmatricular" : "Rematricular")
+                            </button>
+                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarRemoverAsync(m)">Remover</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    [Parameter]
+    public int TurmaId { get; set; }
+
+    private Turma? turma;
+    private List<TurmaAluno> matriculas = new();
+    private List<Aluno> alunosDisponiveis = new();
+    private int alunoParaMatricular;
+    private bool carregando = true;
+    private string? erro;
+    private string? sucesso;
+
+    protected override async Task OnInitializedAsync() => await CarregarAsync();
+
+    private async Task CarregarAsync()
+    {
+        carregando = true;
+        turma = await CursoService.ObterTurmaAsync(TurmaId);
+        if (turma is not null)
+        {
+            matriculas = await AlunoService.ListarMatriculasDaTurmaAsync(TurmaId);
+
+            var jaMatriculados = matriculas.Select(m => m.AlunoId).ToHashSet();
+            alunosDisponiveis = (await AlunoService.ListarTodosAsync())
+                .Where(a => !jaMatriculados.Contains(a.Id))
+                .ToList();
+        }
+
+        carregando = false;
+    }
+
+    private async Task MatricularAsync()
+    {
+        erro = null;
+        sucesso = null;
+        try
+        {
+            await AlunoService.MatricularAsync(TurmaId, alunoParaMatricular);
+            alunoParaMatricular = 0;
+            sucesso = "Aluno matriculado com sucesso.";
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private async Task AlternarAtivoAsync(TurmaAluno m)
+    {
+        erro = null;
+        sucesso = null;
+        await AlunoService.AlternarAtivoMatriculaAsync(m);
+        sucesso = m.Ativa ? "Aluno rematriculado." : "Aluno desmatriculado.";
+    }
+
+    private async Task ConfirmarRemoverAsync(TurmaAluno m)
+    {
+        var confirmado = await JS.InvokeAsync<bool>("confirm", $"Remover a matrícula de \"{m.Aluno?.Nome}\" dessa turma? Essa ação não pode ser desfeita.");
+        if (confirmado)
+        {
+            erro = null;
+            sucesso = null;
+            await AlunoService.ExcluirMatriculaAsync(m);
+            sucesso = "Matrícula removida.";
+            await CarregarAsync();
+        }
+    }
+}

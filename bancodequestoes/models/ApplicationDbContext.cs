@@ -4,9 +4,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BancoQuestoes.Data;
 
-// IdentityDbContext<ApplicationUser> já traz DbSets prontos para Users, Roles,
-// UserClaims, etc. Herdar dele em vez de DbContext puro é o que integra
-// o Identity ao mesmo banco/mesmo DbContext do resto do sistema.
+// Herdar de IdentityDbContext<ApplicationUser> (em vez de DbContext puro) integra o
+// Identity ao mesmo banco/DbContext do resto do sistema.
 public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
@@ -23,6 +22,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<LacunaResposta> LacunasRespostas => Set<LacunaResposta>();
     public DbSet<Prova> Provas => Set<Prova>();
     public DbSet<ProvaQuestao> ProvasQuestoes => Set<ProvaQuestao>();
+    public DbSet<ProvaDisciplina> ProvasDisciplinas => Set<ProvaDisciplina>();
     public DbSet<Instituicao> Instituicoes => Set<Instituicao>();
     public DbSet<Curso> Cursos => Set<Curso>();
     public DbSet<AreaCurso> AreasCurso => Set<AreaCurso>();
@@ -32,26 +32,35 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<MatrizReferencia> MatrizesReferencia => Set<MatrizReferencia>();
     public DbSet<ItemMatrizReferencia> ItensMatrizReferencia => Set<ItemMatrizReferencia>();
 
-    // Também exposto direto (além do skip-navigation Questao.ItensMatriz)
-    // porque telas como o dashboard de cobertura curricular (ver
-    // MatrizReferenciaService) precisam agrupar/contar vínculos sem carregar
-    // as Questoes/Itens inteiros pra memória.
+    // Exposto direto (além do skip-navigation Questao.ItensMatriz) porque o dashboard de
+    // cobertura curricular precisa agrupar/contar vínculos sem carregar entidades inteiras.
     public DbSet<QuestaoItemMatriz> QuestoesItensMatriz => Set<QuestaoItemMatriz>();
 
-    // OnModelCreating é onde a "Fluent API" entra: uma forma de configurar
-    // detalhes do mapeamento objeto-banco que não dá para (ou não é claro)
-    // expressar só com atributos nas classes. Aqui é onde definimos o TPT.
+    // Exposto direto (mesmo motivo acima): migration de backfill e QuestaoQueryService
+    // precisam consultar/gravar vínculos em lote sem carregar entidades inteiras.
+    public DbSet<QuestaoAreaCurso> QuestoesAreasCurso => Set<QuestaoAreaCurso>();
+
+    public DbSet<CursoDisciplina> CursosDisciplinas => Set<CursoDisciplina>();
+
+    // Configuração única/global de IA — sempre uma linha só, editável pela tela
+    // /admin/configuracao-ia.
+    public DbSet<ConfiguracaoIa> ConfiguracoesIa => Set<ConfiguracaoIa>();
+
+    public DbSet<Aluno> Alunos => Set<Aluno>();
+    public DbSet<TurmaAluno> TurmasAlunos => Set<TurmaAluno>();
+    public DbSet<AplicacaoProva> AplicacoesProva => Set<AplicacaoProva>();
+    public DbSet<RespostaProvaOnline> RespostasProvaOnline => Set<RespostaProvaOnline>();
+    public DbSet<RespostaQuestaoOnline> RespostasQuestaoOnline => Set<RespostaQuestaoOnline>();
+    public DbSet<RespostaLacunaOnline> RespostasLacunaOnline => Set<RespostaLacunaOnline>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
-        // OBRIGATÓRIO chamar base.OnModelCreating primeiro: é isso que registra
-        // as tabelas do Identity (AspNetUsers, AspNetRoles, etc.). Esquecer essa
-        // linha é um erro clássico que quebra o Identity silenciosamente.
+        // OBRIGATÓRIO chamar base.OnModelCreating primeiro: registra as tabelas do
+        // Identity — esquecer isso quebra o Identity silenciosamente.
         base.OnModelCreating(builder);
 
-        // TPT (Table-Per-Type): cada classe da hierarquia vira sua própria
-        // tabela. ToTable("Questoes") na classe base define o nome da tabela
-        // "pai"; cada ToTable() nas subclasses define a tabela "filha",
-        // ligada por uma FK que também é PK (relação 1-para-1).
+        // TPT: cada classe da hierarquia vira sua própria tabela, ligada à tabela "pai"
+        // (Questoes) por uma FK que também é PK.
         builder.Entity<Questao>().ToTable("Questoes");
         builder.Entity<QuestaoMultiplaEscolha>().ToTable("QuestoesMultiplaEscolha");
         builder.Entity<QuestaoDiscursiva>().ToTable("QuestoesDiscursivas");
@@ -61,10 +70,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<QuestaoNumerica>().ToTable("QuestoesNumericas");
         builder.Entity<QuestaoLacunas>().ToTable("QuestoesLacunas");
 
-        // Sem essa linha, o EF Core mapearia Questao.TipoQuestao para uma coluna
-        // do tipo integer (o valor numérico do enum). Isso força a gravar como
-        // texto ("MultiplaEscolha", "Discursiva"...), o que deixa o banco
-        // legível se você um dia for olhar os dados direto no psql.
+        // Força gravar o enum como texto ("MultiplaEscolha"...) em vez do inteiro
+        // padrão, pra deixar o banco legível direto no psql.
         builder.Entity<Questao>()
             .Property(q => q.TipoQuestao)
             .HasConversion<string>();
@@ -85,8 +92,26 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .Property(q => q.Origem)
             .HasConversion<string>();
 
+        // Nullable (só ENADE preenche): sem HasDefaultValue/HasSentinel porque null já
+        // é um valor válido direto (diferente de Prova.TipoEscopo abaixo).
+        builder.Entity<Questao>()
+            .Property(q => q.SecaoEnade)
+            .HasConversion<string>();
+
         builder.Entity<Prova>()
             .Property(p => p.Tipo)
+            .HasConversion<string>();
+
+        builder.Entity<Prova>()
+            .Property(p => p.TipoEscopo)
+            .HasConversion<string>()
+            .HasDefaultValue(TipoEscopoProva.Disciplina)
+            // Silencia EFCore.Model.Validation[20601]: enum começa em 1, então o
+            // default CLR (0) nunca é usado — só torna isso explícito pro EF.
+            .HasSentinel(TipoEscopoProva.Disciplina);
+
+        builder.Entity<ConfiguracaoIa>()
+            .Property(c => c.Modo)
             .HasConversion<string>();
 
         builder.Entity<MatrizReferencia>()
@@ -101,13 +126,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .Property(i => i.Tipo)
             .HasConversion<string>();
 
-        // HasDefaultValue aqui não é "padrão implícito" pro professor — a
-        // tela nunca deixa salvar sem escolher (ver InstituicaoInput). É só
-        // pro banco saber o que fazer com as linhas que já existiam ANTES
-        // dessa coluna existir: viram Semestral, que era o comportamento
-        // implícito de todo o sistema até agora (só "Semestre" existia).
-        // Editar uma dessas instituições já mostra Semestral pré-selecionado
-        // no formulário, não força escolher nada de novo.
+        // HasDefaultValue não é "padrão implícito" pro professor (a tela sempre exige
+        // escolha) — é só pro banco saber o que fazer com linhas que já existiam antes desta coluna.
         builder.Entity<Instituicao>()
             .Property(i => i.SistemaPeriodos)
             .HasConversion<string>()
@@ -117,24 +137,33 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .Property(i => i.Alinhamento)
             .HasConversion<string>();
 
-        // Muitos-para-muitos "de mão única": Questao.Tags existe, mas Tag não
-        // tem uma coleção de volta pra Questao (não precisamos navegar
-        // "quais questões usam essa tag" a partir da Tag em nenhuma tela) —
-        // o EF Core aceita isso desde a v5, só não dá pra usar a sintaxe curta
-        // (HasMany().WithMany(x => x.Algo)), precisa do WithMany() vazio.
+        // Restrict explícito (auditoria de 09/09/2026): sem isso o EF cai na convenção
+        // implícita de Cascade pra FK não-anulável, o que apagaria em cadeia todas as
+        // Questões de um Assunto ao excluir o Assunto (e todos os Assuntos+Questões de uma
+        // Disciplina ao excluir a Disciplina) sem aviso nenhum — silenciosamente, sem nem
+        // passar pelo catch de DbUpdateException que DisciplinaService já tem pronto pra
+        // barrar isso. Restrict faz o banco recusar a exclusão em vez de apagar o conteúdo.
+        builder.Entity<Questao>()
+            .HasOne(q => q.Assunto)
+            .WithMany(a => a.Questoes)
+            .HasForeignKey(q => q.AssuntoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<Assunto>()
+            .HasOne(a => a.Disciplina)
+            .WithMany(d => d.Assuntos)
+            .HasForeignKey(a => a.DisciplinaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Muitos-pra-muitos "de mão única": Tag não tem coleção de volta pra Questao,
+        // então precisa do WithMany() vazio em vez da sintaxe curta.
         builder.Entity<Questao>()
             .HasMany(q => q.Tags)
             .WithMany()
             .UsingEntity(j => j.ToTable("QuestoesTags"));
 
-        // Nome da tag único de verdade, sem depender de "não deveria acontecer
-        // na prática": o ILIKE em QuestaoService.ResolverTagsAsync (busca antes
-        // de criar) só reduz a chance de colisão, não elimina a corrida entre
-        // duas requisições concorrentes tentando criar "Pipeline" e "pipeline"
-        // ao mesmo tempo — um índice único comum no Postgres é case-sensitive,
-        // então os dois passariam. Uma coluna gerada (stored) com o nome em
-        // minúsculas + índice único NELA garante a unicidade no banco, não só
-        // na aplicação.
+        // Índice único comum é case-sensitive (deixaria "Pipeline"/"pipeline" passarem);
+        // coluna gerada em minúsculas + índice nela garante unicidade real no banco.
         builder.Entity<Tag>(tag =>
         {
             tag.Property<string>("NomeNormalizado")
@@ -144,28 +173,22 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .IsUnique();
         });
 
-        // Instituição do professor é opcional e não pode travar a exclusão de
-        // uma instituição (SetNull): o professor só perde o vínculo, continua
-        // logável, só "Institucional" passa a não valer mais nada pra ele até
-        // escolher outra.
+        // SetNull: excluir uma instituição não trava — o professor só perde o
+        // vínculo e continua logável.
         builder.Entity<ApplicationUser>()
             .HasOne(u => u.Instituicao)
             .WithMany()
             .HasForeignKey(u => u.InstituicaoId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Configura a FK "AlternativaQuestao -> QuestaoMultiplaEscolha" explicitamente.
-        // O EF Core provavelmente adivinharia isso sozinho pelo nome
-        // "QuestaoMultiplaEscolhaId", mas ser explícito aqui documenta a intenção
-        // e evita surpresas se você renomear algo no futuro.
+        // Explícito (o EF adivinharia pelo nome da FK) pra documentar a intenção e
+        // evitar surpresas numa renomeação futura.
         builder.Entity<AlternativaQuestao>()
             .HasOne(a => a.Questao)
             .WithMany(q => q.Alternativas)
             .HasForeignKey(a => a.QuestaoMultiplaEscolhaId);
 
-        // Mesma lógica da FK de AlternativaQuestao acima, só que pra Associação
-        // (Pares) e Lacunas (Lacunas) — cada uma é um "muitos" ligado a UMA
-        // subclasse específica de Questao, então precisa da FK explícita.
+        // Mesma lógica acima, pra Associação e Lacunas.
         builder.Entity<ParAssociacao>()
             .HasOne(p => p.Questao)
             .WithMany(q => q.Pares)
@@ -176,45 +199,71 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .WithMany(q => q.Lacunas)
             .HasForeignKey(l => l.QuestaoLacunasId);
 
-        // Muitos-para-muitos com payload (ProvaQuestao): configuramos as duas
-        // FKs manualmente porque ProvaQuestao tem DUAS relações "muitos para um"
-        // (uma com Prova, outra com Questao), e o EF Core precisa saber
-        // qual é qual — ele não adivinha isso sem ajuda.
+        // ProvaQuestao tem DUAS relações "muitos pra um" (Prova e Questao); o EF
+        // precisa das FKs explícitas pra saber qual é qual.
         builder.Entity<ProvaQuestao>()
             .HasOne(pq => pq.Prova)
             .WithMany(p => p.ProvaQuestoes)
             .HasForeignKey(pq => pq.ProvaId);
 
-        // Restrict (em vez do Cascade padrão): apagar uma questão que ainda está
-        // vinculada a alguma prova precisa falhar de propósito, não apagar em
-        // cascata o vínculo e silenciosamente encolher a prova já salva.
+        // Restrict (não Cascade): apagar uma questão vinculada a prova precisa
+        // falhar de propósito, não encolher a prova silenciosamente.
         builder.Entity<ProvaQuestao>()
             .HasOne(pq => pq.Questao)
             .WithMany()
             .HasForeignKey(pq => pq.QuestaoId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Evita duas questões na mesma prova na mesma posição, e evita a mesma
-        // questão duplicada na mesma prova. Índice único = regra de negócio
-        // garantida pelo próprio banco, não só pelo código C#.
+        // Evita questão duplicada na mesma prova — regra garantida pelo banco.
         builder.Entity<ProvaQuestao>()
             .HasIndex(pq => new { pq.ProvaId, pq.QuestaoId })
             .IsUnique();
 
-        // Curso é opcional (FK anulável): apagar um curso não pode apagar as
-        // provas que o referenciam, só desvincular (o padrão para FK anulável já
-        // seria Restrict, mas deixamos explícito SetNull para o comportamento
-        // ser óbvio e a exclusão nunca travar por engano).
+        // ProvaDisciplina -> Prova é Cascade (a linha só existe em função da prova);
+        // -> Disciplina é Restrict (apagar Disciplina em uso precisa falhar).
+        builder.Entity<ProvaDisciplina>()
+            .HasOne(pd => pd.Prova)
+            .WithMany(p => p.ProvaDisciplinas)
+            .HasForeignKey(pd => pd.ProvaId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<ProvaDisciplina>()
+            .HasOne(pd => pd.Disciplina)
+            .WithMany()
+            .HasForeignKey(pd => pd.DisciplinaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Mesma Disciplina não pode entrar duas vezes na mesma prova.
+        builder.Entity<ProvaDisciplina>()
+            .HasIndex(pd => new { pd.ProvaId, pd.DisciplinaId })
+            .IsUnique();
+
+        // Restrict: uma matriz usada por alguma prova não pode ser excluída, só
+        // desativada, senão a prova perderia a referência silenciosamente.
+        builder.Entity<Prova>()
+            .HasOne(p => p.MatrizReferencia)
+            .WithMany()
+            .HasForeignKey(p => p.MatrizReferenciaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Curso opcional: apagar um curso não apaga as provas, só desvincula —
+        // SetNull explícito pra exclusão nunca travar por engano.
         builder.Entity<Prova>()
             .HasOne(p => p.Curso)
             .WithMany()
             .HasForeignKey(p => p.CursoId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Turma.CursoId/DisciplinaId são Restrict (não SetNull): diferente de
-        // Prova, uma Turma SEM Curso ou SEM Disciplina não faz sentido — apagar
-        // um Curso/Disciplina que ainda tem turma vinculada precisa falhar de
-        // propósito, igual já fazemos com ProvaQuestao -> Questao.
+        // Mesmo raciocínio de Prova.Curso acima: SetNull explícito em vez de
+        // confiar na convenção implícita do EF pra FK anulável.
+        builder.Entity<Prova>()
+            .HasOne(p => p.Disciplina)
+            .WithMany()
+            .HasForeignKey(p => p.DisciplinaId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Restrict (não SetNull): diferente de Prova, Turma sem Curso/Disciplina
+        // não faz sentido — apagar um deles com turma vinculada precisa falhar.
         builder.Entity<Turma>()
             .HasOne(t => t.Curso)
             .WithMany()
@@ -227,20 +276,15 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .HasForeignKey(t => t.DisciplinaId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Já Prova.Turma é opcional: apagar uma turma não pode apagar as provas
-        // que a referenciam, só desvincular — mesmo padrão do Prova.Curso acima.
+        // Prova.Turma é opcional: apagar uma turma só desvincula, mesmo padrão do Curso acima.
         builder.Entity<Prova>()
             .HasOne(p => p.Turma)
             .WithMany()
             .HasForeignKey(p => p.TurmaId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Histórico de edição (auditoria): Cascade na Questão, porque sem a
-        // questão o histórico sozinho não faz sentido (e ExcluirAsync só
-        // deixa apagar de verdade quem nunca foi usado em prova, então isso
-        // não acontece o tempo todo). Já o autor é SetNull, mesmo padrão de
-        // ApplicationUser.Instituicao acima: se o usuário for excluído, a
-        // linha do histórico continua existindo, só perde quem fez a edição.
+        // Cascade na Questão (sem ela o histórico não faz sentido); SetNull no autor
+        // (excluído o usuário, a linha do histórico continua, só perde quem editou).
         builder.Entity<QuestaoHistorico>(h =>
         {
             h.HasOne(x => x.Questao)
@@ -256,13 +300,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             h.HasIndex(x => x.QuestaoId);
         });
 
-        // Área de Curso (catálogo nacional, 2ª rodada de revisão) ------------
-        //
-        // Nome único de verdade no banco (mesma técnica de Tag.NomeNormalizado
-        // acima): evita "Engenharia de Computação" e "engenharia de
-        // computação" virando duas AreaCurso diferentes por uma corrida entre
-        // dois cadastros concorrentes — a checagem em AreaCursoService só
-        // reduz a chance, o índice único é quem garante.
+        // Mesma técnica de Tag.NomeNormalizado acima: evita duas AreaCurso
+        // diferentes por variação de maiúsculas numa corrida de cadastros.
         builder.Entity<AreaCurso>(area =>
         {
             area.Property<string>("NomeNormalizado")
@@ -271,67 +310,41 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             area.HasIndex("NomeNormalizado").IsUnique();
         });
 
-        // Curso -> AreaCurso é opcional e SetNull: apagar uma AreaCurso não
-        // pode apagar os Cursos que apontam pra ela, só desvincular (o
-        // curso continua existindo normalmente, só sem Área até o professor
-        // escolher outra) — mesmo raciocínio de Prova.Curso/Prova.Turma.
+        // Restrict (não SetNull): uma AreaCurso "em uso" por algum Curso não pode ser
+        // excluída silenciosamente — desativar (Ativo=false) é o caminho normal.
         builder.Entity<Curso>()
             .HasOne(c => c.AreaCurso)
             .WithMany()
             .HasForeignKey(c => c.AreaCursoId)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.Entity<Curso>().HasIndex(c => c.AreaCursoId);
 
-        // Matriz de Referência Curricular / ENADE ----------------------------
-
-        // Questao.Curso é opcional, mesmo padrão de Prova.Curso acima: apagar
-        // um curso não pode apagar questões, só desvincular (e a questão
-        // continua existindo/editável normalmente, só sem Alinhamento
-        // Curricular até o professor escolher outro curso).
-        builder.Entity<Questao>()
-            .HasOne(q => q.Curso)
-            .WithMany()
-            .HasForeignKey(q => q.CursoId)
-            .OnDelete(DeleteBehavior.SetNull);
-
-        // MatrizReferencia.Curso é Restrict, mesmo padrão de Turma.CursoId/
-        // DisciplinaId: o histórico de matrizes de um curso (inclusive as
-        // Historicas — item 21 do pedido, versionamento nunca apaga edição
-        // antiga) não pode sumir silenciosamente junto com o curso. Agora
-        // opcional (CursoId é int?) — só preenchido pra Tipo PPC/
-        // Institucional/Outro (ver comentário no model).
+        // MatrizReferencia.Curso é Restrict, mesmo padrão de Turma.CursoId: o histórico
+        // de matrizes (inclusive Historicas) não pode sumir junto com o curso.
         builder.Entity<MatrizReferencia>()
             .HasOne(m => m.Curso)
             .WithMany()
             .HasForeignKey(m => m.CursoId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // MatrizReferencia.AreaCurso: mesmo raciocínio Restrict acima, só
-        // que pro escopo nacional (ENADE/DCN) — apagar uma AreaCurso que
-        // ainda tem matriz cadastrada precisa falhar de propósito.
+        // Mesmo raciocínio Restrict acima, pro escopo nacional (ENADE/DCN).
         builder.Entity<MatrizReferencia>()
             .HasOne(m => m.AreaCurso)
             .WithMany()
             .HasForeignKey(m => m.AreaCursoId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Índices sugeridos no pedido (item 27) — Tipo/Status não são FK
-        // (são só classificação, igual Origem/Bloom em Questao), então não
-        // vêm de graça pela convenção do EF; CursoId/AreaCursoId já ganhariam
-        // índice só por serem FK, mas ficam explícitos aqui por clareza.
+        // Tipo/Status não são FK, então não ganham índice de graça pela convenção
+        // do EF; CursoId/AreaCursoId já ganhariam, mas ficam explícitos por clareza.
         builder.Entity<MatrizReferencia>().HasIndex(m => m.CursoId);
         builder.Entity<MatrizReferencia>().HasIndex(m => m.AreaCursoId);
         builder.Entity<MatrizReferencia>().HasIndex(m => m.Tipo);
         builder.Entity<MatrizReferencia>().HasIndex(m => m.Ano);
         builder.Entity<MatrizReferencia>().HasIndex(m => m.Status);
 
-        // ItemMatrizReferencia.MatrizReferencia é Restrict: apagar uma
-        // matriz que ainda tem itens cadastrados precisa falhar de
-        // propósito (MatrizReferenciaService.ExcluirAsync trata isso com
-        // mensagem amigável, mesmo padrão de Curso/Turma/diretrizes antes
-        // dele) — na prática, desativar (Status/Ativo) é o caminho normal;
-        // excluir de verdade só vale pra matriz/item que nunca foi usado.
+        // Restrict: apagar uma matriz com itens cadastrados falha de propósito;
+        // desativar (Status/Ativo) é o caminho normal.
         builder.Entity<ItemMatrizReferencia>()
             .HasOne(i => i.MatrizReferencia)
             .WithMany(m => m.Itens)
@@ -342,32 +355,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         builder.Entity<ItemMatrizReferencia>().HasIndex(i => i.Tipo);
         builder.Entity<ItemMatrizReferencia>().HasIndex(i => i.Codigo);
 
-        // Código único DENTRO da mesma matriz (não globalmente — "C01" pode
-        // se repetir em matrizes diferentes, ex.: ENADE 2023 e ENADE 2026
-        // convivendo como Historica/Ativa) — garante no banco a mesma regra
-        // que MatrizReferenciaService.ValidarItemAsync já checa na aplicação.
+        // Único DENTRO da mesma matriz (não globalmente — "C01" pode repetir entre
+        // matrizes diferentes), garantindo no banco a mesma regra checada na aplicação.
         builder.Entity<ItemMatrizReferencia>()
             .HasIndex(i => new { i.MatrizReferenciaId, i.Codigo })
             .IsUnique();
 
-        // Muitos-para-muitos Questao <-> ItemMatrizReferencia via classe de
-        // junção própria (QuestaoItemMatriz, não implícita como Tags acima)
-        // — UsingEntity<QuestaoItemMatriz> permite ter as duas coisas ao
-        // mesmo tempo: o skip-navigation curto (Questao.ItensMatriz, usado
-        // pela UI) E uma tabela de junção real e nomeada
-        // (QuestoesItensMatriz), que pode ganhar colunas próprias no futuro
-        // (peso, origem de uma sugestão de IA) sem remodelar nada.
-        //
-        // Chave primária composta (QuestaoId + ItemMatrizReferenciaId), não
-        // um Id substituto: além de ser a chave natural do vínculo, isso já
-        // garante sozinho a não-duplicidade pedida no item 4 (a mesma
-        // questão não pode ficar ligada duas vezes ao mesmo item) — sem
-        // precisar de um índice único separado.
-        //
-        // Restrict do lado do Item: não deixa apagar um item ainda vinculado
-        // a questões. Do lado da Questao fica o Cascade padrão do EF: apagar
-        // uma questão remove só as linhas de vínculo dela, inofensivo (o
-        // item da matriz em si continua existindo).
+        // Classe de junção própria: UsingEntity dá skip-navigation + tabela nomeada.
+        // Chave composta evita duplicidade; Restrict no Item, Cascade padrão na Questao.
         builder.Entity<Questao>()
             .HasMany(q => q.ItensMatriz)
             .WithMany()
@@ -385,5 +380,150 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                     j.HasKey(qi => new { qi.QuestaoId, qi.ItemMatrizReferenciaId });
                     j.HasIndex(qi => qi.ItemMatrizReferenciaId);
                 });
+
+        // Mesma técnica de Questao.ItensMatriz acima: Restrict do lado da AreaCurso,
+        // Cascade padrão do lado da Questao, chave composta evita duplicidade.
+        builder.Entity<Questao>()
+            .HasMany(q => q.AreasCurso)
+            .WithMany()
+            .UsingEntity<QuestaoAreaCurso>(
+                j => j.HasOne(qa => qa.AreaCurso)
+                    .WithMany()
+                    .HasForeignKey(qa => qa.AreaCursoId)
+                    .OnDelete(DeleteBehavior.Restrict),
+                j => j.HasOne(qa => qa.Questao)
+                    .WithMany()
+                    .HasForeignKey(qa => qa.QuestaoId),
+                j =>
+                {
+                    j.ToTable("QuestoesAreasCurso");
+                    j.HasKey(qa => new { qa.QuestaoId, qa.AreaCursoId });
+                    j.HasIndex(qa => qa.AreaCursoId);
+                });
+
+        // Restrict, mesmo padrão de Turma.CursoId/DisciplinaId: não desvincula
+        // silenciosamente a grade curricular.
+        builder.Entity<CursoDisciplina>()
+            .HasOne(cd => cd.Curso)
+            .WithMany()
+            .HasForeignKey(cd => cd.CursoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<CursoDisciplina>()
+            .HasOne(cd => cd.Disciplina)
+            .WithMany()
+            .HasForeignKey(cd => cd.DisciplinaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Mesma Disciplina não pode entrar duas vezes na grade do mesmo Curso.
+        builder.Entity<CursoDisciplina>()
+            .HasIndex(cd => new { cd.CursoId, cd.DisciplinaId })
+            .IsUnique();
+
+        // --- Prova online (Aluno/TurmaAluno/AplicacaoProva/RespostaProvaOnline) ---
+
+        builder.Entity<AplicacaoProva>()
+            .Property(a => a.Status)
+            .HasConversion<string>();
+
+        builder.Entity<RespostaProvaOnline>()
+            .Property(r => r.Status)
+            .HasConversion<string>();
+
+        // Nulo enquanto EmAndamento (ver comentário no enum) — sem HasDefaultValue/HasSentinel,
+        // mesmo padrão de Questao.SecaoEnade, já que null é um valor válido direto.
+        builder.Entity<RespostaProvaOnline>()
+            .Property(r => r.MotivoEncerramento)
+            .HasConversion<string>();
+
+        // SetNull: mesmo padrão de ApplicationUser.InstituicaoId — excluir a instituição não
+        // trava, só desvincula o Aluno.
+        builder.Entity<Aluno>()
+            .HasOne(a => a.Instituicao)
+            .WithMany()
+            .HasForeignKey(a => a.InstituicaoId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Restrict nos dois lados, mesmo padrão de CursoDisciplina: matrícula não desvincula
+        // silenciosamente ao excluir Turma ou Aluno — desativar (Ativa=false) é o caminho normal.
+        builder.Entity<TurmaAluno>()
+            .HasOne(ta => ta.Turma)
+            .WithMany()
+            .HasForeignKey(ta => ta.TurmaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<TurmaAluno>()
+            .HasOne(ta => ta.Aluno)
+            .WithMany(a => a.TurmaAlunos)
+            .HasForeignKey(ta => ta.AlunoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Mesmo Aluno não pode matricular duas vezes na mesma Turma.
+        builder.Entity<TurmaAluno>()
+            .HasIndex(ta => new { ta.TurmaId, ta.AlunoId })
+            .IsUnique();
+
+        // Restrict nos dois lados: uma Prova ou Turma com aplicação online não pode ser
+        // excluída silenciosamente, mesmo raciocínio de ProvaQuestao.Questao.
+        builder.Entity<AplicacaoProva>()
+            .HasOne(a => a.Prova)
+            .WithMany()
+            .HasForeignKey(a => a.ProvaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<AplicacaoProva>()
+            .HasOne(a => a.Turma)
+            .WithMany()
+            .HasForeignKey(a => a.TurmaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // CriadoPorId sem configuração explícita (mesmo padrão de Turma/Prova.CriadoPorId):
+        // FK opcional, convenção implícita do EF já é SetNull.
+
+        // Código de acesso é o que o aluno digita — precisa ser único no sistema todo.
+        builder.Entity<AplicacaoProva>()
+            .HasIndex(a => a.CodigoAcesso)
+            .IsUnique();
+
+        // Restrict nos dois lados, mesma lógica de AplicacaoProva acima.
+        builder.Entity<RespostaProvaOnline>()
+            .HasOne(r => r.AplicacaoProva)
+            .WithMany(a => a.Respostas)
+            .HasForeignKey(r => r.AplicacaoProvaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<RespostaProvaOnline>()
+            .HasOne(r => r.Aluno)
+            .WithMany()
+            .HasForeignKey(r => r.AlunoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Só uma tentativa por Aluno em cada AplicacaoProva (regra de negócio: sem resubmissão).
+        builder.Entity<RespostaProvaOnline>()
+            .HasIndex(r => new { r.AplicacaoProvaId, r.AlunoId })
+            .IsUnique();
+
+        // Cascade: a resposta a uma questão só existe em função da tentativa (mesmo padrão
+        // de QuestaoHistorico->Questao); Restrict na Questao pra não perder histórico de
+        // resposta numa exclusão silenciosa da questão.
+        builder.Entity<RespostaQuestaoOnline>()
+            .HasOne(r => r.RespostaProvaOnline)
+            .WithMany(r => r.Respostas)
+            .HasForeignKey(r => r.RespostaProvaOnlineId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<RespostaQuestaoOnline>()
+            .HasOne(r => r.Questao)
+            .WithMany()
+            .HasForeignKey(r => r.QuestaoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Cascade: mesma ideia de LacunaResposta->QuestaoLacunas, a lacuna respondida só
+        // existe em função da questão respondida.
+        builder.Entity<RespostaLacunaOnline>()
+            .HasOne(r => r.RespostaQuestaoOnline)
+            .WithMany(r => r.RespostasLacunas)
+            .HasForeignKey(r => r.RespostaQuestaoOnlineId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

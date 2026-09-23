@@ -1,0 +1,38 @@
+@*
+    Cabeçalho padrão de página (Etapa 1 UX/UI — design system mínimo).
+
+    Título + subtítulo curto opcional à esquerda, UMA ação principal (ou um
+    pequeno grupo primary + "Mais ações") à direita — em vez do bloco
+    "<h1>...</h1><p><a class='btn btn-primary'>...</a></p>" que estava
+    copiado em praticamente toda página de listagem do sistema.
+
+    Não substitui parágrafos explicativos mais longos que algumas páginas já
+    tinham (ex.: Áreas de Curso, Matrizes) — esses continuam soltos, sem
+    mudança, logo abaixo deste componente.
+*@
+<div class="page-header">
+    <div>
+        <h1 class="page-title">@Titulo</h1>
+        @if (!string.IsNullOrWhiteSpace(Subtitulo))
+        {
+            <p class="page-subtitle">@Subtitulo</p>
+        }
+    </div>
+    @if (Acao is not null)
+    {
+        <div class="page-header-actions">
+            @Acao
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Titulo { get; set; } = "";
+
+    [Parameter]
+    public string? Subtitulo { get; set; }
+
+    [Parameter]
+    public RenderFragment? Acao { get; set; }
+}

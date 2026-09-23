@@ -1,0 +1,337 @@
+<!--
+    Barra de busca/filtros de /questoes (Etapa 2 UX/UI — Banco de Questões).
+
+    Reorganizada em 3 camadas, sem mudar nenhuma regra de filtragem:
+    1. Busca (dominante, sozinha, no topo);
+    2. Filtros principais (Disciplina/Assunto/Tipo/Dificuldade), sempre visíveis;
+    3. "Mais filtros" (Visibilidade/Bloom/Origem/Ano/ENADE/Área/Curso/Matriz/
+       Item/Tags/Inativas), recolhido por padrão.
+    Abaixo, chips dos filtros ativos (removíveis individualmente) + "Limpar
+    filtros". Continua um componente "burro": liga direto nos campos de
+    Filtro e só dispara os mesmos EventCallback de antes — QuestaoList.razor
+    continua sendo quem decide o que fazer (recarregar, encadear Curso/
+    Matriz/Item). mostrarMaisFiltros é só estado visual local.
+-->
+<div class="mb-3">
+    <div class="search-bar-questoes">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input type="text" class="form-control form-control-lg" placeholder="Buscar por enunciado, assunto ou tag..."
+               @bind="Filtro.Texto" @bind:event="oninput" @bind:after="() => OnFiltroAlterado.InvokeAsync()" />
+        @if (!string.IsNullOrWhiteSpace(Filtro.Texto))
+        {
+            <button type="button" class="search-bar-questoes-clear" title="Limpar busca" @onclick="LimparTextoAsync">
+                <i class="bi bi-x-lg" aria-hidden="true"></i>
+            </button>
+        }
+    </div>
+</div>
+
+<div class="row g-2 mb-2">
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Disciplina</label>
+        <select class="form-select" @bind="Filtro.DisciplinaId" @bind:after="() => OnMudarDisciplina.InvokeAsync()">
+            <option value="0">Todas</option>
+            @foreach (var d in Disciplinas)
+            {
+                <option value="@d.Id">@d.Nome</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Assunto</label>
+        <select class="form-select" @bind="Filtro.AssuntoId" @bind:after="() => OnFiltroAlterado.InvokeAsync()">
+            <option value="0">Todos</option>
+            @foreach (var a in AssuntosDoFiltro)
+            {
+                <option value="@a.Id">@a.Nome</option>
+            }
+        </select>
+    </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Tipo</label>
+        <select class="form-select" @bind="Filtro.Tipo" @bind:after="() => OnFiltroAlterado.InvokeAsync()">
+            <option value="">Todos</option>
+            <option value="@TipoQuestao.MultiplaEscolha">Múltipla escolha</option>
+            <option value="@TipoQuestao.Discursiva">Discursiva</option>
+            <option value="@TipoQuestao.CertoErrado">Certo/Errado</option>
+            <option value="@TipoQuestao.Associacao">Associação</option>
+            <option value="@TipoQuestao.RespostaBreve">Resposta breve</option>
+            <option value="@TipoQuestao.Numerica">Numérica</option>
+            <option value="@TipoQuestao.Lacunas">Preenchimento de lacunas</option>
+        </select>
+    </div>
+    <div class="col-6 col-md-3">
+        <label class="form-label small mb-1">Dificuldade</label>
+        <select class="form-select" @bind="Filtro.Dificuldade" @bind:after="() => OnFiltroAlterado.InvokeAsync()">
+            <option value="">Todas</option>
+            <option value="@Dificuldade.Facil">Fácil</option>
+            <option value="@Dificuldade.Media">Média</option>
+            <option value="@Dificuldade.Dificil">Difícil</option>
+        </select>
+    </div>
+</div>
+
+<div class="mb-2 d-flex align-items-center gap-2">
+    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => mostrarMaisFiltros = !mostrarMaisFiltros">
+        Mais filtros@(FiltrosSecundariosAtivos > 0 ? $" ({FiltrosSecundariosAtivos})" : "")
+        <i class="bi @(mostrarMaisFiltros ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></i>
+    </button>
+</div>
+
+@if (mostrarMaisFiltros)
+{
+    <div class="row g-2 align-items-end mb-2 p-3 bg-light border rounded">
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Visibilidade</label>
+            <select class="form-select" @bind="Filtro.Visibilidade" @bind:after="() => OnFiltroAlterado.InvokeAsync()">
+                <option value="">Todas</option>
+                <option value="@VisibilidadeQuestao.Privada">🔒 Só eu</option>
+                <option value="@VisibilidadeQuestao.Institucional">👥 Instituição</option>
+                <option value="@VisibilidadeQuestao.Compartilhada">🌐 Todos</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Bloom</label>
+            <select class="form-select" @bind="Filtro.Bloom" @bind:after="() => OnFiltroAlterado.InvokeAsync()">
+                <option value="">Todos</option>
+                <option value="@NivelBloom.Lembrar">Lembrar</option>
+                <option value="@NivelBloom.Entender">Entender</option>
+                <option value="@NivelBloom.Aplicar">Aplicar</option>
+                <option value="@NivelBloom.Analisar">Analisar</option>
+                <option value="@NivelBloom.Avaliar">Avaliar</option>
+                <option value="@NivelBloom.Criar">Criar</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Origem</label>
+            <select class="form-select" @bind="Filtro.Origem" @bind:after="() => OnFiltroAlterado.InvokeAsync()">
+                <option value="">Todas</option>
+                <option value="@OrigemQuestao.Autoral">Autoral</option>
+                <option value="@OrigemQuestao.Livro">Livro</option>
+                <option value="@OrigemQuestao.Enade">ENADE</option>
+                <option value="@OrigemQuestao.Concurso">Concurso</option>
+                <option value="@OrigemQuestao.Vestibular">Vestibular</option>
+                <option value="@OrigemQuestao.Importada">Importada</option>
+                <option value="@OrigemQuestao.Ia">IA</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Ano</label>
+            <input type="number" class="form-control" placeholder="Todos"
+                   @bind="Filtro.Ano" @bind:event="oninput" @bind:after="() => OnFiltroAlterado.InvokeAsync()" />
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Seção (ENADE)</label>
+            <select class="form-select" @bind="Filtro.SecaoEnade" @bind:after="() => OnFiltroAlterado.InvokeAsync()">
+                <option value="">Todas</option>
+                <option value="@SecaoEnade.FormacaoGeral">Formação Geral</option>
+                <option value="@SecaoEnade.ComponenteEspecifico">Componente Específico</option>
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Área de Curso</label>
+            <select class="form-select" @bind="Filtro.AreaCursoId" @bind:after="() => OnFiltroAlterado.InvokeAsync()">
+                <option value="0">Todas</option>
+                @foreach (var a in AreasCurso)
+                {
+                    <option value="@a.Id">@a.Nome</option>
+                }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Curso (institucional)</label>
+            <select class="form-select" @bind="Filtro.CursoId" @bind:after="() => OnMudarCurso.InvokeAsync()">
+                <option value="0">Todos</option>
+                @foreach (var c in Cursos)
+                {
+                    <option value="@c.Id">@c.Instituicao?.Nome / @c.Nome</option>
+                }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Matriz / ENADE</label>
+            <select class="form-select" @bind="Filtro.MatrizReferenciaId" @bind:after="() => OnMudarMatriz.InvokeAsync()" disabled="@(Filtro.CursoId == 0)">
+                <option value="0">@(Filtro.CursoId == 0 ? "Escolha o curso primeiro..." : "Todas")</option>
+                @foreach (var m in MatrizesDoFiltroCurso)
+                {
+                    <option value="@m.Id">@m.Nome</option>
+                }
+            </select>
+        </div>
+        <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Item da matriz</label>
+            <select class="form-select" @bind="Filtro.ItemMatrizId" @bind:after="() => OnFiltroAlterado.InvokeAsync()" disabled="@(Filtro.MatrizReferenciaId == 0)">
+                <option value="0">@(Filtro.MatrizReferenciaId == 0 ? "Escolha a matriz primeiro..." : "Todos")</option>
+                @foreach (var i in ItensDoFiltroMatriz)
+                {
+                    <option value="@i.Id">@i.Codigo — @i.Titulo</option>
+                }
+            </select>
+        </div>
+        @if (TodasTags.Count > 0)
+        {
+            <div class="col-12">
+                <label class="form-label small mb-1">Tags</label>
+                <div class="d-flex flex-wrap gap-1">
+                    @foreach (var tag in TodasTags)
+                    {
+                        <button type="button" class="btn btn-sm @(Filtro.TagIds.Contains(tag.Id) ? "btn-primary" : "btn-outline-secondary")" @onclick="() => OnAlternarTag.InvokeAsync(tag.Id)">
+                            @tag.Nome
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+        <div class="col-12">
+            <div class="form-check mb-0">
+                <input class="form-check-input" type="checkbox" id="mostrarInativas" @bind="Filtro.MostrarInativas" @bind:after="() => OnFiltroAlterado.InvokeAsync()" />
+                <label class="form-check-label" for="mostrarInativas">Mostrar inativas</label>
+            </div>
+        </div>
+    </div>
+}
+
+@{ var chips = ObterChips(); }
+@if (chips.Count > 0)
+{
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        @foreach (var chip in chips)
+        {
+            <span class="filtro-chip">
+                @chip.Rotulo
+                <button type="button" title="Remover filtro" @onclick="chip.Remover">
+                    <i class="bi bi-x" aria-hidden="true"></i>
+                </button>
+            </span>
+        }
+        <button type="button" class="btn btn-sm btn-link px-1" @onclick="() => OnLimparFiltros.InvokeAsync()">Limpar filtros</button>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestaoFiltro Filtro { get; set; } = null!;
+    [Parameter] public List<Disciplina> Disciplinas { get; set; } = new();
+    [Parameter] public IEnumerable<Assunto> AssuntosDoFiltro { get; set; } = Enumerable.Empty<Assunto>();
+    [Parameter] public List<Curso> Cursos { get; set; } = new();
+    [Parameter] public List<AreaCurso> AreasCurso { get; set; } = new();
+    [Parameter] public List<MatrizReferencia> MatrizesDoFiltroCurso { get; set; } = new();
+    [Parameter] public List<ItemMatrizReferencia> ItensDoFiltroMatriz { get; set; } = new();
+    [Parameter] public List<Tag> TodasTags { get; set; } = new();
+
+    // Filtros "simples": só voltam pra página 1 e recarregam (mesma regra que
+    // valia pra todos os campos em QuestaoList.razor antes desta etapa).
+    [Parameter] public EventCallback OnFiltroAlterado { get; set; }
+
+    // Disciplina/Curso/Matriz têm efeito em cascata (zeram o campo dependente) —
+    // quem decide isso continua sendo QuestaoList.razor, dono desse estado.
+    [Parameter] public EventCallback OnMudarDisciplina { get; set; }
+    [Parameter] public EventCallback OnMudarCurso { get; set; }
+    [Parameter] public EventCallback OnMudarMatriz { get; set; }
+
+    [Parameter] public EventCallback<int> OnAlternarTag { get; set; }
+    [Parameter] public EventCallback OnLimparFiltros { get; set; }
+
+    // Só estado visual (qual "camada" de filtros está aberta) — nada disso é
+    // filtro de verdade, por isso vive só aqui, não em QuestaoFiltro.
+    private bool mostrarMaisFiltros;
+
+    private int FiltrosSecundariosAtivos =>
+        (Filtro.Visibilidade is not null ? 1 : 0) +
+        (Filtro.Bloom is not null ? 1 : 0) +
+        (Filtro.Origem is not null ? 1 : 0) +
+        (Filtro.Ano is not null ? 1 : 0) +
+        (Filtro.SecaoEnade is not null ? 1 : 0) +
+        (Filtro.AreaCursoId != 0 ? 1 : 0) +
+        (Filtro.CursoId != 0 ? 1 : 0) +
+        (Filtro.MatrizReferenciaId != 0 ? 1 : 0) +
+        (Filtro.ItemMatrizId != 0 ? 1 : 0) +
+        Filtro.TagIds.Count +
+        (Filtro.MostrarInativas ? 1 : 0);
+
+    private async Task LimparTextoAsync()
+    {
+        Filtro.Texto = null;
+        await OnFiltroAlterado.InvokeAsync();
+    }
+
+    private sealed record Chip(string Rotulo, Func<Task> Remover);
+
+    // Um chip por filtro ativo, cada um com sua própria ação de remoção —
+    // reusa os MESMOS EventCallback que os campos acima já disparam, então
+    // remover pelo chip tem exatamente o mesmo efeito de limpar o campo.
+    private List<Chip> ObterChips()
+    {
+        var chips = new List<Chip>();
+
+        if (Filtro.DisciplinaId != 0)
+        {
+            var nome = Disciplinas.FirstOrDefault(d => d.Id == Filtro.DisciplinaId)?.Nome ?? "Disciplina";
+            chips.Add(new Chip(nome, async () => { Filtro.DisciplinaId = 0; await OnMudarDisciplina.InvokeAsync(); }));
+        }
+        if (Filtro.AssuntoId != 0)
+        {
+            var nome = AssuntosDoFiltro.FirstOrDefault(a => a.Id == Filtro.AssuntoId)?.Nome ?? "Assunto";
+            chips.Add(new Chip(nome, async () => { Filtro.AssuntoId = 0; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        if (Filtro.Tipo is { } tipo)
+        {
+            chips.Add(new Chip(tipo.Rotulo(), async () => { Filtro.Tipo = null; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        if (Filtro.Dificuldade is { } dificuldade)
+        {
+            chips.Add(new Chip(dificuldade.Rotulo(), async () => { Filtro.Dificuldade = null; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        if (Filtro.Visibilidade is { } visibilidade)
+        {
+            chips.Add(new Chip(visibilidade.Rotulo(), async () => { Filtro.Visibilidade = null; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        if (Filtro.Bloom is { } bloom)
+        {
+            chips.Add(new Chip($"Bloom: {bloom.Rotulo()}", async () => { Filtro.Bloom = null; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        if (Filtro.Origem is { } origem)
+        {
+            chips.Add(new Chip(origem == OrigemQuestao.Enade ? "ENADE" : origem.Rotulo(), async () => { Filtro.Origem = null; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        if (Filtro.Ano is { } ano)
+        {
+            chips.Add(new Chip($"Ano: {ano}", async () => { Filtro.Ano = null; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        if (Filtro.SecaoEnade is { } secao)
+        {
+            chips.Add(new Chip(secao.Rotulo(), async () => { Filtro.SecaoEnade = null; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        if (Filtro.AreaCursoId != 0)
+        {
+            var nome = AreasCurso.FirstOrDefault(a => a.Id == Filtro.AreaCursoId)?.Nome ?? "Área de curso";
+            chips.Add(new Chip(nome, async () => { Filtro.AreaCursoId = 0; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        if (Filtro.CursoId != 0)
+        {
+            var nome = Cursos.FirstOrDefault(c => c.Id == Filtro.CursoId)?.Nome ?? "Curso";
+            chips.Add(new Chip(nome, async () => { Filtro.CursoId = 0; await OnMudarCurso.InvokeAsync(); }));
+        }
+        if (Filtro.MatrizReferenciaId != 0)
+        {
+            var nome = MatrizesDoFiltroCurso.FirstOrDefault(m => m.Id == Filtro.MatrizReferenciaId)?.Nome ?? "Matriz";
+            chips.Add(new Chip(nome, async () => { Filtro.MatrizReferenciaId = 0; await OnMudarMatriz.InvokeAsync(); }));
+        }
+        if (Filtro.ItemMatrizId != 0)
+        {
+            var codigo = ItensDoFiltroMatriz.FirstOrDefault(i => i.Id == Filtro.ItemMatrizId)?.Codigo ?? "Item da matriz";
+            chips.Add(new Chip(codigo, async () => { Filtro.ItemMatrizId = 0; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+        foreach (var tagId in Filtro.TagIds)
+        {
+            var tagIdCapturado = tagId;
+            var nome = TodasTags.FirstOrDefault(t => t.Id == tagIdCapturado)?.Nome ?? "Tag";
+            chips.Add(new Chip(nome, () => OnAlternarTag.InvokeAsync(tagIdCapturado)));
+        }
+        if (Filtro.MostrarInativas)
+        {
+            chips.Add(new Chip("Inclui inativas", async () => { Filtro.MostrarInativas = false; await OnFiltroAlterado.InvokeAsync(); }));
+        }
+
+        return chips;
+    }
+}
