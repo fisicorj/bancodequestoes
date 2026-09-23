@@ -6,11 +6,12 @@
 @inject InstituicaoService InstituicaoService
 @inject AreaCursoService AreaCursoService
 @inject MatrizReferenciaService MatrizService
+@inject DisciplinaService DisciplinaService
 @inject NavigationManager NavigationManager
 
 <PageTitle>@(Id is null ? "Novo curso" : "Editar curso")</PageTitle>
 
-<h1>@(Id is null ? "Novo curso" : "Editar curso")</h1>
+<PageHeader Titulo="@(Id is null ? "Novo curso" : "Editar curso")" />
 
 @if (erro is not null)
 {
@@ -106,6 +107,77 @@ else
                 <a class="btn btn-sm btn-link" href="@($"matrizes/{Id}")">Ver todas</a>
             </div>
         </div>
+
+        <div class="row mt-4">
+            <div class="col-md-7">
+                <h5>Grade Curricular (Curso ↔ Disciplina)</h5>
+                <p class="text-muted small">
+                    Quais Disciplinas fazem parte da grade deste curso — preenchido automaticamente ao criar uma
+                    Turma, mas também pode ser cadastrado aqui antes de existir qualquer Turma (ex.: planejamento
+                    de um semestre futuro).
+                </p>
+
+                @if (erroGrade is not null)
+                {
+                    <div class="alert alert-danger">@erroGrade</div>
+                }
+
+                @if (disciplinasDoCurso.Count == 0)
+                {
+                    <p class="text-muted"><em>Nenhuma disciplina na grade deste curso ainda.</em></p>
+                }
+                else
+                {
+                    <ul class="list-group mb-2">
+                        @foreach (var v in disciplinasDoCurso)
+                        {
+                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                <span>
+                                    @v.Disciplina?.Nome
+                                    @if (v.Semestre is not null)
+                                    {
+                                        <span class="text-muted small"> — @(v.Semestre)º semestre</span>
+                                    }
+                                    @if (v.CargaHoraria is not null)
+                                    {
+                                        <span class="text-muted small"> — @(v.CargaHoraria)h</span>
+                                    }
+                                    @if (!v.Ativa)
+                                    {
+                                        <span class="badge text-bg-secondary ms-1">Inativa</span>
+                                    }
+                                </span>
+                                <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => ExcluirVinculoAsync(v)">Excluir</button>
+                            </li>
+                        }
+                    </ul>
+                }
+
+                <div class="row g-2 align-items-end">
+                    <div class="col-5">
+                        <label class="form-label small mb-1">Disciplina</label>
+                        <select class="form-select" @bind="novoVinculo.DisciplinaId">
+                            <option value="0">Selecione...</option>
+                            @foreach (var d in DisciplinasDisponiveisParaAdicionar)
+                            {
+                                <option value="@d.Id">@d.Nome</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-3">
+                        <label class="form-label small mb-1">Semestre</label>
+                        <input type="number" class="form-control" @bind="novoVinculo.Semestre" min="1" />
+                    </div>
+                    <div class="col-3">
+                        <label class="form-label small mb-1">Carga horária</label>
+                        <input type="number" class="form-control" @bind="novoVinculo.CargaHoraria" min="0" />
+                    </div>
+                    <div class="col-1">
+                        <button type="button" class="btn btn-primary" @onclick="AdicionarVinculoAsync">+</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     }
 }
 
@@ -120,11 +192,24 @@ else
     private bool carregando;
     private string? erro;
 
+    // Grade curricular (CursoDisciplina): disciplinasDoCurso é o vínculo atual,
+    // todasDisciplinas alimenta o <select> de adicionar, novoVinculo é o mini-form inline.
+    private List<CursoDisciplina> disciplinasDoCurso = new();
+    private List<Disciplina> todasDisciplinas = new();
+    private CursoDisciplinaInput novoVinculo = new();
+    private string? erroGrade;
+
+    // UX apenas: esconde disciplinas já vinculadas do <select> (a validação
+    // real contra duplicata continua no backend).
+    private IEnumerable<Disciplina> DisciplinasDisponiveisParaAdicionar =>
+        todasDisciplinas.Where(d => disciplinasDoCurso.All(v => v.DisciplinaId != d.Id));
+
     protected override async Task OnInitializedAsync()
     {
         carregando = true;
         instituicoes = await InstituicaoService.ListarTodasAsync();
         areasCurso = await AreaCursoService.ListarAtivasAsync();
+        todasDisciplinas = await DisciplinaService.ListarTodasAsync();
 
         if (Id is not null)
         {
@@ -137,9 +222,47 @@ else
             {
                 modelo = new CursoInput { Nome = curso.Nome, InstituicaoId = curso.InstituicaoId, AreaCursoId = curso.AreaCursoId };
                 matrizesDoCurso = await MatrizService.ListarPorCursoAsync(Id.Value);
+                disciplinasDoCurso = await CursoService.ListarDisciplinasDoCursoAsync(Id.Value);
             }
         }
         carregando = false;
+    }
+
+    private async Task AdicionarVinculoAsync()
+    {
+        erroGrade = null;
+
+        if (Id is null)
+        {
+            return;
+        }
+
+        try
+        {
+            novoVinculo.CursoId = Id.Value;
+            await CursoService.CriarCursoDisciplinaAsync(novoVinculo);
+            disciplinasDoCurso = await CursoService.ListarDisciplinasDoCursoAsync(Id.Value);
+            novoVinculo = new CursoDisciplinaInput();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erroGrade = ex.Message;
+        }
+    }
+
+    private async Task ExcluirVinculoAsync(CursoDisciplina vinculo)
+    {
+        erroGrade = null;
+
+        try
+        {
+            await CursoService.ExcluirCursoDisciplinaAsync(vinculo);
+            disciplinasDoCurso = await CursoService.ListarDisciplinasDoCursoAsync(Id!.Value);
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erroGrade = ex.Message;
+        }
     }
 
     private async Task SalvarAsync()

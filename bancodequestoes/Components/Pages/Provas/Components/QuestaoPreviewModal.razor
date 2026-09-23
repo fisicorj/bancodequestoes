@@ -27,7 +27,7 @@
         <div class="modal-dialog modal-dialog-scrollable modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Questão #@QuestaoAtual.Id</h5>
+                    <h5 class="modal-title">@(Titulo ?? $"Questão #{QuestaoAtual.Id}")</h5>
                     <button type="button" class="btn-close" aria-label="Fechar" @onclick="Fechar"></button>
                 </div>
                 <div class="modal-body">
@@ -42,19 +42,47 @@
                         </p>
                     }
                     <p class="text-muted small mb-1">
-                        @QuestaoAtual.TipoQuestao.Rotulo() • @QuestaoAtual.Dificuldade.Rotulo() • @QuestaoAtual.Assunto?.Nome
+                        @QuestaoAtual.TipoQuestao.Rotulo() • @DificuldadeFormatada() • @AssuntoFormatado()
                         @(QuestaoAtual.Bloom is { } previaBloom ? $" • {previaBloom.Rotulo()}" : "")
                     </p>
                     <p class="text-muted small mb-2">
                         Origem: @QuestaoAtual.Origem.Rotulo()@(QuestaoAtual.Ano is { } ano ? $" ({ano})" : "")@(string.IsNullOrWhiteSpace(QuestaoAtual.Referencia) ? "" : $" — {QuestaoAtual.Referencia}")
+                        @(QuestaoAtual.SecaoEnade is { } secaoPreview ? $" · {secaoPreview.Rotulo()}" : "")@(string.IsNullOrWhiteSpace(QuestaoAtual.NumeroOriginal) ? "" : $" · Questão {QuestaoAtual.NumeroOriginal}")@(string.IsNullOrWhiteSpace(QuestaoAtual.CodigoProvaOrigem) ? "" : $" · Caderno {QuestaoAtual.CodigoProvaOrigem}")
                     </p>
-                    <p class="text-muted small mb-2">@(UsosDaQuestao > 0 ? $"Utilizada {UsosDaQuestao} vez(es)" : "Nunca utilizada")</p>
+                    <p class="text-muted small mb-2">
+                        @(UsosDaQuestao > 0 ? $"Utilizada {UsosDaQuestao} vez(es)" : "Nunca utilizada")
+                        @if (LimiarAltaExposicao is { } limiar && UsosDaQuestao >= limiar)
+                        {
+                            <span class="badge text-bg-warning">⚠ Alta exposição</span>
+                        }
+                        @(UltimoUso is not null ? $" • Última utilização: {UltimoUso.Rotulo}" : "")
+                    </p>
                     @if (QuestaoAtual.Tags.Count > 0)
                     {
                         <div class="d-flex flex-wrap gap-1 mb-2">
                             @foreach (var tag in QuestaoAtual.Tags.OrderBy(t => t.Nome))
                             {
                                 <span class="badge text-bg-light border">@tag.Nome</span>
+                            }
+                        </div>
+                    }
+
+                    @if (MostrarAlinhamentoCurricular && QuestaoAtual.ItensMatriz.Count > 0)
+                    {
+                        <div class="mb-2">
+                            <p class="text-muted small mb-1"><strong>Alinhamento curricular:</strong></p>
+                            @foreach (var grupoMatriz in QuestaoAtual.ItensMatriz.GroupBy(i => i.MatrizReferencia?.Nome ?? "").OrderBy(g => g.Key))
+                            {
+                                <p class="small mb-1 fw-bold">@grupoMatriz.Key</p>
+                                <ul class="small mb-0">
+                                    @foreach (var item in grupoMatriz.OrderBy(i => i.Codigo))
+                                    {
+                                        <li>
+                                            <span class="badge text-bg-secondary">@item.Tipo.Rotulo()</span>
+                                            <strong>@item.Codigo</strong> — @item.Titulo
+                                        </li>
+                                    }
+                                </ul>
                             }
                         </div>
                     }
@@ -151,7 +179,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" @onclick="Fechar">Fechar</button>
-                    @if (!JaSelecionada)
+                    @if (MostrarBotaoAdicionar && !JaSelecionada)
                     {
                         <button type="button" class="btn btn-primary" @onclick="Adicionar">Adicionar à prova</button>
                     }
@@ -168,14 +196,34 @@
     [Parameter] public EventCallback OnFechar { get; set; }
     [Parameter] public EventCallback<Questao> OnAdicionar { get; set; }
 
+    // Parâmetros abaixo permitem que QuestaoList.razor reaproveite este modal
+    // (usado também por ProvaForm.razor); defaults preservam o comportamento original.
+    [Parameter] public string? Titulo { get; set; }
+    [Parameter] public bool MostrarAlinhamentoCurricular { get; set; }
+    [Parameter] public UltimoUsoInfo? UltimoUso { get; set; }
+    [Parameter] public int? LimiarAltaExposicao { get; set; }
+    [Parameter] public bool FormatarDificuldade { get; set; } = true;
+    [Parameter] public bool MostrarDisciplinaNoAssunto { get; set; }
+    [Parameter] public bool MostrarBotaoAdicionar { get; set; } = true;
+
     private Task Fechar() => OnFechar.InvokeAsync();
 
     private Task Adicionar() => QuestaoAtual is null ? Task.CompletedTask : OnAdicionar.InvokeAsync(QuestaoAtual);
 
-    // Lacunas precisa do mesmo texto com marcadores numerados que sai na
-    // prova exportada (ver ProvaExportLoader.SubstituirMarcadoresDeLacuna) —
-    // senão a prévia mostraria "___" cru em vez de "_____(1)_____". Mesma
-    // técnica usada em QuestaoList.razor / ProvaForm.razor original.
+    // FormatarDificuldade=true usa o rótulo em português; QuestaoList.razor passa
+    // false pra manter seu ToString() cru original (bug conhecido, não corrigido aqui).
+    private string DificuldadeFormatada() => QuestaoAtual is null
+        ? ""
+        : FormatarDificuldade ? QuestaoAtual.Dificuldade.Rotulo() : QuestaoAtual.Dificuldade.ToString();
+
+    private string AssuntoFormatado() => QuestaoAtual is null
+        ? ""
+        : MostrarDisciplinaNoAssunto
+            ? $"{QuestaoAtual.Assunto?.Disciplina?.Nome} / {QuestaoAtual.Assunto?.Nome}"
+            : QuestaoAtual.Assunto?.Nome ?? "";
+
+    // Aplica os mesmos marcadores numerados da prova exportada, senão a prévia
+    // mostraria "___" cru em vez de "_____(1)_____".
     private static MarkupString RenderizarEnunciadoPreview(Questao q)
     {
         var texto = q.TipoQuestao == TipoQuestao.Lacunas

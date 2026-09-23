@@ -4,16 +4,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BancoQuestoes.Services;
 
-// Primeiro Service do sistema — estabelece o padrão que os próximos
-// (QuestaoService, ProvaService...) vão seguir: injeta o ApplicationDbContext
-// (Scoped, igual o Service — mesma instância dura o circuito Blazor inteiro),
-// concentra consulta EF + regra de negócio, e sinaliza erro "de negócio" via
-// OperacaoInvalidaException em vez de deixar DbUpdateException/null vazar pra
-// tela. As páginas .razor de Disciplinas/Assuntos ficam só com UI + binding.
-//
-// Disciplina e Assunto moram no mesmo Service de propósito: Assunto não faz
-// sentido sem uma Disciplina (é sempre filho dela), então trata-los como um
-// único agregado evita fragmentar demais a camada de Services.
+// Consulta EF + regra de negócio pra Disciplina e Assunto; erros de negócio
+// viram OperacaoInvalidaException. Moram juntos porque Assunto é filho de Disciplina.
 public class DisciplinaService(ApplicationDbContext db)
 {
     public async Task<PaginaResultado<Disciplina>> ListarAsync(string? filtroTexto, int pagina, int tamanhoPagina)

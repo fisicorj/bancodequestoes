@@ -1,0 +1,196 @@
+<!--
+    Seção "Classificação" do formulário de Questão (Etapa 3 da refatoração —
+    extraída de QuestaoForm.razor, markup e comportamento idênticos ao
+    original; Etapa 2 UX/UI moveu só o campo "Tipo" pra fora daqui, pra seção
+    "Conteúdo" em QuestaoForm.razor, e renomeou este comentário — o restante
+    do bloco não mudou): Disciplina -> Assunto (cascata), Dificuldade, Bloom,
+    Visibilidade, Origem/Ano/Referência.
+
+    Liga direto em "Modelo" (QuestaoInput, mesma referência do EditForm do
+    pai — EditContext chega aqui via cascading value normal do Blazor, então
+    validação continua funcionando igual). DisciplinaId é a exceção: não é
+    campo de QuestaoInput (é só estado do filtro em cascata da tela), por
+    isso precisa do padrão @bind-DisciplinaId (com XChanged) pra sincronizar
+    de volta com QuestaoForm, mesmo padrão já usado em
+    Components/Pages/Provas/Components/FiltrosQuestoes.razor.
+-->
+<div class="form-floating mb-3">
+    <select class="form-select" id="DisciplinaId" @bind="DisciplinaId" @bind:after="AoMudarDisciplina">
+        <option value="0">Selecione...</option>
+        @foreach (var d in Disciplinas)
+        {
+            <option value="@d.Id">@d.Nome</option>
+        }
+    </select>
+    <label for="DisciplinaId">Disciplina</label>
+</div>
+
+<div class="form-floating mb-3">
+    <InputSelect @bind-Value="Modelo.AssuntoId" id="AssuntoId" class="form-select" disabled="@(DisciplinaId == 0)">
+        <option value="0">@(DisciplinaId == 0 ? "Escolha a disciplina primeiro..." : "Selecione...")</option>
+        @foreach (var a in Assuntos.Where(a => a.DisciplinaId == DisciplinaId))
+        {
+            <option value="@a.Id">@a.Nome</option>
+        }
+    </InputSelect>
+    <label for="AssuntoId">Assunto</label>
+</div>
+
+<div class="form-floating mb-3">
+    <InputSelect @bind-Value="Modelo.Dificuldade" id="Dificuldade" class="form-select">
+        <option value="@Dificuldade.Facil">Fácil</option>
+        <option value="@Dificuldade.Media">Média</option>
+        <option value="@Dificuldade.Dificil">Difícil</option>
+    </InputSelect>
+    <label for="Dificuldade">Dificuldade</label>
+</div>
+
+<div class="form-floating mb-3">
+    <InputSelect @bind-Value="Modelo.Bloom" id="Bloom" class="form-select">
+        <option value="">Não classificado</option>
+        <option value="@NivelBloom.Lembrar">Lembrar</option>
+        <option value="@NivelBloom.Entender">Entender</option>
+        <option value="@NivelBloom.Aplicar">Aplicar</option>
+        <option value="@NivelBloom.Analisar">Analisar</option>
+        <option value="@NivelBloom.Avaliar">Avaliar</option>
+        <option value="@NivelBloom.Criar">Criar</option>
+    </InputSelect>
+    <label for="Bloom">Nível (Bloom)</label>
+</div>
+
+<div class="form-floating mb-3">
+    <InputSelect @bind-Value="Modelo.Visibilidade" id="Visibilidade" class="form-select">
+        <option value="@VisibilidadeQuestao.Privada">🔒 Somente eu</option>
+        <option value="@VisibilidadeQuestao.Institucional" disabled="@(!MinhaInstituicaoId.HasValue)">
+            👥 Professores da minha instituição@(MinhaInstituicaoId.HasValue ? "" : " (defina sua instituição no perfil)")
+        </option>
+        <option value="@VisibilidadeQuestao.Compartilhada">🌐 Todos os professores</option>
+    </InputSelect>
+    <label for="Visibilidade">Quem pode usar esta questão</label>
+</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-6">
+        <div class="form-floating">
+            <InputSelect @bind-Value="Modelo.Origem" id="Origem" class="form-select">
+                <option value="@OrigemQuestao.Autoral">Autoral</option>
+                <option value="@OrigemQuestao.Livro">Livro</option>
+                <option value="@OrigemQuestao.Enade">ENADE</option>
+                <option value="@OrigemQuestao.Concurso">Concurso</option>
+                <option value="@OrigemQuestao.Vestibular">Vestibular</option>
+                <option value="@OrigemQuestao.Importada">Importada</option>
+                <option value="@OrigemQuestao.Ia">IA</option>
+            </InputSelect>
+            <label for="Origem">Origem</label>
+        </div>
+    </div>
+    <div class="col-3">
+        <div class="form-floating">
+            <InputNumber @bind-Value="Modelo.Ano" id="Ano" class="form-control" placeholder="Ano" />
+            <label for="Ano">Ano</label>
+        </div>
+    </div>
+    <div class="col-3">
+        <div class="form-floating">
+            <InputText @bind-Value="Modelo.Referencia" id="Referencia" class="form-control" placeholder="Referência" />
+            <label for="Referencia">Referência</label>
+        </div>
+    </div>
+</div>
+
+@if (Modelo.Origem == OrigemQuestao.Enade)
+{
+    <!--
+        Suporte estruturado a questões ENADE/Formação Geral: só aparece
+        quando Origem=ENADE (item "não poluir o formulário" do pedido) —
+        SecaoEnade é sempre obrigatório nesse caso (ver
+        QuestaoCurricularService.ValidarConsistenciaEnadeAsync), NumeroOriginal/
+        CodigoProvaOrigem são opcionais mas ficam junto por clareza (só fazem
+        sentido pra questão de prova/edição específica, mesmo raciocínio de
+        Origem=ENADE já escondar campos que não fariam sentido pra uma
+        questão Autoral).
+    -->
+    <div class="row g-2 mb-3">
+        <div class="col-6">
+            <div class="form-floating">
+                <InputSelect @bind-Value="Modelo.SecaoEnade" @bind-Value:after="AoMudarSecaoEnade" id="SecaoEnade" class="form-select">
+                    <option value="">Selecione...</option>
+                    <option value="@SecaoEnade.FormacaoGeral">Formação Geral</option>
+                    <option value="@SecaoEnade.ComponenteEspecifico">Componente Específico</option>
+                </InputSelect>
+                <label for="SecaoEnade">Seção (ENADE)</label>
+            </div>
+        </div>
+        <div class="col-3">
+            <div class="form-floating">
+                <InputText @bind-Value="Modelo.NumeroOriginal" id="NumeroOriginal" class="form-control" placeholder="Nº original" />
+                <label for="NumeroOriginal">Nº original (ex.: 04, 13, D1)</label>
+            </div>
+        </div>
+        <div class="col-3">
+            <div class="form-floating">
+                <InputText @bind-Value="Modelo.CodigoProvaOrigem" id="CodigoProvaOrigem" class="form-control" placeholder="Caderno" />
+                <label for="CodigoProvaOrigem">Caderno/prova (opcional)</label>
+            </div>
+        </div>
+
+        @if (Modelo.SecaoEnade == SecaoEnade.FormacaoGeral && Modelo.AreaCursoIds.Count > 0)
+        {
+            <div class="col-12">
+                <p class="text-danger small mb-0">⚠ Questões de Formação Geral não podem ter Área de Curso vinculada — desmarque a(s) área(s) na seção "Alinhamento Curricular / ENADE" abaixo antes de salvar.</p>
+            </div>
+        }
+        @if (Modelo.SecaoEnade == SecaoEnade.ComponenteEspecifico && Modelo.AreaCursoIds.Count == 0)
+        {
+            <div class="col-12">
+                <p class="text-danger small mb-0">⚠ Questões de Componente Específico (ENADE) exigem pelo menos uma Área de Curso — marque na seção "Alinhamento Curricular / ENADE" abaixo antes de salvar.</p>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+    [Parameter] public List<Disciplina> Disciplinas { get; set; } = new();
+    [Parameter] public List<Assunto> Assuntos { get; set; } = new();
+    [Parameter] public int? MinhaInstituicaoId { get; set; }
+
+    [Parameter] public int DisciplinaId { get; set; }
+    [Parameter] public EventCallback<int> DisciplinaIdChanged { get; set; }
+
+    // Zerar modelo.AssuntoId ao trocar disciplina é decidido por QuestaoForm.razor;
+    // esta seção só avisa que o valor mudou.
+    [Parameter] public EventCallback OnMudarDisciplina { get; set; }
+
+    private async Task AoMudarDisciplina()
+    {
+        await DisciplinaIdChanged.InvokeAsync(DisciplinaId);
+        await OnMudarDisciplina.InvokeAsync();
+    }
+
+    // Sugere Formação Geral só via DisciplinaId/AssuntoId, nunca mexendo em AreaCursoIds.
+    private async Task AoMudarSecaoEnade()
+    {
+        if (Modelo.SecaoEnade != SecaoEnade.FormacaoGeral)
+        {
+            return;
+        }
+
+        var formacaoGeral = Disciplinas.FirstOrDefault(d => d.Codigo == Disciplina.CodigoFormacaoGeral);
+        if (formacaoGeral is null || DisciplinaId == formacaoGeral.Id)
+        {
+            return;
+        }
+
+        DisciplinaId = formacaoGeral.Id;
+        await AoMudarDisciplina();
+
+        // Vai além do zerar padrão e pré-seleciona "Conhecimentos Gerais" se ele
+        // existir na lista recebida; senão fica 0 e o professor escolhe manualmente.
+        var conhecimentosGerais = Assuntos.FirstOrDefault(a => a.DisciplinaId == formacaoGeral.Id && a.Nome == "Conhecimentos Gerais");
+        if (conhecimentosGerais is not null)
+        {
+            Modelo.AssuntoId = conhecimentosGerais.Id;
+        }
+    }
+}

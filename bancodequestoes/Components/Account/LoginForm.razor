@@ -37,21 +37,26 @@
 
     <hr class="my-4" />
 
-    <p class="text-center mb-2">Ainda não tem cadastro?</p>
-    <a href="Account/Register" class="w-100 btn btn-lg btn-outline-secondary">Criar conta</a>
+    @* Autocadastro público removido (09/2026): só um Admin cria conta agora, em
+       /admin/usuarios/novo — sem link aqui de propósito, pra não sugerir um caminho
+       que não existe mais. *@
+    <p class="text-center text-muted small mb-0">Ainda não tem cadastro? Peça a um administrador do sistema para criar sua conta.</p>
 </div>
 
 @code {
-    // Componente reaproveitado tanto pela tela inicial (quando o usuário ainda não
-    // está logado) quanto pela rota "/Account/Login" (usada automaticamente pelo
-    // Identity para redirecionar quem tenta acessar uma página protegida).
+    // Reaproveitado pela tela inicial e pela rota "/Account/Login" (redirect do Identity).
     [Parameter]
     public string? ReturnUrl { get; set; }
 
     private string? errorMessage;
 
+    // BL0008: padrão oficial de scaffold do ASP.NET Core Identity — o framework
+    // sempre repopula Input num POST com FormName="login"; o "= new()" só cobre
+    // o GET inicial (não há POST que deixe a propriedade null aqui).
+#pragma warning disable BL0008
     [SupplyParameterFromForm]
     private InputModel Input { get; set; } = new();
+#pragma warning restore BL0008
 
     public async Task LoginUser()
     {

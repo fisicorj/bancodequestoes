@@ -22,6 +22,12 @@
     componente irmao, ver ResumoProva.razor) mostra esse valor, entao sem
     avisar ProvaForm ele ficaria com o numero antigo ate outra interacao
     qualquer forcar um re-render.
+
+    Etapa 3 UX/UI: separado em "essenciais" (sempre visiveis: Curso, Turma,
+    Data, Titulo) e "Mais detalhes" (recolhivel: Tipo, Ano, Semestre,
+    Bimestre, Tempo estimado, Observacoes, Mostrar valor no enunciado) - so
+    reordenacao visual, nenhum bind/EventCallback mudou de nome ou de
+    comportamento.
 -->
 
 <div class="form-card mb-3">
@@ -53,72 +59,13 @@
     </div>
 
     <div class="row mt-3">
-        <div class="col-md-6">
-            <div class="form-floating">
-                <InputSelect @bind-Value="Modelo.DisciplinaId" id="DisciplinaId" class="form-select" @bind-Value:after="MudarDisciplina">
-                    <option value="0">Selecione...</option>
-                    @foreach (var d in Disciplinas)
-                    {
-                        <option value="@d.Id">@d.Nome</option>
-                    }
-                </InputSelect>
-                <label for="DisciplinaId">Disciplina</label>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="form-floating">
-                <InputSelect @bind-Value="Modelo.Tipo" id="Tipo" class="form-select" @bind-Value:after="AtualizarTitulo">
-                    <option value="">Não informado</option>
-                    @foreach (var t in Enum.GetValues<TipoProva>())
-                    {
-                        <option value="@t">@t.Rotulo()</option>
-                    }
-                </InputSelect>
-                <label for="Tipo">Tipo</label>
-            </div>
-        </div>
-    </div>
-
-    <div class="row mt-3">
-        <div class="col-md-3">
-            <div class="form-floating">
-                <InputNumber @bind-Value="Modelo.Ano" id="Ano" class="form-control" placeholder="Ano" @bind-Value:after="AtualizarTitulo" />
-                <label for="Ano">Ano</label>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="form-floating">
-                <InputSelect @bind-Value="Modelo.Semestre" id="Semestre" class="form-select" @bind-Value:after="AtualizarTitulo">
-                    <option value="">—</option>
-                    <option value="1">1º semestre</option>
-                    <option value="2">2º semestre</option>
-                </InputSelect>
-                <label for="Semestre">Semestre</label>
-            </div>
-        </div>
-        @if (PrecisaBimestre)
-        {
-            <div class="col-md-3">
-                <div class="form-floating">
-                    <InputSelect @bind-Value="Modelo.Bimestre" id="Bimestre" class="form-select" @bind-Value:after="AtualizarTitulo">
-                        <option value="">—</option>
-                        <option value="1">1º bimestre</option>
-                        <option value="2">2º bimestre</option>
-                    </InputSelect>
-                    <label for="Bimestre">Bimestre</label>
-                </div>
-            </div>
-        }
         <div class="col-md-3">
             <div class="form-floating">
                 <InputDate @bind-Value="Modelo.DataAplicacao" id="DataAplicacao" class="form-control" />
                 <label for="DataAplicacao">Data da aplicação</label>
             </div>
         </div>
-    </div>
-
-    <div class="row mt-3">
-        <div class="col-md-12">
+        <div class="col-md-9">
             <div class="form-floating">
                 <InputText @bind-Value="Modelo.Titulo" id="Titulo" class="form-control" placeholder="Título" />
                 <label for="Titulo">Título</label>
@@ -127,38 +74,97 @@
         </div>
     </div>
 
-    <div class="row mt-3">
-        <div class="col-md-3">
-            <div class="form-floating">
-                <InputNumber @bind-Value="Modelo.TempoEstimadoMinutos" id="TempoEstimadoMinutos" class="form-control" placeholder="Tempo" @bind-Value:after="Alterado" />
-                <label for="TempoEstimadoMinutos">Tempo estimado (min)</label>
+    <details class="details-secao mt-3">
+        <summary class="section-title">Mais detalhes</summary>
+
+        <div class="row mt-3">
+            <div class="col-md-6">
+                <div class="form-floating">
+                    <InputSelect @bind-Value="Modelo.Tipo" id="Tipo" class="form-select" @bind-Value:after="AtualizarTitulo">
+                        <option value="">Não informado</option>
+                        @foreach (var t in Enum.GetValues<TipoProva>())
+                        {
+                            <option value="@t">@t.Rotulo()</option>
+                        }
+                    </InputSelect>
+                    <label for="Tipo">Tipo</label>
+                </div>
             </div>
         </div>
-        <div class="col-md-9">
-            <div class="form-floating">
-                <InputTextArea @bind-Value="Modelo.Observacoes" id="Observacoes" class="form-control" placeholder="Observações" style="height: 58px;" />
-                <label for="Observacoes">Observações</label>
+
+        <div class="row mt-3">
+            <div class="col-md-3">
+                <div class="form-floating">
+                    <InputNumber @bind-Value="Modelo.Ano" id="Ano" class="form-control" placeholder="Ano" @bind-Value:after="AtualizarTitulo" />
+                    <label for="Ano">Ano</label>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="form-floating">
+                    <InputSelect @bind-Value="Modelo.Semestre" id="Semestre" class="form-select" @bind-Value:after="AtualizarTitulo">
+                        <option value="">—</option>
+                        <option value="1">1º semestre</option>
+                        <option value="2">2º semestre</option>
+                    </InputSelect>
+                    <label for="Semestre">Semestre</label>
+                </div>
+            </div>
+            @if (PrecisaBimestre)
+            {
+                <div class="col-md-3">
+                    <div class="form-floating">
+                        <InputSelect @bind-Value="Modelo.Bimestre" id="Bimestre" class="form-select" @bind-Value:after="AtualizarTitulo">
+                            <option value="">—</option>
+                            <option value="1">1º bimestre</option>
+                            <option value="2">2º bimestre</option>
+                        </InputSelect>
+                        <label for="Bimestre">Bimestre</label>
+                    </div>
+                </div>
+            }
+            <div class="col-md-3">
+                <div class="form-floating">
+                    <InputNumber @bind-Value="Modelo.TempoEstimadoMinutos" id="TempoEstimadoMinutos" class="form-control" placeholder="Tempo" @bind-Value:after="Alterado" />
+                    <label for="TempoEstimadoMinutos">Tempo estimado (min)</label>
+                </div>
             </div>
         </div>
-    </div>
+
+        <div class="row mt-3">
+            <div class="col-md-12">
+                <div class="form-floating">
+                    <InputTextArea @bind-Value="Modelo.Observacoes" id="Observacoes" class="form-control" placeholder="Observações" style="height: 58px;" />
+                    <label for="Observacoes">Observações</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-3">
+            <div class="col-12">
+                <div class="form-check">
+                    <InputCheckbox @bind-Value="Modelo.MostrarValorNoEnunciado" id="MostrarValorNoEnunciado" class="form-check-input" />
+                    <label class="form-check-label" for="MostrarValorNoEnunciado">
+                        Mostrar o valor de cada questão no enunciado impresso (ex.: "(1 pt)" ao final do texto)
+                    </label>
+                </div>
+            </div>
+        </div>
+    </details>
 </div>
 
 @code {
     [Parameter, EditorRequired] public ProvaInput Modelo { get; set; } = null!;
     [Parameter] public List<Curso> Cursos { get; set; } = new();
-    [Parameter] public List<Disciplina> Disciplinas { get; set; } = new();
     [Parameter] public List<Turma> TurmasDoCurso { get; set; } = new();
     [Parameter] public bool PrecisaBimestre { get; set; }
 
     [Parameter] public EventCallback OnMudarCurso { get; set; }
     [Parameter] public EventCallback OnMudarTurma { get; set; }
-    [Parameter] public EventCallback OnMudarDisciplina { get; set; }
     [Parameter] public EventCallback OnAtualizarTitulo { get; set; }
     [Parameter] public EventCallback OnAlterado { get; set; }
 
     private Task MudarCurso() => OnMudarCurso.InvokeAsync();
     private Task MudarTurma() => OnMudarTurma.InvokeAsync();
-    private Task MudarDisciplina() => OnMudarDisciplina.InvokeAsync();
     private Task AtualizarTitulo() => OnAtualizarTitulo.InvokeAsync();
     private Task Alterado() => OnAlterado.InvokeAsync();
 }

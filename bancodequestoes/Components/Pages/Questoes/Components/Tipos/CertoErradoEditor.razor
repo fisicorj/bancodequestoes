@@ -1,0 +1,18 @@
+<!-- Editor do corpo específico de Certo/Errado (Etapa 3 — extraído de QuestaoForm.razor, idêntico ao original). -->
+<div class="mb-3">
+    <label class="form-label d-block">Resposta correta</label>
+    <InputRadioGroup @bind-Value="Modelo.RespostaCorretaCE" Name="respostaCE">
+        <div class="form-check form-check-inline">
+            <InputRadio Value="true" class="form-check-input" id="CE-certo" />
+            <label class="form-check-label" for="CE-certo">Certo</label>
+        </div>
+        <div class="form-check form-check-inline">
+            <InputRadio Value="false" class="form-check-input" id="CE-errado" />
+            <label class="form-check-label" for="CE-errado">Errado</label>
+        </div>
+    </InputRadioGroup>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+}

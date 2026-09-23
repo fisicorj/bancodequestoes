@@ -3,12 +3,8 @@ using BancoQuestoes.Models;
 
 namespace BancoQuestoes.Services;
 
-// "Command"/DTO do formulário de questão — antes vivia como classe privada
-// dentro do @code de QuestaoForm.razor; subiu pra cá porque QuestaoService
-// agora é quem decide como montar/validar a Questao a partir disso (a
-// validação por tipo, a construção da subclasse certa etc. são regra de
-// negócio, não coisa de tela). QuestaoForm.razor continua sendo o dono do
-// campo `modelo`, só que do tipo público definido aqui.
+// DTO do formulário de questão; QuestaoService decide como montar/validar a
+// Questao a partir disso (validação por tipo, subclasse certa etc.).
 public sealed class QuestaoInput
 {
     public TipoQuestao TipoQuestao { get; set; } = TipoQuestao.MultiplaEscolha;
@@ -19,17 +15,23 @@ public sealed class QuestaoInput
     public OrigemQuestao Origem { get; set; } = OrigemQuestao.Autoral;
     public int? Ano { get; set; }
     public string? Referencia { get; set; }
+
+    // Metadados de origem ENADE — QuestaoService.ValidarConsistenciaEnadeAsync
+    // garante coerência com Origem/Disciplina/AreaCursoIds antes de gravar.
+    public SecaoEnade? SecaoEnade { get; set; }
+    public string? NumeroOriginal { get; set; }
+    public string? CodigoProvaOrigem { get; set; }
+
     public List<string> Tags { get; set; } = new();
 
-    // Alinhamento Curricular / ENADE — opcional. CursoId escolhe DE QUAL
-    // curso as matrizes de referência disponíveis vêm (ver QuestaoForm.razor);
-    // ItemMatrizIds pode conter itens de MAIS DE UMA matriz desse curso ao
-    // mesmo tempo (item 10 do pedido) e só faz sentido junto de um CursoId
-    // preenchido — QuestaoService.CriarAsync/AtualizarAsync ignoram/limpam
-    // ids que não pertençam a esse curso, nunca confiando cegamente no que
-    // veio do cliente (ver MatrizReferenciaService.ValidarItensDoCursoAsync).
-    public int? CursoId { get; set; }
+    // Contexto transitório (nunca persistido): escolhe de qual curso vêm as
+    // matrizes PPC/Institucional disponíveis. Aplicabilidade acadêmica de verdade é só AreaCursoIds, abaixo.
+    public int? CursoContextoMatrizId { get; set; }
     public List<int> ItemMatrizIds { get; set; } = new();
+
+    // Áreas de Curso (nacionais) às quais esta questão é academicamente
+    // aplicável — multi-seleção; validado contra AreasCurso antes de gravar.
+    public List<int> AreaCursoIds { get; set; } = new();
 
     [Required(ErrorMessage = "Informe o enunciado.")]
     public string Enunciado { get; set; } = "";
@@ -92,4 +94,8 @@ public sealed class PendenteImagem
     public string? TextoAlternativo { get; set; }
     public AlinhamentoImagem? Alinhamento { get; set; }
     public int? LarguraPercentual { get; set; }
+
+    // Só preenchido se a imagem entrou pelo botão de formatação do
+    // enunciado; liga a referência "imagem:pendente:{token}" a esta imagem. Nulo = imagem solta.
+    public string? Token { get; set; }
 }

@@ -28,10 +28,8 @@ public static class ProvaDocxExporter
         return stream.ToArray();
     }
 
-    // Gera N versões da mesma prova (Versão A, B, C...), cada uma com a ordem das
-    // questões e das alternativas de múltipla escolha embaralhada — dificulta cola
-    // entre alunos vizinhos — seguidas de uma página de gabarito com a resposta
-    // certa de cada versão.
+    // Gera N versões (A, B, C...) com questões/alternativas embaralhadas, seguidas
+    // de uma página de gabarito com a resposta de cada versão.
     public static byte[] GerarVariacoes(ProvaExportDto prova, int quantidadeVersoes)
     {
         using var stream = new MemoryStream();
@@ -69,12 +67,8 @@ public static class ProvaDocxExporter
         return stream.ToArray();
     }
 
-    // "Gabarito comentado": documento separado (NÃO é a prova em branco que o
-    // aluno recebe) com cada questão seguida da resposta certa e, se o
-    // professor preencheu, da explicação/resolução — pensado como material de
-    // estudo/revisão ou apoio na correção. Usa a ordem original das questões
-    // (sem embaralhar, diferente de GerarVariacoes) — é um documento do
-    // professor, não tem por que variar entre downloads.
+    // Gabarito comentado: documento separado com cada questão seguida da resposta
+    // e explicação, se houver; usa a ordem original, sem embaralhar.
     public static byte[] GerarGabaritoComentado(ProvaExportDto prova)
     {
         using var stream = new MemoryStream();
@@ -87,13 +81,13 @@ public static class ProvaDocxExporter
 
             body.AppendChild(ParagrafoCentralizado(prova.Titulo, negrito: true, tamanhoMeioPonto: 28));
             body.AppendChild(ParagrafoCentralizado("Gabarito comentado", negrito: false, tamanhoMeioPonto: 22));
-            body.AppendChild(ParagrafoCentralizado(prova.Disciplina, negrito: false, tamanhoMeioPonto: 20));
+            body.AppendChild(ParagrafoCentralizado(prova.EscopoRotulo, negrito: false, tamanhoMeioPonto: 20));
             body.AppendChild(ParagrafoVazio());
 
             var numero = 1;
             foreach (var q in prova.Questoes)
             {
-                EscreverEnunciado(mainPart, body, numero, "", q);
+                EscreverEnunciado(mainPart, body, numero, q);
 
                 foreach (var imagem in q.Imagens)
                 {
@@ -127,10 +121,8 @@ public static class ProvaDocxExporter
         return stream.ToArray();
     }
 
-    // Resposta correta "por extenso" — versão mais completa da RespostaResumo
-    // usada na tabela compacta de gabarito por versão: aqui não há limite de
-    // largura de célula, então mostra o texto da alternativa (não só a letra),
-    // os pares de associação por extenso (não a notação "1-A, 2-C") etc.
+    // Resposta correta por extenso: sem limite de célula, mostra o texto da
+    // alternativa (não só a letra) e os pares de associação por extenso.
     private static string RespostaResumoCompleto(QuestaoExportDto q) => q.Tipo switch
     {
         TipoQuestao.MultiplaEscolha => AlternativaCorretaCompleta(q.Alternativas),
@@ -149,18 +141,13 @@ public static class ProvaDocxExporter
         return indice < 0 ? "—" : $"{(char)('A' + indice)}) {alternativas[indice].Texto}";
     }
 
-    // Diferente de ResumoAssociacao (que devolve "1-A, 2-C..." pra caber numa
-    // célula da tabela de gabarito por versão): aqui não existe coluna B
-    // embaralhada pra referenciar — é só o par termo → correspondente na
-    // ordem original, um por linha, igual o professor cadastrou.
+    // Diferente de ResumoAssociacao: aqui não há coluna B embaralhada, é só o
+    // par termo → correspondente na ordem original.
     private static string ResumoAssociacaoCompleto(QuestaoExportDto q) =>
         q.Pares.Count == 0 ? "—" : string.Join("; ", q.Pares.Select((p, i) => $"{i + 1}. {p.Termo} → {p.Correspondente}"));
 
-    // Desenha uma lista de blocos (parágrafo, item de lista, código, tabela —
-    // ver BlocoMarkdown) sem o tratamento de "prefixo de numeração só no
-    // primeiro bloco" nem negrito automático de EscreverEnunciado: usado pra
-    // Explicação, que é texto corrido normal (só em negrito/itálico onde o
-    // Markdown pediu), não a pergunta numerada da prova.
+    // Desenha uma lista de blocos sem o prefixo de numeração nem negrito automático
+    // de EscreverEnunciado: usado pra Explicação, texto corrido normal.
     private static void EscreverBlocosSimples(MainDocumentPart mainPart, Body body, List<BlocoMarkdown> blocos, int recuoTwips)
     {
         foreach (var bloco in blocos)
@@ -183,14 +170,19 @@ public static class ProvaDocxExporter
                     body.AppendChild(CriarTabelaEnunciado(mainPart, bloco));
                     body.AppendChild(ParagrafoVazio());
                     break;
+
+                case TipoBlocoMarkdown.Imagem:
+                    if (bloco.Imagem is not null)
+                    {
+                        EscreverImagemQuestao(mainPart, body, bloco.Imagem);
+                    }
+                    break;
             }
         }
     }
 
-    // Embaralha a ordem das questões e, dentro de cada múltipla escolha ou
-    // associação, a ordem das alternativas/coluna B — sem afetar as listas
-    // originais (cada versão precisa da sua própria cópia independente, senão
-    // embaralhar uma bagunçaria as outras).
+    // Embaralha ordem das questões e alternativas/coluna B sem afetar as listas
+    // originais — cada versão precisa da sua própria cópia independente.
     private static List<QuestaoExportDto> EmbaralharQuestoes(List<QuestaoExportDto> original)
     {
         return original
@@ -208,6 +200,8 @@ public static class ProvaDocxExporter
                 Enunciado = q.Enunciado,
                 Tipo = q.Tipo,
                 Valor = q.Valor,
+                Origem = q.Origem,
+                Ano = q.Ano,
                 Imagens = q.Imagens,
                 EnunciadoBlocos = q.EnunciadoBlocos,
                 Alternativas = q.Alternativas.OrderBy(_ => Random.Shared.Next()).ToList(),
@@ -221,6 +215,8 @@ public static class ProvaDocxExporter
                 Enunciado = q.Enunciado,
                 Tipo = q.Tipo,
                 Valor = q.Valor,
+                Origem = q.Origem,
+                Ano = q.Ano,
                 Imagens = q.Imagens,
                 EnunciadoBlocos = q.EnunciadoBlocos,
                 Pares = q.Pares,
@@ -231,9 +227,8 @@ public static class ProvaDocxExporter
         return q;
     }
 
-    // Escreve o cabeçalho + título + instruções + lista de questões de UMA versão
-    // da prova no corpo do documento. Reaproveitado tanto pela exportação simples
-    // (versionLabel nulo) quanto por cada versão gerada em GerarVariacoes.
+    // Escreve cabeçalho + título + instruções + questões de uma versão; reaproveitado
+    // pela exportação simples (versionLabel nulo) e por cada versão de GerarVariacoes.
     private static void EscreverVersao(MainDocumentPart mainPart, Body body, ProvaExportDto prova, List<QuestaoExportDto> questoes, string? versionLabel)
     {
         var tituloExibido = versionLabel is null ? prova.Titulo : $"{prova.Titulo} — Versão {versionLabel}";
@@ -254,7 +249,7 @@ public static class ProvaDocxExporter
         {
             // Sem instituição vinculada: cabeçalho simples, sem tabela.
             body.AppendChild(ParagrafoCentralizado(tituloExibido, negrito: true, tamanhoMeioPonto: 32));
-            body.AppendChild(ParagrafoCentralizado($"Disciplina: {prova.Disciplina}", negrito: false, tamanhoMeioPonto: 22));
+            body.AppendChild(ParagrafoCentralizado(prova.EscopoRotulo, negrito: false, tamanhoMeioPonto: 22));
             body.AppendChild(ParagrafoVazio());
             body.AppendChild(Paragrafo("Nome: _________________________________________________   Data: ____/____/____"));
             body.AppendChild(Paragrafo("Turma: _______________   Nota: _______________"));
@@ -265,8 +260,7 @@ public static class ProvaDocxExporter
         var numero = 1;
         foreach (var q in questoes)
         {
-            var valorTexto = q.Valor is { } v ? $" ({v:0.##} pt{(v == 1 ? "" : "s")})" : "";
-            EscreverEnunciado(mainPart, body, numero, valorTexto, q);
+            EscreverEnunciado(mainPart, body, numero, q);
 
             foreach (var imagem in q.Imagens)
             {
@@ -395,10 +389,8 @@ public static class ProvaDocxExporter
             : $"{numerica.RespostaEsperada:0.####}";
     }
 
-    // Para cada termo (na ordem original), acha em que posição da coluna B
-    // embaralhada (OrdemCorrespondentes) o seu par correto foi impresso —
-    // essa posição É a letra usada no gabarito, então tem que usar a MESMA
-    // ordem gravada no DTO, nunca sortear de novo aqui.
+    // Acha em que posição da coluna B embaralhada (OrdemCorrespondentes) o par
+    // correto foi impresso; usa sempre a mesma ordem gravada, nunca sorteia de novo.
     private static string ResumoAssociacao(QuestaoExportDto q)
     {
         if (q.Pares.Count == 0)
@@ -414,13 +406,21 @@ public static class ProvaDocxExporter
     private static string ResumoLacunas(List<string> respostas) =>
         respostas.Count == 0 ? "—" : string.Join("; ", respostas.Select((r, i) => $"({i + 1}) {r}"));
 
-    // Escreve o enunciado direto no corpo do documento — pode virar mais de um
-    // elemento agora (parágrafo + lista + bloco de código + tabela, por
-    // exemplo), não só um Paragraph como antes. O prefixo "1. (1 pt)" vai
-    // sempre no primeiro bloco, seja ele qual for.
-    private static void EscreverEnunciado(MainDocumentPart mainPart, Body body, int numero, string valorTexto, QuestaoExportDto q)
+    // "1. " normalmente, ou "1. (ENADE 2023) " quando Origem == Enade; sem Ano cai
+    // pra "(ENADE)". Mesma lógica duplicada em ProvaPdfExporter.ConstruirPrefixoEnunciado.
+    private static string ConstruirPrefixoEnunciado(int numero, QuestaoExportDto q)
     {
-        var prefixo = $"{numero}.{valorTexto} ";
+        var selo = q.Origem == OrigemQuestao.Enade
+            ? q.Ano.HasValue ? $"(ENADE {q.Ano}) " : "(ENADE) "
+            : "";
+        return $"{numero}. {selo}";
+    }
+
+    // Escreve o enunciado (pode virar vários elementos); o prefixo vai sempre no
+    // primeiro bloco. O valor da questão, quando ligado, já vem embutido como último trecho.
+    private static void EscreverEnunciado(MainDocumentPart mainPart, Body body, int numero, QuestaoExportDto q)
+    {
+        var prefixo = ConstruirPrefixoEnunciado(numero, q);
 
         if (q.EnunciadoBlocos is not { Count: > 0 })
         {
@@ -463,6 +463,18 @@ public static class ProvaDocxExporter
                     body.AppendChild(CriarTabelaEnunciado(mainPart, bloco));
                     body.AppendChild(ParagrafoVazio());
                     break;
+
+                case TipoBlocoMarkdown.Imagem:
+                    if (!prefixoUsado)
+                    {
+                        body.AppendChild(ParagrafoNegrito(prefixo));
+                        prefixoUsado = true;
+                    }
+                    if (bloco.Imagem is not null)
+                    {
+                        EscreverImagemQuestao(mainPart, body, bloco.Imagem);
+                    }
+                    break;
             }
         }
     }
@@ -479,20 +491,20 @@ public static class ProvaDocxExporter
         return prefixo;
     }
 
-    // Monta um parágrafo a partir de uma lista de trechos (texto normal,
-    // negrito/itálico/código herdados do Markdown, e imagens de fórmula
-    // intercaladas) — usado tanto pro enunciado quanto pra cada célula de
-    // tabela. negritoBase=true aplica negrito a TUDO por padrão (mantém o
-    // enunciado com a mesma cara "em negrito" de sempre, mesmo sem Markdown);
-    // negritoBase=false só aplica onde o Markdown pediu explicitamente
-    // (usado em células de tabela, que não deveriam virar uma parede de negrito).
+    // Monta um parágrafo com trechos, usado pro enunciado e por célula de tabela.
+    // negritoBase=true deixa tudo em negrito; false só aplica onde o Markdown pediu.
     private static Paragraph ParagrafoComTrechos(MainDocumentPart mainPart, string prefixoTexto, List<TrechoTexto> trechos, bool negritoBase, int recuoTwips)
     {
         var paragrafo = new Paragraph();
+
+        // Justificado de propósito: texto impresso com as duas margens alinhadas.
+        // Blocos de código e tabelas não passam por aqui (têm desenho próprio).
+        var paragrafoProps = new ParagraphProperties(new Justification { Val = JustificationValues.Both });
         if (recuoTwips > 0)
         {
-            paragrafo.ParagraphProperties = new ParagraphProperties(new Indentation { Left = recuoTwips.ToString() });
+            paragrafoProps.AppendChild(new Indentation { Left = recuoTwips.ToString() });
         }
+        paragrafo.ParagraphProperties = paragrafoProps;
 
         if (!string.IsNullOrEmpty(prefixoTexto))
         {
@@ -538,9 +550,8 @@ public static class ProvaDocxExporter
         return paragrafo;
     }
 
-    // Bloco de código (```): uma linha por Run separado por quebra manual (não
-    // por parágrafo — parágrafos novos trariam espaçamento extra entre linhas),
-    // fonte monoespaçada e fundo cinza claro pra destacar do resto do enunciado.
+    // Bloco de código: uma linha por Run com quebra manual (parágrafo novo traria
+    // espaçamento extra), fonte monoespaçada e fundo cinza claro.
     private static Paragraph ParagrafoCodigo(string codigo)
     {
         var paragrafo = new Paragraph(new ParagraphProperties(
@@ -562,9 +573,8 @@ public static class ProvaDocxExporter
         return paragrafo;
     }
 
-    // Tabela dentro do enunciado (Markdown |...|...|) — mesma borda das outras
-    // tabelas do documento; primeira linha em negrito quando o Markdown marcou
-    // um cabeçalho (linha separadora "---" logo abaixo dela).
+    // Tabela dentro do enunciado, mesma borda das outras do documento; primeira
+    // linha em negrito quando o Markdown marcou um cabeçalho.
     private static Table CriarTabelaEnunciado(MainDocumentPart mainPart, BlocoMarkdown bloco)
     {
         var linhas = bloco.Tabela ?? new();
@@ -596,9 +606,8 @@ public static class ProvaDocxExporter
         return table;
     }
 
-    // Igual a CriarParagrafoImagem, mas devolve só o Run (não um Paragraph novo)
-    // e dimensiona pela ALTURA (não largura) — o objetivo aqui é casar com a
-    // altura da linha de texto ao redor, não ocupar a largura da página.
+    // Igual a CriarParagrafoImagem mas devolve só o Run e dimensiona pela altura,
+    // pra casar com a linha de texto ao redor em vez da largura da página.
     private static Run CriarRunImagemInline(MainDocumentPart mainPart, byte[] bytes, int alturaEmu)
     {
         var imagePart = mainPart.AddImagePart("image/png");
@@ -696,9 +705,8 @@ public static class ProvaDocxExporter
             new InsideVerticalBorder { Val = BorderValues.Single, Size = 6 }),
         new TableWidth { Type = TableWidthUnitValues.Pct, Width = larguraPct });
 
-    // Tabela com borda no molde de um cabeçalho de prova impresso: logo +
-    // endereço à esquerda; nome da instituição e campos pra preencher (Professor,
-    // Curso, Disciplina, Período, Aluno) no meio; quadro de nota final à direita.
+    // Tabela do cabeçalho impresso: logo+endereço à esquerda, dados da instituição
+    // e campos pra preencher no meio, nota final à direita.
     private static Table CriarTabelaCabecalho(MainDocumentPart mainPart, ProvaExportDto prova)
     {
         var instituicao = prova.Instituicao!;
@@ -733,11 +741,15 @@ public static class ProvaDocxExporter
         meioCell.AppendChild(new TableCellProperties(new TableCellWidth { Type = TableWidthUnitValues.Dxa, Width = "5800" }));
         meioCell.AppendChild(ParagrafoCentralizado(instituicao.Nome, negrito: true, tamanhoMeioPonto: 22));
         meioCell.AppendChild(ParagrafoNegrito($"Professor(a): {prova.Professor ?? Linha(38)}"));
-        meioCell.AppendChild(ParagrafoNegrito($"Curso: {prova.Curso ?? Linha(43)}"));
-        meioCell.AppendChild(ParagrafoNegrito($"Disciplina: {prova.Disciplina}"));
-        // Turma/Data vêm preenchidos quando a prova está amarrada a esses dados
-        // (ver ProvaForm.razor); senão, sobra a linha em branco de sempre pra
-        // preencher à mão na hora da aplicação impressa.
+        // No escopo Curso, EscopoRotulo já imprime "Curso: X" sozinho — repetir a
+        // linha fixa aqui duplicava o nome do curso no cabeçalho.
+        if (prova.TipoEscopo != TipoEscopoProva.Curso)
+        {
+            meioCell.AppendChild(ParagrafoNegrito($"Curso: {prova.Curso ?? Linha(43)}"));
+        }
+        meioCell.AppendChild(ParagrafoNegrito(prova.EscopoRotulo));
+        // Turma/Data vêm preenchidos quando a prova está amarrada a esses dados;
+        // senão, sobra a linha em branco pra preencher à mão.
         var dataTexto = prova.DataAplicacao is { } data ? data.ToString("dd/MM/yyyy") : "____/____/____";
         meioCell.AppendChild(ParagrafoNegrito($"Turma: {prova.Turma ?? Linha(20)}     Data: {dataTexto}"));
         meioCell.AppendChild(ParagrafoNegrito($"Aluno: {Linha(30)}"));
@@ -781,15 +793,11 @@ public static class ProvaDocxExporter
 
     private static string Linha(int tamanho) => new('_', tamanho);
 
-    // Largura "cheia" de referência pra imagem de questão (percentuais em
-    // QuestaoImagem.LarguraPercentual são relativos a essa medida) e o
-    // percentual usado quando a imagem não tem um valor próprio definido.
+    // Largura de referência pra QuestaoImagem.LarguraPercentual e o percentual padrão sem valor próprio.
     private const double LarguraMaximaImagemCm = 16.0;
     private const int LarguraPercentualPadrao = 60;
 
-    // Desenha a imagem de uma questão (parágrafo com a figura, alinhada
-    // conforme QuestaoImagem.Alinhamento) seguida da Legenda, se houver —
-    // ambos alinhados juntos, do jeito que aparecem impressos na prova.
+    // Desenha a imagem seguida da Legenda, se houver, ambas com o mesmo alinhamento.
     private static void EscreverImagemQuestao(MainDocumentPart mainPart, Body body, ImagemExportDto imagem)
     {
         var alinhamento = imagem.Alinhamento ?? AlinhamentoImagem.Centralizado;

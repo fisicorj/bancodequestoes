@@ -12,7 +12,7 @@
 
 <PageTitle>@(Id is null ? "Nova matriz de referência" : "Editar matriz de referência")</PageTitle>
 
-<h1>@(Id is null ? "Nova matriz de referência" : "Editar matriz de referência")</h1>
+<PageHeader Titulo="@(Id is null ? "Nova matriz de referência" : "Editar matriz de referência")" />
 
 @if (erro is not null)
 {
@@ -171,12 +171,8 @@ else
 
         if (Id is not null)
         {
-            // Sobrecarga autorizada (item 8/9): devolve null tanto pra id
-            // inexistente quanto pra matriz sem acesso de leitura (curso de
-            // outra instituição) — ataque nomeado no pedido:
-            // "/matrizes/editar/123" de outra instituição. Matriz nacional
-            // (AreaCursoId) é de leitura aberta — ver
-            // MatrizReferenciaService.TemAcessoDeLeituraAsync.
+            // Devolve null tanto pra id inexistente quanto pra matriz sem acesso de
+            // leitura (curso de outra instituição); matriz nacional é de leitura aberta.
             var matriz = await MatrizService.ObterAsync(Id.Value, minhaInstituicaoId, ehAdmin);
             if (matriz is null)
             {
@@ -204,13 +200,8 @@ else
         {
             modelo.CursoId = cid;
 
-            // O Tipo padrão do formulário (ver MatrizReferenciaInput) é
-            // ENADE, que é de escopo nacional — pré-preenche a Área de Curso
-            // com a do curso de origem, se ele já tiver uma escolhida (ver
-            // Curso.AreaCursoId), pra o professor não precisar escolher de
-            // novo algo que o curso já sabe. Sem área no curso, o seletor
-            // fica vazio e o professor escolhe manualmente (ou troca o Tipo
-            // pra um institucional, que usa o Curso pré-selecionado acima).
+            // Tipo padrão é ENADE (escopo nacional): pré-preenche a Área de Curso
+            // com a do curso de origem, se houver, pra não repetir escolha.
             var curso = await CursoService.ObterAsync(cid);
             modelo.AreaCursoId = curso?.AreaCursoId;
         }
@@ -218,10 +209,8 @@ else
         carregando = false;
     }
 
-    // Pra onde "Cancelar"/o redirecionamento pós-salvar leva — matriz
-    // institucional volta pras matrizes DO CURSO (como sempre foi); matriz
-    // nacional não tem "o curso" (pode servir vários ao mesmo tempo), então
-    // volta pra listagem geral de matrizes.
+    // Matriz institucional volta pras matrizes do curso; matriz nacional
+    // (sem "um" curso dono) volta pra listagem geral.
     private string LinkVoltar() =>
         modelo.Tipo.EhEscopoNacional() ? "matrizes" : $"matrizes/{modelo.CursoId}";
 

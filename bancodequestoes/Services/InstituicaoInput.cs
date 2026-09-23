@@ -16,20 +16,13 @@ public sealed class InstituicaoInput
     public string? Site { get; set; }
     public string? Instrucoes { get; set; }
 
-    // Anulável de propósito, mesmo a Instituicao (entidade) sendo
-    // não-anulável: é isso que obriga o formulário a começar sem nada
-    // pré-selecionado — o professor precisa escolher ativamente, em vez de
-    // aceitar sem querer um valor padrão. Ver InstituicaoService pra
-    // validação (o DataAnnotationsValidator já bloqueia o submit, mas o
-    // Service confere de novo — mesmo padrão de defesa em profundidade do
-    // resto do sistema).
+    // Anulável de propósito: obriga o formulário a começar sem nada
+    // pré-selecionado, pro professor escolher ativamente.
     [Required(ErrorMessage = "Escolha o sistema de períodos.")]
     public SistemaPeriodos? SistemaPeriodos { get; set; }
 }
 
-// Logo recém-enviada pelo <InputFile>, ainda não salva — a tela mantém isso
-// à parte do modelo pra poder mostrar a prévia e permitir cancelar antes de
-// confirmar o Salvar.
+// Logo recém-enviada, ainda não salva — separada do modelo pra permitir prévia/cancelar antes do Salvar.
 public sealed class LogoPendente
 {
     public required string ContentType { get; set; }

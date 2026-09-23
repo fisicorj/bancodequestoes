@@ -1,5 +1,6 @@
 using BancoQuestoes.Components.Account;
 using BancoQuestoes.Data;
+using BancoQuestoes.Importacao;
 using BancoQuestoes.Models;
 using BancoQuestoes.Services;
 using Microsoft.AspNetCore.Antiforgery;
@@ -7,47 +8,54 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PdfSharp.Fonts;
+using System.Runtime.Versioning;
 using System.Security.Claims;
 
-// WebApplication.CreateBuilder é o ponto de entrada dos apps ASP.NET Core
-// "minimal hosting" (desde .NET 6): "builder" acumula configuração e serviços,
-// e no final vira o "app" que efetivamente atende requisições.
+// Declarado uma vez pro assembly inteiro (nunca publicado pra browser/Android/iOS) —
+// resolve o CA1416 no registro de PaginaEnadeRenderizador (ver a mesma anotação lá)
+// sem precisar de pragma; qualquer chamada nova a uma API "platform-specific" coberta
+// por esses três SOs passa a ser reconhecida como segura automaticamente.
+[assembly: SupportedOSPlatform("windows")]
+[assembly: SupportedOSPlatform("linux")]
+[assembly: SupportedOSPlatform("macos")]
+
+// "builder" acumula configuração e serviços; no final vira o "app" que atende requisições.
 var builder = WebApplication.CreateBuilder(args);
 
-// PDFsharp 6.2+ não sabe de onde tirar fontes por padrão (roda em qualquer SO,
-// então não presume nada sobre o sistema). Como este app roda no Windows, isso
-// deixa ele usar as fontes de C:\Windows\Fonts para as famílias comuns
-// (Arial, Times New Roman, Courier New etc.) — precisa rodar antes da primeira
-// fonte ser usada, então fica logo no início.
+// Fora de Development, o ASP.NET Core desliga por padrão a resolução de
+// Static Web Assets (blazor.web.js, *.razor.js dos componentes, o
+// @Assets[...] usado em App.razor para fingerprint de CSS/JS) — o
+// pressuposto é que em produção você rodou "dotnet publish", que já embute
+// tudo isso em wwwroot. Aqui a v1 continua rodando via "dotnet run" direto
+// do código-fonte (mesma máquina do dev, sem publish), então sem essa
+// chamada os arquivos da UI voltam 404 assim que ASPNETCORE_ENVIRONMENT
+// deixa de ser "Development" (ver executar-producao.bat).
+if (!builder.Environment.IsDevelopment())
+{
+    builder.WebHost.UseStaticWebAssets();
+}
+
+// PDFsharp 6.2+ não presume o SO; roda antes da 1ª fonte ser usada pra
+// habilitar as fontes de C:\Windows\Fonts.
 GlobalFontSettings.UseWindowsFontsUnderWindows = true;
 
 // --- Registro de serviços (injeção de dependência) ---
-// Tudo que é adicionado com builder.Services.Add... fica disponível para ser
-// "injetado" (recebido no construtor) em qualquer componente Blazor, controller
-// ou outro serviço, sem você precisar instanciar manualmente com "new".
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// GetConnectionString("DefaultConnection") lê a string de conexão do
-// appsettings.json (seção "ConnectionStrings"). Manter a connection string
-// fora do código é o padrão: facilita trocar de ambiente (dev/produção)
-// sem recompilar.
+// Connection string fora do código: facilita trocar de ambiente sem recompilar.
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' não encontrada.");
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseNpgsql(connectionString));
 
-// AddIdentity configura todo o sistema de login/senha/roles.
-// AddRoles<IdentityRole> habilita os papéis (Professor, Admin) que você
-// vai usar para autorização. AddEntityFrameworkStores liga o Identity
-// ao ApplicationDbContext, então os usuários ficam nas mesmas tabelas
-// do resto do sistema (AspNetUsers, AspNetRoles, dentro do Postgres).
+// AddIdentity configura login/senha/roles; AddEntityFrameworkStores liga ao
+// ApplicationDbContext, então usuários ficam nas mesmas tabelas do Postgres.
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 {
-    // Regras de senha mais brandas fazem sentido para um sistema de uso
-    // próprio/pequeno grupo; ajuste para produção real com mais gente.
+    // Regras mais brandas fazem sentido pra uso próprio/pequeno grupo.
     options.Password.RequiredLength = 6;
     options.Password.RequireNonAlphanumeric = false;
     options.Password.RequireUppercase = false;
@@ -60,30 +68,55 @@ builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddAuthorization();
 
-// Usado pelas páginas de Login/Registro (renderizadas estaticamente) para redirecionar
-// depois de autenticar, já que ali um NavigateTo comum é tratado como redirect HTTP real.
+// Usado pelas páginas de Login/Registro (estáticas) pra redirecionar depois de
+// autenticar, já que ali um NavigateTo comum vira redirect HTTP real.
 builder.Services.AddScoped<IdentityRedirectManager>();
 
-// Camada de Services (em construção incremental — ver Services/DisciplinaService.cs).
-// Scoped, igual o ApplicationDbContext: em Blazor Server isso significa "uma
-// instância por circuito", então o Service enxerga o mesmo DbContext (com o
-// mesmo change tracking) do início ao fim da sessão do usuário na página.
+// Scoped, igual o ApplicationDbContext: em Blazor Server é "uma instância por
+// circuito", então o Service enxerga o mesmo DbContext do início ao fim da sessão.
 builder.Services.AddScoped<DisciplinaService>();
 builder.Services.AddScoped<QuestaoService>();
+builder.Services.AddScoped<QuestaoQueryService>();
+builder.Services.AddScoped<QuestaoTagService>();
+builder.Services.AddScoped<QuestaoHistoricoService>();
+builder.Services.AddScoped<QuestaoImagemService>();
+builder.Services.AddScoped<QuestaoCurricularService>();
 builder.Services.AddScoped<ProvaService>();
+builder.Services.AddScoped<GeradorProvaService>();
 builder.Services.AddScoped<ImportacaoService>();
 builder.Services.AddScoped<ExportacaoService>();
 builder.Services.AddScoped<EstatisticaService>();
 builder.Services.AddScoped<InstituicaoService>();
 builder.Services.AddScoped<CursoService>();
 builder.Services.AddScoped<AreaCursoService>();
+builder.Services.AddScoped<MatrizAcessoService>();
+builder.Services.AddScoped<ItemMatrizReferenciaService>();
+builder.Services.AddScoped<ItemMatrizVinculoService>();
 builder.Services.AddScoped<MatrizReferenciaService>();
+builder.Services.AddScoped<IImportadorProvaEnadeService, ImportadorProvaEnadeService>();
+builder.Services.AddScoped<AlunoService>();
+builder.Services.AddScoped<AplicacaoProvaService>();
+builder.Services.AddScoped<RespostaProvaOnlineService>();
+
+// Configuração de IA de verdade mora no banco (ConfiguracaoIa); appsettings
+// "Ollama" só alimenta os valores iniciais da primeira leitura.
+builder.Services.Configure<SugestaoIaOptions>(builder.Configuration.GetSection("Ollama"));
+builder.Services.AddScoped<ConfiguracaoIaService>();
+builder.Services.AddHttpClient<OllamaClient>();
+builder.Services.AddHttpClient<SugestaoIaService>();
+
+// Scoped de propósito: precisa sobreviver à navegação no MESMO circuito
+// Blazor Server, mas nunca vazar entre usuários/circuitos diferentes.
+builder.Services.AddScoped<RascunhoQuestaoIaService>();
+
+// Singleton: PaginaEnadeRenderizador não guarda estado por requisição (só uma
+// trava estática global pela thread-safety do PDFium).
+builder.Services.AddSingleton<IPaginaPdfRenderizador, PaginaEnadeRenderizador>();
 
 var app = builder.Build();
 
-// --- Pipeline HTTP (middlewares) ---
-// A ordem aqui importa: cada "app.Use..." é uma etapa que a requisição passa
-// antes de chegar nos componentes Blazor.
+// --- Pipeline HTTP (middlewares) --- a ordem importa: cada "app.Use..." é
+// uma etapa antes de chegar nos componentes Blazor.
 
 if (!app.Environment.IsDevelopment())
 {
@@ -100,47 +133,52 @@ app.UseAntiforgery();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Endpoint que efetivamente serve os arquivos com fingerprint referenciados
+// via "@Assets[...]" (App.razor) e os arquivos do próprio framework Blazor
+// (blazor.web.js, ReconnectModal.razor.js) e o CSS isolado dos componentes
+// (bancodequestoes.styles.css). Sem isso, esses arquivos voltam 404 fora do
+// ambiente Development — o UseStaticFiles() sozinho não é suficiente aqui,
+// tanto rodando via "dotnet run" quanto numa build publicada (dotnet publish).
+app.MapStaticAssets();
+
 app.MapRazorComponents<BancoQuestoes.Components.App>()
     .AddInteractiveServerRenderMode();
 
-// Endpoint de logout: fica fora de um componente Blazor de propósito, porque
-// encerrar a sessão exige escrever no cookie de resposta, o que só é possível
-// numa requisição HTTP normal (não numa conexão SignalR já aberta).
-//
-// DisableAntiforgery(): o NavMenu (com o form de logout) fica ora estático ora
-// interativo dependendo da página atual, porque o @rendermode é definido por
-// página aqui. Isso faz o token antiforgery embutido no form ficar defasado
-// entre uma renderização e outra ("meant for a different claims-based user").
-// Como sair da conta não é uma ação sensível (só invalida o próprio login),
-// desligar a validação aqui é um trade-off aceitável para não travar o logout.
-// Serve o conteúdo de uma imagem de questão direto do Postgres. [Authorize]
-// sozinho só garante login — não impede um professor de adivinhar/incrementar
-// o id na URL (/questoes/imagem/1, /2, /3...) e ver imagem de questão privada
-// de outro professor. Por isso o Service aplica a mesma regra VisivelPara
-// usada em toda tela que lista questões antes de servir o arquivo.
-app.MapGet("/questoes/imagem/{id:int}", async (int id, HttpContext http, QuestaoService questaoService) =>
+// Fora de um componente Blazor pois encerrar sessão exige escrever no cookie
+// (HTTP normal); [Authorize] não barra adivinhar o id, daí a VisivelPara abaixo.
+app.MapGet("/questoes/imagem/{id:int}", async (int id, HttpContext http, QuestaoService questaoService, QuestaoImagemService imagemService) =>
 {
     var meuId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
     var minhaInstituicaoId = await questaoService.ObterInstituicaoDoUsuarioAsync(meuId);
-    var imagem = await questaoService.ObterImagemVisivelAsync(id, meuId, minhaInstituicaoId);
-    return imagem is null ? Results.NotFound() : Results.File(imagem.Conteudo, imagem.ContentType);
+    var imagem = await imagemService.ObterVisivelAsync(id, meuId, minhaInstituicaoId);
+    if (imagem is null)
+    {
+        return Results.NotFound();
+    }
+    // nosniff: o Content-Type gravado já é validado por assinatura no upload (ValidadorImagem),
+    // mas isso reforça que o navegador nunca tente "adivinhar" outro tipo pro conteúdo.
+    http.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    return Results.File(imagem.Conteudo, imagem.ContentType);
 }).RequireAuthorization();
 
-// Serve a logo de uma instituição direto do Postgres.
-app.MapGet("/instituicoes/logo/{id:int}", async (int id, ApplicationDbContext db) =>
+// Serve a logo de uma instituição direto do Postgres. Sem checagem de "dono" — diferente
+// de Questao/Prova, Instituicao é um recurso compartilhado entre todos os professores
+// (aparece no cabeçalho de provas de qualquer um), gerenciado só por Admin desde que
+// InstituicaoList/InstituicaoForm passaram a exigir Roles="Admin"; qualquer usuário
+// autenticado pode ver a logo, só não pode mais criar/editar/excluir instituição.
+app.MapGet("/instituicoes/logo/{id:int}", async (int id, HttpContext http, ApplicationDbContext db) =>
 {
     var instituicao = await db.Instituicoes.FindAsync(id);
-    return instituicao?.LogoConteudo is null
-        ? Results.NotFound()
-        : Results.File(instituicao.LogoConteudo, instituicao.LogoContentType ?? "application/octet-stream");
+    if (instituicao?.LogoConteudo is null)
+    {
+        return Results.NotFound();
+    }
+    http.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    return Results.File(instituicao.LogoConteudo, instituicao.LogoContentType ?? "application/octet-stream");
 }).RequireAuthorization();
 
-// Exportação da prova. GET simples: o navegador baixa/abre o arquivo direto ao
-// acessar a URL, sem precisar de JavaScript no front-end.
-//
-// Provas são privadas por professor, então cada endpoint confere se quem está
-// pedindo o arquivo foi quem criou a prova — sem isso, bastaria adivinhar/trocar
-// o número no final da URL pra baixar a prova de outro professor.
+// GET simples: baixa direto sem JS. Cada endpoint confere se quem pede é quem
+// criou a prova, senão bastaria trocar o id na URL.
 app.MapGet("/provas/{id:int}/exportar.docx", async (int id, HttpContext http, ExportacaoService exportacaoService) =>
 {
     var meuId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -173,9 +211,8 @@ app.MapGet("/provas/{id:int}/exportar.pdf", async (int id, HttpContext http, Exp
     return Results.File(bytes, "application/pdf", ExportacaoService.NomeArquivoSeguro(prova.Titulo) + ".pdf");
 }).RequireAuthorization();
 
-// Variações da prova: gera "qtd" versões com questões/alternativas embaralhadas
-// (2 a 6, com 2 como padrão) seguidas de uma página de gabarito com a resposta
-// certa de cada versão — útil pra dificultar cola em prova impressa.
+// Gera "qtd" versões embaralhadas (2 a 6, padrão 2) com gabarito por versão —
+// útil pra dificultar cola em prova impressa.
 app.MapGet("/provas/{id:int}/exportar-variacoes.docx", async (int id, int? qtd, HttpContext http, ExportacaoService exportacaoService) =>
 {
     var meuId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -210,10 +247,8 @@ app.MapGet("/provas/{id:int}/exportar-variacoes.pdf", async (int id, int? qtd, H
     return Results.File(bytes, "application/pdf", ExportacaoService.NomeArquivoSeguro(prova.Titulo) + "-variacoes.pdf");
 }).RequireAuthorization();
 
-// Gabarito comentado: documento separado da prova em branco — cada questão
-// seguida da resposta certa e, se preenchida, da explicação do professor.
-// Pensado como material de estudo/revisão pro aluno depois da prova aplicada,
-// ou apoio na hora de corrigir — não é pra ser aplicado como prova.
+// Documento separado da prova em branco: cada questão seguida da resposta e,
+// se houver, da explicação — material de estudo/apoio, não pra ser aplicado.
 app.MapGet("/provas/{id:int}/gabarito-comentado.docx", async (int id, HttpContext http, ExportacaoService exportacaoService) =>
 {
     var meuId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
@@ -254,16 +289,8 @@ app.MapPost("/Account/Logout", async (SignInManager<ApplicationUser> signInManag
     return Results.LocalRedirect("/");
 }).DisableAntiforgery();
 
-// Troca de senha: fica fora de um componente Blazor pelo mesmo motivo do logout —
-// SignInManager.RefreshSignInAsync precisa reescrever o cookie de autenticação com
-// o novo "security stamp", e isso só é possível numa requisição HTTP normal (a tela
-// de perfil roda em modo interativo, com a conexão SignalR já aberta).
-//
-// Diferente do form de logout do NavMenu (que aparece em páginas com render mode
-// variável, o que deixa o token antiforgery defasado entre uma renderização e
-// outra), a tela de perfil é sempre @rendermode InteractiveServer do início ao fim
-// — então o <AntiforgeryToken /> embutido no form (PerfilEdicao.razor) fica válido
-// e a validação normal do app.UseAntiforgery() pode ficar ligada aqui.
+// Fora de componente pelo mesmo motivo do logout; diferente do NavMenu, a
+// tela de perfil é sempre InteractiveServer, então o antiforgery normal fica ligado.
 app.MapPost("/Account/TrocarSenha", async (
     HttpContext http,
     UserManager<ApplicationUser> userManager,
@@ -295,11 +322,20 @@ app.MapPost("/Account/TrocarSenha", async (
     return Results.LocalRedirect("/perfil?senhaOk=true");
 }).RequireAuthorization();
 
-// Cria automaticamente os papéis "Professor" e "Admin" se ainda não existirem,
-// toda vez que a aplicação sobe. Prático para ambiente de desenvolvimento —
-// evita ter que criar isso manualmente no banco.
+// Cria os papéis "Professor" e "Admin" se ainda não existirem, toda vez que
+// a aplicação sobe — evita criar isso manualmente no banco.
 using (var scope = app.Services.CreateScope())
 {
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+    // Aplica migrations pendentes automaticamente ao subir — precisa vir ANTES
+    // de qualquer acesso ao banco (inclusive o RoleManager logo abaixo, que já
+    // consulta AspNetRoles). Sem isso, um banco novo (ex.: o de produção/v1)
+    // fica sem tabela nenhuma até alguém rodar "dotnet ef database update"
+    // manualmente. Idempotente: se já estiver tudo aplicado (caso comum em
+    // dev), não faz nada.
+    await dbContext.Database.MigrateAsync();
+
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
     foreach (var role in new[] { "Professor", "Admin" })
     {
@@ -309,27 +345,46 @@ using (var scope = app.Services.CreateScope())
         }
     }
 
-    // Bancos de questões de teste (Engenharia de Software, Matemática,
-    // Introdução à Computação) — cada método só insere o que ainda não existe
-    // (por enunciado), então rodar de novo não duplica nada.
-    //
-    // criadoPorId (primeiro usuário cadastrado) faz as questões nascerem com
-    // dono — sem isso, e sem Visibilidade=Compartilhada (setado dentro do
-    // DbSeeder), o filtro VisivelPara escondia as questões seedadas de todo
-    // mundo, já que "CriadoPorId == meuId" nunca bate com null.
-    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    // Só roda com "dotnet run -- --resetar-questoes"; precisa vir antes dos
+    // seeds (idempotentes) senão as questões apagadas ressurgiriam na mesma execução.
+    if (args.Contains("--resetar-questoes"))
+    {
+        await DbReset.ApagarTodasProvasEQuestoesAsync(dbContext);
+    }
+
+    // Cada seed só insere o que não existe; criadoPorId dá dono às questões,
+    // senão o filtro VisivelPara as esconderia de todo mundo.
     var criadoPorId = await dbContext.Users.OrderBy(u => u.Id).Select(u => u.Id).FirstOrDefaultAsync();
     await DbSeeder.RepararQuestoesSemDonoAsync(dbContext, criadoPorId);
-    await DbSeeder.SeedEngenhariaDeSoftwareAsync(dbContext, criadoPorId);
-    await DbSeeder.SeedMatematicaAsync(dbContext, criadoPorId);
-    await DbSeeder.SeedIntroducaoComputacaoAsync(dbContext, criadoPorId);
 
-    // Backfill: dá a tag "Com imagem" pra questão que já tinha imagem antes
-    // dessa sincronização existir (daqui pra frente, QuestaoService cuida
-    // disso sozinho em cada criação/edição). Idempotente, seguro rodar toda
-    // vez que o app sobe.
-    var questaoService = scope.ServiceProvider.GetRequiredService<QuestaoService>();
-    await questaoService.SincronizarTagsDeImagemEmMassaAsync();
+    // Dependência estrutural da feature ENADE (não é dado de teste), por isso
+    // roda sempre, sem depender de --resetar-questoes nem de usuário cadastrado.
+    await DbSeeder.SeedDisciplinaFormacaoGeralAsync(dbContext);
+
+    // Questões de exemplo/teste (Engenharia de Software, Matemática, Física,
+    // Redes, Programação, ENADE extra...) só em Development — em produção
+    // (v1) o banco começa limpo, só com o conteúdo real do professor.
+    if (app.Environment.IsDevelopment())
+    {
+        await DbSeeder.SeedEngenhariaDeSoftwareAsync(dbContext, criadoPorId);
+        await DbSeeder.SeedMatematicaAsync(dbContext, criadoPorId);
+        await DbSeeder.SeedIntroducaoComputacaoAsync(dbContext, criadoPorId);
+        await DbSeederFisica.SeedAsync(dbContext, criadoPorId);
+        await DbSeederRedes.SeedAsync(dbContext, criadoPorId);
+        await DbSeederProgramacao.SeedAsync(dbContext, criadoPorId);
+        await DbSeederMatematicaExtra.SeedAsync(dbContext, criadoPorId);
+        await DbSeederEngenhariaSoftwareExtra.SeedAsync(dbContext, criadoPorId);
+        await DbSeederEnadeExtra.SeedAsync(dbContext, criadoPorId);
+    }
+
+    // Best-effort: só faz algo se o Curso já tiver uma Matriz ENADE/DCN ativa;
+    // caso contrário só loga e segue, sem quebrar a inicialização.
+    await DbSeederEnadeVinculo.VincularAsync(dbContext, "Engenharia de Computação");
+
+    // Backfill da tag "Com imagem" pra questão anterior a essa sincronização
+    // (daqui pra frente QuestaoTagService cuida sozinho); idempotente.
+    var questaoTagService = scope.ServiceProvider.GetRequiredService<QuestaoTagService>();
+    await questaoTagService.SincronizarTagsDeImagemEmMassaAsync();
 }
 
 app.Run();

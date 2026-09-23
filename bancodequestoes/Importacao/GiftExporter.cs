@@ -3,10 +3,8 @@ using BancoQuestoes.Models;
 
 namespace BancoQuestoes.Importacao;
 
-// Exportação simétrica ao GiftParser: cobre os mesmos 5 tipos que ele
-// consegue importar (múltipla escolha, Certo/Errado, resposta breve,
-// numérica, associação). Discursiva e Lacunas não têm um equivalente fiel em
-// GIFT simples, então entram em "Ignoradas" em vez de virar algo quebrado.
+// Exportação simétrica ao GiftParser: cobre os mesmos 5 tipos que ele importa.
+// Discursiva e Lacunas não têm equivalente fiel em GIFT simples, entram em "Ignoradas".
 public static class GiftExporter
 {
     public static (string Conteudo, List<string> Ignoradas) Gerar(List<Questao> questoes)
@@ -66,10 +64,8 @@ public static class GiftExporter
         return (sb.ToString(), ignoradas);
     }
 
-    // GIFT usa : = ~ # { } como caracteres de sintaxe — escapa com "\" quando
-    // fazem parte do texto de verdade. A barra invertida precisa ser escapada
-    // PRIMEIRO, senão as barras inseridas pelos replaces seguintes seriam
-    // escapadas de novo por engano.
+    // GIFT usa : = ~ # { } como sintaxe — escapa com "\" quando fazem parte do texto;
+    // a barra invertida é escapada PRIMEIRO, senão os replaces seguintes a escapariam de novo.
     private static string Escapar(string texto) => texto
         .Replace(@"\", @"\\")
         .Replace(":", @"\:").Replace("=", @"\=").Replace("~", @"\~")

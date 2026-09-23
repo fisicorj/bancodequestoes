@@ -1,0 +1,183 @@
+<!--
+    Seção "Alinhamento Curricular / ENADE" do formulário de Questão.
+
+    Normalização do modelo acadêmico (revisão desta seção): a aplicabilidade
+    acadêmica da questão agora é expressa por um checklist de ÁREAS DE CURSO
+    (nacionais, ver AreaCurso/Questao.AreasCurso) — não mais por escolher um
+    Curso institucional específico. Nenhuma instituição aparece nesse
+    checklist de propósito (é aplicabilidade de CONTEÚDO, não vínculo
+    institucional — ver comentário em Questao.AreasCurso).
+
+    O seletor de Curso institucional NÃO foi removido — continua existindo
+    logo abaixo, mas Questao.CursoId em si foi eliminado (tarefa "eliminar
+    Questao.CursoId"): o valor escolhido aqui é só um escopo TRANSITÓRIO de
+    tela, nunca persistido na questão — o único papel dele é habilitar itens
+    de uma Matriz PPC/Institucional específica (que É por Curso, nunca por
+    Área — ver MatrizReferencia). Ele não é obrigatório pra ver QUALQUER item
+    de matriz: marcar uma Área já traz os itens nacionais (ENADE/DCN) dela,
+    com ou sem Curso escolhido.
+
+    Os itens exibidos no checklist são a UNIÃO de três conjuntos: ItensDoCurso
+    (matrizes INSTITUCIONAIS — PPC/Institucional/Outro — vinculadas
+    diretamente ao Curso escolhido como CursoContextoMatrizId), ItensDasAreas
+    (matrizes NACIONAIS — ENADE/DCN — vinculadas às AreaCurso marcadas) e
+    ItensHistoricos (ver "Ajuste final — Vínculos históricos" logo abaixo) —
+    quem calcula e mantém as três listas em sincronia com Curso/AreaCursoIds/
+    seleção continua sendo QuestaoForm.razor.
+
+    "Ajuste final — Vínculos históricos de itens de matriz": ItensDoCurso e
+    ItensDasAreas só trazem itens ATIVOS de matrizes utilizáveis (não-
+    Rascunho) — são "o que dá pra OFERECER agora" (ver MatrizReferenciaService.
+    ListarItensVinculaveisPorCursoAsync/PorAreasCursoAsync). Isso por si só
+    escondia da tela um item que a questão JÁ TINHA vinculado antes de virar
+    inativo/Rascunho — o backend preservava o vínculo (ver
+    QuestaoCurricularService.ResolverItensMatrizAsync/idsJaVinculadosAntes), mas o
+    professor não conseguia nem VER esse item pra desmarcá-lo explicitamente,
+    o que por sua vez travava a remoção da Área/troca do Curso (Correção 1
+    detecta o vínculo pelo detalhesItensSelecionados, mas o item nunca
+    aparecia no checklist pra ser desmarcado). ItensHistoricos é exatamente
+    esse terceiro conjunto: itens JÁ selecionados que não estão mais em
+    ItensDoCurso/ItensDasAreas — populado por QuestaoForm.razor a partir de
+    detalhesItensSelecionados. ItemMatrizChecklist marca esses itens com um
+    aviso "⚠ ... — vínculo histórico" e continuam podendo ser desmarcados
+    normalmente; uma vez desmarcados, saem de detalhesItensSelecionados (ver
+    SincronizarDetalhesItensSelecionados) e desaparecem do checklist no
+    próximo render — não tem como remarcar um item inativo/Rascunho que já
+    foi removido (nem pela tela, que não oferece mais a opção, nem pelo
+    backend, que rejeita).
+
+    "Ajustes finais de integridade curricular" (Correção 1): desmarcar uma
+    Área ou trocar o Curso institucional NÃO mexe mais em Modelo.AreaCursoIds
+    / Modelo.CursoContextoMatrizId diretamente aqui — esta seção só AVISA a
+    intenção (OnAlternarAreaCurso/OnAlternarCursoContexto) e é QuestaoForm.razor
+    quem decide se aplica ou bloqueia a mudança (quando há Item de Matriz
+    selecionado que ficaria órfão). Antes, a mutação acontecia aqui e a poda
+    de itens fora de escopo era feita depois, em silêncio
+    (PodarItensSelecionadosForaDoEscopo, removida) — o professor podia perder
+    um alinhamento curricular sem perceber. Ver comentário nos novos métodos
+    em QuestaoForm.razor pro detalhe do bloqueio.
+-->
+<details class="details-secao mb-3" open>
+    <summary class="section-title">
+        Aderência curricular e ENADE <span class="text-caption fw-normal ms-1">Opcional</span>
+    </summary>
+    <div class="mt-2">
+        <p class="section-subtitle mb-2">Marque a(s) Área(s) de Curso nacionais às quais esta questão se aplica (ex.: "Engenharia de Computação", "Ciência da Computação") — isso é sobre o CONTEÚDO da questão, não sobre a quem ela pertence; a Visibilidade (na Classificação, acima) continua controlando quem pode ver/usar a questão.</p>
+
+        @if (AreasCurso.Count == 0)
+        {
+            <p class="text-muted small mb-2">Nenhuma Área de Curso cadastrada ainda. <a href="areas-curso">Cadastrar áreas de curso</a></p>
+        }
+        else
+        {
+            <div class="border rounded p-2 mb-2" style="max-height: 160px; overflow-y: auto;">
+                @foreach (var area in AreasCurso)
+                {
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="@($"area-curso-{area.Id}")"
+                               checked="@Modelo.AreaCursoIds.Contains(area.Id)" @onchange="@(e => OnAlternarAreaCurso.InvokeAsync((area.Id, (bool)e.Value!)))" />
+                        <label class="form-check-label small" for="@($"area-curso-{area.Id}")">@area.Nome</label>
+                    </div>
+                }
+            </div>
+        }
+
+        <div class="mb-2 mt-3" style="max-width: 420px;">
+            <label class="form-label small mb-1" for="CursoIdQuestao">
+                Curso institucional (opcional)
+                <i class="bi bi-info-circle text-muted ms-1" title="Só pra ver os itens de uma Matriz PPC específica desse Curso — nunca fica salvo na questão." aria-hidden="true"></i>
+            </label>
+            <select class="form-select" id="CursoIdQuestao" value="@(Modelo.CursoContextoMatrizId?.ToString() ?? "")" @onchange="AoSelecionarCursoAsync">
+                <option value="">Nenhum</option>
+                @foreach (var c in Cursos)
+                {
+                    <option value="@c.Id">@c.Instituicao?.Nome / @c.Nome</option>
+                }
+            </select>
+        </div>
+
+        @if (ItensVisiveis.Count == 0)
+        {
+            <p class="text-muted small mb-0">Marque uma Área de Curso (ou escolha um Curso institucional com matriz PPC) pra marcar os itens (perfil do concluinte, competências, conteúdos...) que essa questão avalia.</p>
+        }
+        else
+        {
+            @if (ItemMatrizIdsSelecionados.Count > 0)
+            {
+                <!--
+                    Recapitulação somente-leitura do que já está marcado (Etapa 4
+                    UX/UI, item 4 do pedido) - fica ACIMA do checklist de edição,
+                    sempre em linguagem simples (Tipo.Rotulo() + Codigo + Titulo,
+                    nunca o Id do item) e com o selo ENADE quando a matriz for
+                    ENADE. So leitura de ItensVisiveis/ItemMatrizIdsSelecionados,
+                    nenhum dado novo.
+                -->
+                <div class="aderencia-curricular-resumo mb-3">
+                    <div class="text-caption mb-1">Aderência curricular</div>
+                    @foreach (var grupo in ItensVisiveis.Where(i => ItemMatrizIdsSelecionados.Contains(i.Id)).GroupBy(i => i.MatrizReferencia).OrderBy(g => g.Key?.Nome))
+                    {
+                        <div class="aderencia-curricular-grupo">
+                            @if (grupo.Key?.Tipo == TipoMatrizReferencia.ENADE)
+                            {
+                                <EnadeBadge Ano="grupo.Key.Ano" Area="@grupo.Key.AreaCurso?.Nome" />
+                            }
+                            else
+                            {
+                                <span class="text-caption">@(grupo.Key?.Nome ?? "Matriz")</span>
+                            }
+                            <ul class="aderencia-curricular-lista mb-0">
+                                @foreach (var item in grupo.OrderBy(i => i.Ordem).ThenBy(i => i.Codigo))
+                                {
+                                    <li>✓ @item.Tipo.Rotulo() @item.Codigo — @item.Titulo</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </div>
+            }
+
+            <p class="text-muted small mb-1">Marque os itens avaliados por essa questão (opcional) — de uma ou mais matrizes ao mesmo tempo.</p>
+            <ItemMatrizChecklist Itens="ItensVisiveis" Selecionados="ItemMatrizIdsSelecionados" OnAlterado="NotificarMudancaCurricular" />
+        }
+    </div>
+</details>
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+    [Parameter] public List<Curso> Cursos { get; set; } = new();
+    [Parameter] public List<AreaCurso> AreasCurso { get; set; } = new();
+    [Parameter] public List<ItemMatrizReferencia> ItensDoCurso { get; set; } = new();
+    [Parameter] public List<ItemMatrizReferencia> ItensDasAreas { get; set; } = new();
+
+    // Itens já selecionados que saíram de ItensDoCurso/ItensDasAreas por ficarem
+    // inativos ou numa matriz Rascunho; QuestaoForm.razor calcula e mantém em dia.
+    [Parameter] public List<ItemMatrizReferencia> ItensHistoricos { get; set; } = new();
+
+    [Parameter, EditorRequired] public HashSet<int> ItemMatrizIdsSelecionados { get; set; } = new();
+
+    // Esta seção só repassa a intenção; quem muta Modelo.AreaCursoIds e bloqueia
+    // desmarcações que deixariam item nacional órfão é QuestaoForm.razor.
+    [Parameter, EditorRequired] public EventCallback<(int AreaCursoId, bool Marcado)> OnAlternarAreaCurso { get; set; }
+
+    // Mesma ideia, mas pra troca do Curso institucional (contexto de matriz PPC).
+    [Parameter, EditorRequired] public EventCallback<int?> OnAlternarCursoContexto { get; set; }
+
+    // União do Curso escolhido + Áreas marcadas + itens históricos; DistinctBy evita
+    // duplicar um item que apareça em mais de um conjunto.
+    private List<ItemMatrizReferencia> ItensVisiveis =>
+        ItensDoCurso.Concat(ItensDasAreas).Concat(ItensHistoricos).DistinctBy(i => i.Id).ToList();
+
+    private Task AoSelecionarCursoAsync(ChangeEventArgs e)
+    {
+        var valor = e.Value?.ToString();
+        int? novoCursoId = string.IsNullOrEmpty(valor) ? null : int.Parse(valor);
+        return OnAlternarCursoContexto.InvokeAsync(novoCursoId);
+    }
+
+    // Notifica QuestaoForm.razor a cada marcação/desmarcação, pra ele manter o
+    // detalhe (Matriz/Área/Curso) de cada item selecionado em dia.
+    [Parameter] public EventCallback OnItemAlterado { get; set; }
+
+    private Task NotificarMudancaCurricular() =>
+        OnItemAlterado.HasDelegate ? OnItemAlterado.InvokeAsync() : Task.CompletedTask;
+}

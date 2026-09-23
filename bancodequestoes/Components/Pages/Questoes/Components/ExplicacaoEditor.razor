@@ -1,0 +1,164 @@
+@using BancoQuestoes.Exportacao
+@inject SugestaoIaService SugestaoIa
+<!--
+    Editor da Explicação da resposta (textarea + pré-visualização, sem
+    toolbar) do formulário de Questão (Etapa 3 da refatoração — extraído de
+    QuestaoForm.razor, markup e comportamento idênticos ao original). Mesma
+    observação de EnunciadoEditor sobre o MathJax: continua disparado pelo
+    OnAfterRenderAsync de QuestaoForm.razor, localizando o elemento por id
+    ("preview-explicacao").
+
+    Botão "Sugerir com IA" adicionado depois: mesmo padrão de SugestaoIaCard
+    (sugestão opcional, nunca aplicada sozinha — o professor clica em "Usar"
+    pra copiar pro campo). IaHabilitada vem por parâmetro (calculado UMA vez
+    em QuestaoForm.OnInitializedAsync) em vez de este componente consultar
+    sozinho: como ExplicacaoEditor e SugestaoIaCard são irmãos renderizados
+    no mesmo passe, os dois chamando SugestaoIa.HabilitadaAsync() ao mesmo
+    tempo batiam no mesmo DbContext (scoped por circuito) e estourava
+    "A second operation was started on this context instance...".
+-->
+<div class="form-floating mb-2">
+    <InputTextArea @bind-Value="Modelo.Explicacao" @oninput="OnExplicacaoInput" id="explicacao-textarea" class="form-control" style="height: 80px;" placeholder="Explicação da resposta (opcional)" />
+    <label for="explicacao-textarea">Explicação da resposta (opcional)</label>
+</div>
+<p class="text-muted small mb-2">
+    Resolução/comentário sobre por que a resposta é essa — some no gabarito comentado da prova e ajuda quem for reaproveitar a questão depois. Aceita o mesmo Markdown/LaTeX do enunciado.
+</p>
+
+@if (IaHabilitada)
+{
+    var respostaCorreta = DescreverRespostaCorreta(Modelo);
+    <div class="ia-assistente-box mb-3">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(carregando || string.IsNullOrWhiteSpace(Modelo.Enunciado) || respostaCorreta is null)" @onclick="SugerirAsync">
+                @if (carregando)
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                else
+                {
+                    <i class="bi bi-stars me-1"></i>
+                }
+                Sugerir explicação com IA
+            </button>
+            <span class="text-muted small">A partir do enunciado e do gabarito já preenchido (modelo local, revisão sempre manual).</span>
+        </div>
+
+        @if (string.IsNullOrWhiteSpace(Modelo.Enunciado))
+        {
+            <p class="text-muted small mb-0 mt-1">Escreva o enunciado antes de pedir a explicação.</p>
+        }
+        else if (respostaCorreta is null)
+        {
+            <p class="text-muted small mb-0 mt-1">Preencha o gabarito (resposta correta) antes de pedir a explicação.</p>
+        }
+
+        @if (erro is not null)
+        {
+            <p class="text-danger small mb-0 mt-2">@erro</p>
+        }
+
+        @if (sugestao is not null)
+        {
+            <div class="mt-2">
+                <div class="border rounded p-2 bg-white markdown-preview mb-2">@RenderizarPreview(sugestao)</div>
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Aplicar">Usar esta explicação</button>
+            </div>
+        }
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Modelo.Explicacao))
+{
+    <div class="mb-3">
+        <span class="form-label small text-muted d-block mb-1">Pré-visualização</span>
+        <div class="border rounded p-2 bg-white markdown-preview" id="preview-explicacao">@RenderizarPreview(Modelo.Explicacao)</div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+
+    // Calculado uma vez em QuestaoForm.OnInitializedAsync e repassado por
+    // parâmetro — ver comentário no topo do arquivo sobre a corrida de
+    // DbContext que isso evita.
+    [Parameter] public bool IaHabilitada { get; set; }
+
+    private bool carregando;
+    private string? erro;
+    private string? sugestao;
+
+    private static MarkupString RenderizarPreview(string markdown) => (MarkupString)MarkdownPreview.ParaHtml(markdown);
+
+    // Mesmo motivo de OnEnunciadoInput em EnunciadoEditor.razor: InputTextArea
+    // não aceita @bind-Value:event="oninput" diretamente.
+    private void OnExplicacaoInput(ChangeEventArgs e) => Modelo.Explicacao = e.Value?.ToString();
+
+    private async Task SugerirAsync()
+    {
+        var respostaCorreta = DescreverRespostaCorreta(Modelo);
+        if (respostaCorreta is null)
+        {
+            return;
+        }
+
+        carregando = true;
+        erro = null;
+        sugestao = null;
+
+        try
+        {
+            sugestao = await SugestaoIa.SugerirExplicacaoAsync(Modelo.Enunciado, respostaCorreta);
+            if (sugestao is null)
+            {
+                erro = "Não foi possível obter a explicação agora — pode ser o Ollama fora do ar, ou o modelo ainda carregando/gerando (pode demorar mais na primeira vez). Tente de novo em instantes.";
+            }
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    private void Aplicar()
+    {
+        if (sugestao is not null)
+        {
+            Modelo.Explicacao = sugestao;
+        }
+    }
+
+    // Monta, em texto, o gabarito já preenchido na tela pra IA explicar — null
+    // quando ainda não dá pra saber qual é a resposta certa (nada pra explicar).
+    private static string? DescreverRespostaCorreta(QuestaoInput m) => m.TipoQuestao switch
+    {
+        TipoQuestao.MultiplaEscolha when m.RespostaCorretaIndex >= 0
+            && m.RespostaCorretaIndex < m.Alternativas.Count
+            && m.Alternativas.Count(a => !string.IsNullOrWhiteSpace(a.Texto)) >= 2 =>
+            $"Questão de múltipla escolha. Alternativa correta: \"{m.Alternativas[m.RespostaCorretaIndex].Texto}\". " +
+            "Todas as alternativas: " + string.Join(" | ", m.Alternativas.Select((a, i) => $"{(char)('A' + i)}) {a.Texto}")),
+
+        TipoQuestao.CertoErrado =>
+            $"Questão de Certo/Errado. A afirmação do enunciado é {(m.RespostaCorretaCE ? "CERTA" : "ERRADA")}.",
+
+        TipoQuestao.RespostaBreve when !string.IsNullOrWhiteSpace(m.RespostaBreveEsperada) =>
+            $"Questão de resposta breve. Resposta esperada: \"{m.RespostaBreveEsperada}\".",
+
+        TipoQuestao.Numerica when m.NumericaEsperada is not null =>
+            $"Questão numérica. Resposta esperada: {m.NumericaEsperada}" +
+            (m.NumericaTolerancia is { } tolerancia ? $" (tolerância ±{tolerancia})" : "") + ".",
+
+        TipoQuestao.Associacao when m.Pares.Count(p => !string.IsNullOrWhiteSpace(p.Termo) && !string.IsNullOrWhiteSpace(p.Correspondente)) >= 2 =>
+            "Questão de associação de colunas. Pares corretos: " +
+            string.Join(" | ", m.Pares.Where(p => !string.IsNullOrWhiteSpace(p.Termo)).Select(p => $"{p.Termo} = {p.Correspondente}")),
+
+        TipoQuestao.Discursiva when !string.IsNullOrWhiteSpace(m.RespostaEsperada) =>
+            "Questão discursiva. Resposta esperada/padrão de correção: " + m.RespostaEsperada,
+
+        TipoQuestao.Lacunas when m.Lacunas.Count(l => !string.IsNullOrWhiteSpace(l.RespostaEsperada)) > 0 =>
+            "Questão de preencher lacunas. Respostas esperadas, na ordem: " +
+            string.Join(", ", m.Lacunas.Select(l => l.RespostaEsperada)),
+
+        _ => null,
+    };
+}

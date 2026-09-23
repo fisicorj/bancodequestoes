@@ -77,11 +77,8 @@
 
     private Task DefinirModo(ModoPontuacao modo) => ModoPontuacaoChanged.InvokeAsync(modo);
 
-    // "@bind:after" só roda DEPOIS que o @bind já escreveu o valor novo em
-    // ValorTotal — por isso dá pra reenviar ValorTotal aqui mesmo (já está
-    // atualizado) pro ProvaForm via ValorTotalChanged (senão o pai nunca
-    // saberia do novo valor: [Parameter] não propaga sozinho pra cima), e
-    // também disparar OnAlterado, pro card Resumo da prova (irmão) refletir.
+    // "@bind:after" roda depois do @bind escrever ValorTotal, então já dá pra
+    // reenviar via ValorTotalChanged pro pai e disparar OnAlterado pro irmão.
     private async Task Alterado()
     {
         await ValorTotalChanged.InvokeAsync(ValorTotal);

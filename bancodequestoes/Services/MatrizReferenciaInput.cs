@@ -2,17 +2,11 @@ namespace BancoQuestoes.Services;
 
 using BancoQuestoes.Models;
 
-// "Command"/DTO da tela de Matriz de Referência (MatrizForm.razor) — mesmo
-// espírito de CursoInput/QuestaoInput: a tela liga um objeto público deste
-// tipo, e quem decide como validar/persistir é o Service.
+// DTO da tela de Matriz de Referência (MatrizForm.razor); validação e persistência ficam no Service.
 public sealed class MatrizReferenciaInput
 {
-    // Exatamente um dos dois é usado, dependendo do Tipo (ver
-    // TipoMatrizReferenciaExtensions.EhEscopoNacional e o comentário de
-    // escopo duplo em MatrizReferencia) — CursoId pra PPC/Institucional/
-    // Outro, AreaCursoId pra ENADE/DCN. Validado em
-    // MatrizReferenciaService.ValidarMatriz, não aqui (mesmo estilo dos
-    // outros Inputs do projeto).
+    // Exatamente um dos dois é usado conforme o Tipo: CursoId pra
+    // PPC/Institucional/Outro, AreaCursoId pra ENADE/DCN.
     public int CursoId { get; set; }
     public int? AreaCursoId { get; set; }
     public string Nome { get; set; } = "";

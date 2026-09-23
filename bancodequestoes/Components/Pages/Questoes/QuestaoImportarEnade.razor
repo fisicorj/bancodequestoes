@@ -1,0 +1,586 @@
+@page "/questoes/importar-enade"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@using BancoQuestoes.Importacao
+@using BancoQuestoes.Components.Pages.Questoes.Components
+@inject IImportadorProvaEnadeService ImportadorService
+@inject AreaCursoService AreaCursoService
+@inject DisciplinaService DisciplinaService
+@inject MatrizReferenciaService MatrizService
+@inject SugestaoIaService SugestaoIa
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager NavigationManager
+@inject ILogger<QuestaoImportarEnade> Logger
+
+<PageTitle>Importar Prova ENADE</PageTitle>
+
+<PageHeader Titulo="Importar Prova ENADE" Subtitulo="Envie os documentos oficiais, processe e revise antes de importar — nada é gravado no Banco de Questões até você confirmar." />
+<p class="text-muted small">
+    Extração 100% determinística (sem IA): número, seção, enunciado, alternativas e imagens vêm de texto/posição no PDF — o gabarito e a resposta esperada das discursivas nunca são adivinhados, só dos arquivos oficiais ou do que você preencher aqui.
+    Na revisão, a IA pode sugerir Bloom, Assunto e Alinhamento Curricular, apontar possíveis problemas de extração, e re-transcrever enunciado/alternativas a partir da imagem da página (quando o texto extraído parece corrompido) — sempre opcional, sob demanda, e nunca decide ou corrige nada sozinha.
+    Cada arquivo é tratado separadamente (nunca misturados): a prova sempre é obrigatória; gabarito e padrão de respostas são opcionais.
+</p>
+
+<!--
+    Indicador dos 4 passos do fluxo (Etapa 4 UX/UI, item 5 do pedido) - puramente
+    visual, calculado a partir do MESMO estado que já existia (resultado/
+    resultadoDefinitivo/processando); não muda nenhuma regra do importador.
+-->
+<ol class="import-passos mb-4">
+    <li class="@(PassoAtual == 1 ? "import-passo-ativo" : "")">1. Documentos</li>
+    <li class="@(PassoAtual == 2 ? "import-passo-ativo" : "")">2. Processamento</li>
+    <li class="@(PassoAtual == 3 ? "import-passo-ativo" : "")">3. Revisão</li>
+    <li class="@(PassoAtual == 4 ? "import-passo-ativo" : "")">4. Importação</li>
+</ol>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (resultadoDefinitivo is null)
+{
+    <div class="form-card mb-3">
+        <h2 class="section-title mb-3">1. Documentos</h2>
+
+        <div class="row g-3 mb-3">
+            <div class="col-md-3">
+                <div class="form-floating">
+                    <input type="number" class="form-control" id="Ano" @bind="ano" />
+                    <label for="Ano">Ano</label>
+                </div>
+            </div>
+            <div class="col-md-5">
+                <div class="form-floating">
+                    <select class="form-select" id="AreaCursoId" @bind="areaCursoId">
+                        <option value="0">Selecione...</option>
+                        @foreach (var a in areasCurso)
+                        {
+                            <option value="@a.Id">@a.Nome</option>
+                        }
+                    </select>
+                    <label for="AreaCursoId">Área de Curso (Componente Específico)</label>
+                </div>
+            </div>
+        </div>
+        <p class="text-muted small">A Área de Curso acima é usada só para as questões de Componente Específico — Formação Geral nunca fica vinculada a nenhuma Área (mesma regra do cadastro manual). Não é o Curso institucional: ENADE se relaciona a Área de Curso, não a Curso.</p>
+
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="documento-item">
+                    <div class="documento-item-cabecalho">
+                        <span class="documento-item-nome">Caderno da prova</span>
+                        @if (nomePdfProva is not null)
+                        {
+                            <span class="badge text-bg-success">✓ Carregado</span>
+                        }
+                        else
+                        {
+                            <span class="badge text-bg-secondary">Obrigatório</span>
+                        }
+                    </div>
+                    <InputFile OnChange="OnPdfProvaSelecionadoAsync" accept="application/pdf,.pdf" class="form-control form-control-sm mt-1" />
+                    @if (nomePdfProva is not null)
+                    {
+                        <div class="form-text">@nomePdfProva</div>
+                    }
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="documento-item">
+                    <div class="documento-item-cabecalho">
+                        <span class="documento-item-nome">Gabarito</span>
+                        @if (nomePdfGabarito is not null)
+                        {
+                            <span class="badge text-bg-success">✓ Carregado</span>
+                        }
+                        else
+                        {
+                            <span class="badge text-bg-light border">Opcional</span>
+                        }
+                    </div>
+                    <InputFile OnChange="OnPdfGabaritoSelecionadoAsync" accept="application/pdf,.pdf" class="form-control form-control-sm mt-1" />
+                    @if (nomePdfGabarito is not null)
+                    {
+                        <div class="form-text">@nomePdfGabarito</div>
+                    }
+                    <div class="form-text">Só a letra correta de cada questão objetiva — nunca inferido.</div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="documento-item">
+                    <div class="documento-item-cabecalho">
+                        <span class="documento-item-nome">Padrão de respostas discursivas</span>
+                        @if (nomePdfPadraoResposta is not null)
+                        {
+                            <span class="badge text-bg-success">✓ Carregado</span>
+                        }
+                        else
+                        {
+                            <span class="badge text-bg-light border">Opcional</span>
+                        }
+                    </div>
+                    <InputFile OnChange="OnPdfPadraoRespostaSelecionadoAsync" accept="application/pdf,.pdf" class="form-control form-control-sm mt-1" />
+                    @if (nomePdfPadraoResposta is not null)
+                    {
+                        <div class="form-text">@nomePdfPadraoResposta</div>
+                    }
+                    <div class="form-text">Texto oficial esperado para D1/D2 — sem ele, você preenche manualmente na revisão.</div>
+                </div>
+            </div>
+        </div>
+
+        <button type="button" class="btn btn-primary mt-3" @onclick="ProcessarAsync" disabled="@(!PodeProcessar() || processando)">
+            @(processando ? "Processando..." : "Processar prova")
+        </button>
+    </div>
+}
+
+@if (resultado is not null && resultadoDefinitivo is null)
+{
+    <h2 class="section-title mb-2">2. Processamento</h2>
+
+    <!--
+        Resumo do processamento (Etapa 4 UX/UI, item 7 do pedido) - reaproveita
+        exatamente os mesmos Count() que a versão anterior já calculava, só
+        reorganizados em rótulos/badges em vez de um parágrafo denso; nenhum
+        número novo, nenhuma regra do importador mudou.
+    -->
+    <div class="processamento-resumo mb-3">
+        <EnadeBadge Ano="resultado.Ano" Area="@resultado.NomeAreaCurso" />
+
+        <div class="processamento-resumo-docs mt-2">
+            <span>Caderno <strong class="text-success">✓</strong></span>
+            <span>Gabarito @(resultado.TinhaGabarito ? "✓" : "—")</span>
+            <span>Padrão de respostas @(resultado.TinhaPadraoResposta ? "✓" : "—")</span>
+        </div>
+
+        <div class="processamento-resumo-metricas mt-2">
+            <div><strong>@resultado.Questoes.Count</strong> questões encontradas</div>
+            <div>@resultado.Questoes.Count(q => q.Tipo == TipoQuestao.MultiplaEscolha) objetivas</div>
+            <div>@resultado.Questoes.Count(q => q.Tipo == TipoQuestao.Discursiva) discursivas</div>
+            <div>@resultado.Questoes.Count(q => q.Tipo == TipoQuestao.MultiplaEscolha && q.RespostaCorretaIndex is not null)/@resultado.Questoes.Count(q => q.Tipo == TipoQuestao.MultiplaEscolha) gabaritos reconhecidos</div>
+            <div>@resultado.Questoes.Count(q => q.Tipo == TipoQuestao.Discursiva && q.PaginaOrigemPadraoResposta is not null)/@resultado.Questoes.Count(q => q.Tipo == TipoQuestao.Discursiva) padrões discursivos</div>
+        </div>
+
+        <div class="processamento-resumo-status mt-2">
+            <span class="badge text-bg-success">@resultado.Questoes.Count(q => q.Status == StatusPreImportacaoEnade.Validada) prontas</span>
+            <span class="badge text-bg-warning">@resultado.Questoes.Count(q => q.Status == StatusPreImportacaoEnade.RequerRevisao) precisam de revisão</span>
+            @if (resultado.Questoes.Count(q => q.Status == StatusPreImportacaoEnade.ComErro) > 0)
+            {
+                <span class="badge text-bg-danger">@resultado.Questoes.Count(q => q.Status == StatusPreImportacaoEnade.ComErro) com erro</span>
+            }
+        </div>
+    </div>
+
+    @foreach (var alertaGeral in resultado.AlertasGerais)
+    {
+        <div class="alert alert-warning py-1">⚠ @alertaGeral</div>
+    }
+
+    @if (resultado.Questoes.Count == 0)
+    {
+        <p><em>Nenhuma questão foi reconhecida neste PDF.</em></p>
+    }
+    else
+    {
+        <h2 class="section-title mb-2 mt-4">3. Revisão</h2>
+
+        <div class="mb-2" style="max-width:280px;">
+            <label class="form-label small mb-0">Filtrar por tipo</label>
+            <select class="form-select form-select-sm" @bind="filtroTipo">
+                <option value="todas">Todas as questões</option>
+                <option value="objetivas">Apenas múltipla escolha</option>
+                <option value="discursivas">Apenas discursivas</option>
+            </select>
+        </div>
+
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th style="width:40px;"></th>
+                    <th>Nº</th>
+                    <th>Seção</th>
+                    <th>Tipo</th>
+                    <th>Enunciado</th>
+                    <th>Status</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var q in QuestoesFiltradas())
+                {
+                    <tr>
+                        <td><input type="checkbox" class="form-check-input" aria-label="@($"Selecionar questão {q.NumeroOriginal}")" @bind="q.Selecionada" /></td>
+                        <td>@q.NumeroOriginal</td>
+                        <td class="small">@RotuloSecao(q.Secao)</td>
+                        <td class="small">@(q.Tipo == TipoQuestao.Discursiva ? "Discursiva" : "Múltipla escolha")</td>
+                        <td class="small">@Truncar(q.Enunciado)</td>
+                        <td>
+                            @if (q.RevisaoSalva)
+                            {
+                                <span class="badge text-bg-primary">✓ Revisão salva</span>
+                            }
+                            else
+                            {
+                                <span class="badge @BadgeClasse(q.Status)">@RotuloStatus(q.Status)</span>
+                            }
+                            @if (q.Alertas.Count > 0)
+                            {
+                                <div class="text-warning small">⚠ @q.Alertas.Count alerta(s)</div>
+                            }
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AlternarExpandida(q.IdLote)">
+                                @(linhaExpandidaId == q.IdLote ? "Fechar" : "Revisar")
+                            </button>
+                        </td>
+                    </tr>
+                    @if (linhaExpandidaId == q.IdLote)
+                    {
+                        <tr>
+                            <td colspan="7">
+                                <RevisaoQuestaoEnade Q="q"
+                                                     Disciplinas="disciplinas"
+                                                     Assuntos="assuntos"
+                                                     NomeAreaCurso="resultado?.NomeAreaCurso"
+                                                     AreaCursoIdContexto="resultado?.AreaCursoId"
+                                                     ItensEnadeDisponiveis="itensEnadeDisponiveis"
+                                                     IaHabilitada="iaHabilitada"
+                                                     ModeloVisaoConfigurado="modeloVisaoConfigurado"
+                                                     OnSalvar="() => linhaExpandidaId = null" />
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+        @if (!QuestoesFiltradas().Any())
+        {
+            <p class="text-muted small"><em>Nenhuma questão corresponde ao filtro selecionado.</em></p>
+        }
+
+        <h2 class="section-title mb-2 mt-4">4. Importação</h2>
+        <button type="button" class="btn btn-success" @onclick="ImportarSelecionadasAsync" disabled="@(!PodeImportar())">
+            Importar selecionadas (@(resultado?.Questoes.Count(q => q.Selecionada) ?? 0))
+        </button>
+        <button type="button" class="btn btn-outline-secondary" @onclick="Cancelar">Cancelar</button>
+    }
+}
+
+@if (resultadoDefinitivo is not null)
+{
+    <h2 class="section-title mb-2">4. Importação</h2>
+    <div class="alert alert-success">
+        <strong>Importação concluída</strong><br />
+        @resultadoDefinitivo.Importadas.Count questão(ões) importada(s) ·
+        @resultadoDefinitivo.Ignoradas.Count ignorada(s) ·
+        @resultadoDefinitivo.ComErro.Count não importada(s) (erro)
+    </div>
+
+    @if (resultadoDefinitivo.ComErro.Count > 0)
+    {
+        <div class="alert alert-danger">
+            <strong>Questões não importadas:</strong>
+            <ul class="mb-0">
+                @foreach (var (q, msg) in resultadoDefinitivo.ComErro)
+                {
+                    <li>Questão @q.NumeroOriginal (@RotuloSecao(q.Secao)) — @msg</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <a class="btn btn-primary" href="questoes">Ver questões importadas</a>
+    <button type="button" class="btn btn-outline-secondary" @onclick="Cancelar">Importar outra prova</button>
+}
+
+<p class="mt-3"><a href="questoes">Voltar para questões</a></p>
+
+@code {
+    private const long TamanhoMaximoPdfProva = 30 * 1024 * 1024; // 30 MB
+    private const long TamanhoMaximoPdfGabarito = 10 * 1024 * 1024; // 10 MB
+    private const long TamanhoMaximoPdfPadraoResposta = 10 * 1024 * 1024; // 10 MB
+
+    private List<AreaCurso> areasCurso = new();
+    private List<Disciplina> disciplinas = new();
+    private List<Assunto> assuntos = new();
+
+    // Carregados uma vez (config) / depois de processar (itens dependem da
+    // Área de Curso escolhida) — repassados pro painel de revisão de cada
+    // questão (RevisaoQuestaoEnade.razor).
+    private bool iaHabilitada;
+    private bool modeloVisaoConfigurado;
+    private List<ItemMatrizReferencia> itensEnadeDisponiveis = new();
+
+    private int ano = DateTime.UtcNow.Year;
+    private int areaCursoId;
+    private byte[]? pdfProvaBytes;
+    private string? nomePdfProva;
+    private byte[]? pdfGabaritoBytes;
+    private string? nomePdfGabarito;
+    private byte[]? pdfPadraoRespostaBytes;
+    private string? nomePdfPadraoResposta;
+
+    private bool processando;
+    private string? erro;
+    private ResultadoImportacaoEnade? resultado;
+    private ResultadoImportacaoDefinitivaEnade? resultadoDefinitivo;
+    private int? linhaExpandidaId;
+
+    // Só decide qual dos 4 passos destacar no indicador acima — nenhuma regra
+    // do importador depende disso, é puramente visual.
+    private int PassoAtual =>
+        resultadoDefinitivo is not null ? 4 :
+        resultado is not null ? 3 :
+        processando ? 2 : 1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        areasCurso = await AreaCursoService.ListarAtivasAsync();
+        disciplinas = await DisciplinaService.ListarTodasAsync();
+        assuntos = await DisciplinaService.ListarTodosAssuntosAsync();
+        iaHabilitada = await SugestaoIa.HabilitadaAsync();
+        modeloVisaoConfigurado = await SugestaoIa.ModeloVisaoConfiguradoAsync();
+    }
+
+    // --- Upload: valida extensão/tamanho/vazio/erro de leitura, tudo em memória,
+    // nunca grava em disco (sem path de arquivo, sem risco de sobrescrita). ---
+
+    private static bool TemExtensaoPdf(string nomeArquivo) =>
+        nomeArquivo.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
+
+    private async Task OnPdfProvaSelecionadoAsync(InputFileChangeEventArgs e)
+    {
+        erro = null;
+        pdfProvaBytes = null;
+        nomePdfProva = null;
+        var arquivo = e.File;
+
+        if (!TemExtensaoPdf(arquivo.Name))
+        {
+            erro = "Selecione um arquivo .pdf para a prova.";
+            return;
+        }
+        if (arquivo.Size == 0)
+        {
+            erro = "O arquivo da prova está vazio.";
+            return;
+        }
+        if (arquivo.Size > TamanhoMaximoPdfProva)
+        {
+            erro = $"O arquivo da prova passa do tamanho máximo permitido ({TamanhoMaximoPdfProva / 1024 / 1024} MB).";
+            return;
+        }
+
+        try
+        {
+            using var ms = new MemoryStream();
+            await arquivo.OpenReadStream(TamanhoMaximoPdfProva).CopyToAsync(ms);
+            pdfProvaBytes = ms.ToArray();
+            nomePdfProva = arquivo.Name;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Falha ao ler PDF da prova \"{Arquivo}\"", arquivo.Name);
+            erro = "Não foi possível ler o arquivo da prova (verifique se é um PDF válido, não corrompido).";
+        }
+    }
+
+    private async Task OnPdfGabaritoSelecionadoAsync(InputFileChangeEventArgs e)
+    {
+        erro = null;
+        pdfGabaritoBytes = null;
+        nomePdfGabarito = null;
+        var arquivo = e.File;
+
+        if (!TemExtensaoPdf(arquivo.Name))
+        {
+            erro = "Selecione um arquivo .pdf para o gabarito (ou deixe em branco).";
+            return;
+        }
+        if (arquivo.Size == 0)
+        {
+            erro = "O arquivo de gabarito está vazio.";
+            return;
+        }
+        if (arquivo.Size > TamanhoMaximoPdfGabarito)
+        {
+            erro = $"O arquivo de gabarito passa do tamanho máximo permitido ({TamanhoMaximoPdfGabarito / 1024 / 1024} MB).";
+            return;
+        }
+
+        try
+        {
+            using var ms = new MemoryStream();
+            await arquivo.OpenReadStream(TamanhoMaximoPdfGabarito).CopyToAsync(ms);
+            pdfGabaritoBytes = ms.ToArray();
+            nomePdfGabarito = arquivo.Name;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Falha ao ler PDF do gabarito \"{Arquivo}\"", arquivo.Name);
+            erro = "Não foi possível ler o arquivo de gabarito (verifique se é um PDF válido, não corrompido).";
+        }
+    }
+
+    // Mesmas regras de segurança de upload dos outros dois arquivos: só PDF,
+    // tamanho máximo, não vazio, tudo em memória.
+    private async Task OnPdfPadraoRespostaSelecionadoAsync(InputFileChangeEventArgs e)
+    {
+        erro = null;
+        pdfPadraoRespostaBytes = null;
+        nomePdfPadraoResposta = null;
+        var arquivo = e.File;
+
+        if (!TemExtensaoPdf(arquivo.Name))
+        {
+            erro = "Selecione um arquivo .pdf para o padrão de respostas discursivas (ou deixe em branco).";
+            return;
+        }
+        if (arquivo.Size == 0)
+        {
+            erro = "O arquivo de padrão de respostas está vazio.";
+            return;
+        }
+        if (arquivo.Size > TamanhoMaximoPdfPadraoResposta)
+        {
+            erro = $"O arquivo de padrão de respostas passa do tamanho máximo permitido ({TamanhoMaximoPdfPadraoResposta / 1024 / 1024} MB).";
+            return;
+        }
+
+        try
+        {
+            using var ms = new MemoryStream();
+            await arquivo.OpenReadStream(TamanhoMaximoPdfPadraoResposta).CopyToAsync(ms);
+            pdfPadraoRespostaBytes = ms.ToArray();
+            nomePdfPadraoResposta = arquivo.Name;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Falha ao ler PDF do padrão de respostas \"{Arquivo}\"", arquivo.Name);
+            erro = "Não foi possível ler o arquivo de padrão de respostas (verifique se é um PDF válido, não corrompido).";
+        }
+    }
+
+    private bool PodeProcessar() => pdfProvaBytes is not null && ano >= 1990 && areaCursoId != 0;
+
+    private async Task ProcessarAsync()
+    {
+        erro = null;
+        resultado = null;
+        resultadoDefinitivo = null;
+        linhaExpandidaId = null;
+        itensEnadeDisponiveis = new();
+
+        if (!PodeProcessar() || pdfProvaBytes is null)
+        {
+            erro = "Selecione o PDF da prova, informe o ano e escolha a Área de Curso.";
+            return;
+        }
+
+        processando = true;
+        try
+        {
+            resultado = await ImportadorService.ProcessarAsync(pdfProvaBytes, pdfGabaritoBytes, pdfPadraoRespostaBytes, ano, areaCursoId);
+
+            // Itens ENADE vinculáveis à Área de Curso escolhida — carregados uma
+            // vez aqui (não por questão) e repassados pro painel de revisão, pra
+            // Alinhamento Curricular (manual ou sugerido por IA) na Etapa 3.
+            itensEnadeDisponiveis = await MatrizService.ListarItensVinculaveisPorAreasCursoAsync(new[] { areaCursoId });
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+        finally
+        {
+            processando = false;
+        }
+    }
+
+    private void AlternarExpandida(int idLote)
+    {
+        linhaExpandidaId = linhaExpandidaId == idLote ? null : idLote;
+    }
+
+    // Filtro só de visualização da tabela; nunca muda Selecionada nem a contagem
+    // de "Importar selecionadas" (conta todas marcadas, filtradas ou não).
+    private string filtroTipo = "todas";
+
+    private IEnumerable<QuestaoImportacaoEnade> QuestoesFiltradas() => filtroTipo switch
+    {
+        "objetivas" => (resultado?.Questoes ?? new()).Where(q => q.Tipo == TipoQuestao.MultiplaEscolha),
+        "discursivas" => (resultado?.Questoes ?? new()).Where(q => q.Tipo == TipoQuestao.Discursiva),
+        _ => resultado?.Questoes ?? new(),
+    };
+
+    private bool PodeImportar() => resultado is not null && resultado.Questoes.Any(q => q.Selecionada);
+
+    private async Task ImportarSelecionadasAsync()
+    {
+        if (resultado is null || !PodeImportar())
+        {
+            return;
+        }
+
+        erro = null;
+        try
+        {
+            var authState = await AuthProvider.GetAuthenticationStateAsync();
+            var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+            // minhaInstituicaoId não é usado aqui: toda questão importada nasce
+            // Privada, então null é seguro.
+            resultadoDefinitivo = await ImportadorService.ImportarSelecionadasAsync(resultado, userId, minhaInstituicaoId: null);
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private void Cancelar()
+    {
+        // Nada foi persistido em disco, então "cancelar" é só descartar as referências.
+        resultado = null;
+        resultadoDefinitivo = null;
+        pdfProvaBytes = null;
+        nomePdfProva = null;
+        pdfGabaritoBytes = null;
+        nomePdfGabarito = null;
+        pdfPadraoRespostaBytes = null;
+        nomePdfPadraoResposta = null;
+        linhaExpandidaId = null;
+        itensEnadeDisponiveis = new();
+        erro = null;
+    }
+
+    private static string Truncar(string texto) => texto.Length > 90 ? texto[..90] + "..." : texto;
+
+    // Reaproveita o rótulo existente; só cobre o caso "não identificada" (null).
+    private static string RotuloSecao(SecaoEnade? secao) => secao?.Rotulo() ?? "(não identificada)";
+
+    private static string RotuloStatus(StatusPreImportacaoEnade status) => status switch
+    {
+        StatusPreImportacaoEnade.Extraida => "Extraída",
+        StatusPreImportacaoEnade.RequerRevisao => "Requer revisão",
+        StatusPreImportacaoEnade.Validada => "Pronta",
+        StatusPreImportacaoEnade.ComErro => "Com erro",
+        StatusPreImportacaoEnade.Ignorada => "Ignorada",
+        StatusPreImportacaoEnade.Importada => "Importada",
+        _ => status.ToString(),
+    };
+
+    private static string BadgeClasse(StatusPreImportacaoEnade status) => status switch
+    {
+        StatusPreImportacaoEnade.Validada => "text-bg-success",
+        StatusPreImportacaoEnade.RequerRevisao => "text-bg-warning",
+        StatusPreImportacaoEnade.ComErro => "text-bg-danger",
+        StatusPreImportacaoEnade.Ignorada => "text-bg-secondary",
+        StatusPreImportacaoEnade.Importada => "text-bg-primary",
+        _ => "text-bg-light",
+    };
+
+}

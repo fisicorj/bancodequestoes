@@ -1,10 +1,7 @@
 namespace BancoQuestoes.Exportacao;
 
-// Lê largura/altura de PNG e JPEG direto dos bytes, sem depender de
-// System.Drawing (que no ASP.NET Core moderno só é suportado no Windows e a
-// Microsoft recomenda evitar em apps servidor). Só serve pra manter a
-// proporção da imagem no DOCX exportado — se o formato não for reconhecido,
-// quem chama cai num tamanho padrão razoável.
+// Lê largura/altura de PNG/JPEG direto dos bytes (sem System.Drawing, evitado em
+// apps servidor) só pra manter a proporção da imagem no DOCX; sem reconhecer, cai num padrão.
 internal static class ImagemUtils
 {
     public static (int Largura, int Altura)? LerDimensoes(byte[] bytes)

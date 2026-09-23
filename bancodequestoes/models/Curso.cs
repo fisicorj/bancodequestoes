@@ -1,7 +1,6 @@
 namespace BancoQuestoes.Models;
 
-// Curso pertence a uma Instituicao. Vincular a Prova a um Curso (em vez de à
-// Instituicao direto) resolve as duas coisas de uma vez: já traz o cabeçalho
+// Vincular a Prova a um Curso (em vez de à Instituicao direto) já traz o cabeçalho
 // certo (via Curso.Instituicao) e preenche o campo "Curso" no documento.
 public class Curso
 {
@@ -11,14 +10,8 @@ public class Curso
     public int InstituicaoId { get; set; }
     public Instituicao? Instituicao { get; set; }
 
-    // Opcional: qual Área de Curso nacional (ver AreaCurso) este curso desta
-    // instituição representa — ex.: "Engenharia de Computação da UFMG"
-    // aponta pra AreaCurso "Engenharia de Computação". É o que permite uma
-    // Matriz ENADE/DCN (ligada à AreaCurso, não a este Curso) valer pra
-    // qualquer instituição que tenha a mesma área, sem reimportar. Fica
-    // vazio até o professor escolher deliberadamente — nunca é inferido/
-    // criado sozinho a partir do Nome (mesmo princípio de "nunca criar
-    // automaticamente" já usado na importação de matriz completa).
+    // Opcional: qual AreaCurso nacional este curso representa — permite uma Matriz
+    // ENADE/DCN valer pra qualquer instituição com a mesma área. Nunca inferido do Nome.
     public int? AreaCursoId { get; set; }
     public AreaCurso? AreaCurso { get; set; }
 }

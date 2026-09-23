@@ -10,10 +10,8 @@ public sealed class CursoInput
 
     public int InstituicaoId { get; set; }
 
-    // Opcional (item da 2ª rodada de revisão) — qual Área de Curso nacional
-    // este curso representa (ver AreaCurso). 0/null = sem área escolhida
-    // ainda; matrizes ENADE/DCN não aparecem pra esse curso até o professor
-    // escolher uma.
+    // Área de Curso nacional que este curso representa; null = sem área
+    // escolhida ainda, e matrizes ENADE/DCN não aparecem pra ele até então.
     public int? AreaCursoId { get; set; }
 }
 
@@ -31,8 +29,17 @@ public sealed class TurmaInput
 
     public int Semestre { get; set; } = 1;
 
-    // Só obrigatório (ver CursoService.ValidarTurmaAsync) quando o Curso
-    // escolhido pertence a uma Instituição com
-    // SistemaPeriodos.SemestralComBimestres.
+    // Só obrigatório quando o Curso pertence a uma Instituição com SistemaPeriodos.SemestralComBimestres.
     public int? Bimestre { get; set; }
+}
+
+// DTO do vínculo CursoDisciplina — pra criar/editar manualmente
+// (Semestre/CargaHoraria) sem depender só do upsert automático via Turma.
+public sealed class CursoDisciplinaInput
+{
+    public int CursoId { get; set; }
+    public int DisciplinaId { get; set; }
+    public int? Semestre { get; set; }
+    public int? CargaHoraria { get; set; }
+    public bool Ativa { get; set; } = true;
 }

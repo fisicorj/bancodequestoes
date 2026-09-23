@@ -1,0 +1,307 @@
+@page "/responder/{Codigo}"
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+@inject AplicacaoProvaService AplicacaoProvaService
+@inject RespostaProvaOnlineService RespostaProvaOnlineService
+@inject AlunoService AlunoService
+@inject IJSRuntime JS
+
+<PageTitle>Responder prova</PageTitle>
+
+<div class="container" style="max-width: 760px;">
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (aplicacao is null)
+{
+    <div class="alert alert-danger mt-4">Código de acesso inválido.</div>
+}
+else if (tentativa is null)
+{
+    <div class="form-card mt-4">
+        <h3>@aplicacao.Prova?.Titulo</h3>
+        <p class="text-muted">Turma: @aplicacao.Turma?.Rotulo</p>
+
+        @if (aplicacao.Status != StatusAplicacaoProva.Aberta)
+        {
+            <div class="alert alert-warning">Essa prova não está mais aberta pra respostas.</div>
+        }
+        else if (aplicacao.DataLimite is { } prazo && DateTime.UtcNow > prazo)
+        {
+            <div class="alert alert-warning">O prazo pra responder essa prova já passou.</div>
+        }
+        else
+        {
+            <p>Selecione seu nome na lista abaixo pra começar. A prova entra em tela cheia e é encerrada automaticamente se você sair dela ou trocar de janela — só uma tentativa é permitida.</p>
+
+            @if (erro is not null)
+            {
+                <div class="alert alert-danger">@erro</div>
+            }
+
+            <select class="form-select mb-3" @bind="alunoSelecionadoId">
+                <option value="0">Selecione seu nome...</option>
+                @foreach (var a in alunosDisponiveis)
+                {
+                    <option value="@a.Id">@a.Nome</option>
+                }
+            </select>
+
+            <button type="button" class="btn btn-primary" @onclick="ComecarAsync" disabled="@(alunoSelecionadoId == 0)">
+                Começar a prova (tela cheia)
+            </button>
+        }
+    </div>
+}
+else if (tentativa.Status != StatusRespostaProvaOnline.EmAndamento)
+{
+    <div class="form-card mt-4 text-center">
+        <h3>Prova enviada</h3>
+        @if (tentativa.MotivoEncerramento is MotivoEncerramento.PerdaDeFoco or MotivoEncerramento.SaidaDeTelaCheia)
+        {
+            <div class="alert alert-warning">
+                Sua tentativa foi encerrada automaticamente (@tentativa.MotivoEncerramento.Value.Rotulo().ToLowerInvariant()).
+                O que você já tinha respondido foi salvo.
+            </div>
+        }
+        else
+        {
+            <p>Sua resposta foi enviada com sucesso.</p>
+        }
+
+        @if (tentativa.Status == StatusRespostaProvaOnline.Liberada)
+        {
+            <p class="fs-4">Nota: <strong>@tentativa.NotaTotal?.ToString("0.##")</strong></p>
+        }
+        else
+        {
+            <p class="text-muted">A nota será exibida aqui assim que o professor liberar.</p>
+        }
+    </div>
+}
+else
+{
+    <div class="form-card mt-4">
+        <h5>@aplicacao.Prova?.Titulo</h5>
+
+        @foreach (var q in questoes)
+        {
+            var resposta = RespostaDaQuestao(q.QuestaoId);
+            <div class="border rounded p-3 mb-3">
+                <p><strong>@q.Ordem.</strong> @q.Enunciado</p>
+
+                @switch (q.Tipo)
+                {
+                    case TipoQuestao.MultiplaEscolha:
+                        @foreach (var alt in q.Alternativas)
+                        {
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="@($"q{q.QuestaoId}")"
+                                       id="@($"q{q.QuestaoId}_{alt.Letra}")"
+                                       checked="@(resposta?.RespostaMultiplaEscolha == alt.Letra)"
+                                       @onchange="() => SalvarMultiplaEscolhaAsync(resposta!.Id, alt.Letra)" />
+                                <label class="form-check-label" for="@($"q{q.QuestaoId}_{alt.Letra}")">@alt.Letra) @alt.Texto</label>
+                            </div>
+                        }
+                        break;
+
+                    case TipoQuestao.CertoErrado:
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="@($"q{q.QuestaoId}")" id="@($"q{q.QuestaoId}_certo")"
+                                   checked="@(resposta?.RespostaCertoErrado == true)"
+                                   @onchange="() => SalvarCertoErradoAsync(resposta!.Id, true)" />
+                            <label class="form-check-label" for="@($"q{q.QuestaoId}_certo")">Certo</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="@($"q{q.QuestaoId}")" id="@($"q{q.QuestaoId}_errado")"
+                                   checked="@(resposta?.RespostaCertoErrado == false)"
+                                   @onchange="() => SalvarCertoErradoAsync(resposta!.Id, false)" />
+                            <label class="form-check-label" for="@($"q{q.QuestaoId}_errado")">Errado</label>
+                        </div>
+                        break;
+
+                    case TipoQuestao.Numerica:
+                        <input type="number" step="any" class="form-control" style="max-width: 220px;"
+                               value="@resposta?.RespostaNumerica"
+                               @onchange="e => SalvarNumericaAsync(resposta!.Id, e.Value?.ToString())" />
+                        break;
+
+                    case TipoQuestao.Lacunas:
+                        @for (var i = 0; i < q.QuantidadeLacunas; i++)
+                        {
+                            var ordem = i;
+                            <div class="mb-2">
+                                <label class="form-label small">Lacuna @(ordem + 1)</label>
+                                <input type="text" class="form-control"
+                                       value="@ObterTextoLacuna(q.QuestaoId, ordem)"
+                                       @onchange="e => SalvarLacunaAsync(resposta!.Id, q.QuestaoId, ordem, e.Value?.ToString() ?? string.Empty)" />
+                            </div>
+                        }
+                        break;
+                }
+            </div>
+        }
+
+        @if (erro is not null)
+        {
+            <div class="alert alert-danger">@erro</div>
+        }
+
+        <button type="button" class="btn btn-success" @onclick="EnviarAsync">Enviar prova</button>
+    </div>
+}
+</div>
+
+@code {
+    [Parameter]
+    public string Codigo { get; set; } = "";
+
+    private AplicacaoProva? aplicacao;
+    private List<Aluno> alunosDisponiveis = new();
+    private int alunoSelecionadoId;
+    private RespostaProvaOnline? tentativa;
+    private List<QuestaoOnlineExibicao> questoes = new();
+    private readonly Dictionary<int, Dictionary<int, string>> lacunasEditadas = new();
+    private bool carregando = true;
+    private string? erro;
+    private DotNetObjectReference<ResponderProva>? dotNetRef;
+    private bool monitoramentoAtivo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        aplicacao = await AplicacaoProvaService.ObterPorCodigoAsync(Codigo.Trim().ToUpperInvariant());
+        if (aplicacao is not null)
+        {
+            var matriculas = await AlunoService.ListarMatriculasDaTurmaAsync(aplicacao.TurmaId);
+            alunosDisponiveis = matriculas.Where(m => m.Ativa).Select(m => m.Aluno!).OrderBy(a => a.Nome).ToList();
+        }
+
+        carregando = false;
+    }
+
+    private RespostaQuestaoOnline? RespostaDaQuestao(int questaoId) =>
+        tentativa?.Respostas.FirstOrDefault(r => r.QuestaoId == questaoId);
+
+    private string ObterTextoLacuna(int questaoId, int ordem)
+    {
+        if (lacunasEditadas.TryGetValue(questaoId, out var porOrdem) && porOrdem.TryGetValue(ordem, out var texto))
+        {
+            return texto;
+        }
+
+        var resposta = RespostaDaQuestao(questaoId);
+        return resposta?.RespostasLacunas.FirstOrDefault(l => l.Ordem == ordem)?.RespostaTexto ?? "";
+    }
+
+    private async Task ComecarAsync()
+    {
+        erro = null;
+        try
+        {
+            var iniciada = await RespostaProvaOnlineService.IniciarOuRetomarAsync(aplicacao!.Id, alunoSelecionadoId);
+            tentativa = await RespostaProvaOnlineService.ObterParaResponderAsync(iniciada.Id);
+            questoes = await RespostaProvaOnlineService.ObterQuestoesParaExibicaoAsync(iniciada.Id);
+
+            if (tentativa!.Status == StatusRespostaProvaOnline.EmAndamento)
+            {
+                dotNetRef = DotNetObjectReference.Create(this);
+                await JS.InvokeVoidAsync("provaOnline.iniciar", dotNetRef);
+                monitoramentoAtivo = true;
+            }
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private async Task SalvarMultiplaEscolhaAsync(int respostaQuestaoOnlineId, char letra)
+    {
+        await RespostaProvaOnlineService.SalvarMultiplaEscolhaAsync(respostaQuestaoOnlineId, letra);
+        await RecarregarTentativaAsync();
+    }
+
+    private async Task SalvarCertoErradoAsync(int respostaQuestaoOnlineId, bool valor)
+    {
+        await RespostaProvaOnlineService.SalvarCertoErradoAsync(respostaQuestaoOnlineId, valor);
+        await RecarregarTentativaAsync();
+    }
+
+    private async Task SalvarNumericaAsync(int respostaQuestaoOnlineId, string? texto)
+    {
+        var valor = decimal.TryParse(texto, out var v) ? v : (decimal?)null;
+        await RespostaProvaOnlineService.SalvarNumericaAsync(respostaQuestaoOnlineId, valor);
+        await RecarregarTentativaAsync();
+    }
+
+    private async Task SalvarLacunaAsync(int respostaQuestaoOnlineId, int questaoId, int ordem, string texto)
+    {
+        if (!lacunasEditadas.TryGetValue(questaoId, out var porOrdem))
+        {
+            porOrdem = new Dictionary<int, string>();
+            lacunasEditadas[questaoId] = porOrdem;
+        }
+        porOrdem[ordem] = texto;
+
+        await RespostaProvaOnlineService.SalvarLacunasAsync(respostaQuestaoOnlineId, porOrdem);
+        await RecarregarTentativaAsync();
+    }
+
+    private async Task RecarregarTentativaAsync()
+    {
+        if (tentativa is not null)
+        {
+            tentativa = await RespostaProvaOnlineService.ObterParaResponderAsync(tentativa.Id);
+        }
+    }
+
+    private async Task EnviarAsync()
+    {
+        erro = null;
+        try
+        {
+            tentativa = await RespostaProvaOnlineService.EnviarAsync(tentativa!.Id);
+            await PararMonitoramentoAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    // Chamado pelo JS quando detecta blur/aba escondida — encerra a tentativa na hora,
+    // mantendo o que já foi respondido (ver comentário de limitação em prova-online.js).
+    [JSInvokable]
+    public async Task OnPerdaFoco() => await EncerrarForcadoAsync(MotivoEncerramento.PerdaDeFoco);
+
+    [JSInvokable]
+    public async Task OnSaiuTelaCheia() => await EncerrarForcadoAsync(MotivoEncerramento.SaidaDeTelaCheia);
+
+    private async Task EncerrarForcadoAsync(MotivoEncerramento motivo)
+    {
+        if (tentativa is null || tentativa.Status != StatusRespostaProvaOnline.EmAndamento)
+        {
+            return;
+        }
+
+        tentativa = await RespostaProvaOnlineService.EnviarAsync(tentativa.Id, motivo);
+        monitoramentoAtivo = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task PararMonitoramentoAsync()
+    {
+        if (monitoramentoAtivo)
+        {
+            monitoramentoAtivo = false;
+            await JS.InvokeVoidAsync("provaOnline.parar");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        dotNetRef?.Dispose();
+        await ValueTask.CompletedTask;
+    }
+}

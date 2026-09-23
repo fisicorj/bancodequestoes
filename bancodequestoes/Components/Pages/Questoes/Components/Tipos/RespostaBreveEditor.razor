@@ -1,0 +1,9 @@
+<!-- Editor do corpo específico de Resposta Breve (Etapa 3 — extraído de QuestaoForm.razor, idêntico ao original). -->
+<div class="form-floating mb-3">
+    <input class="form-control" @bind="Modelo.RespostaBreveEsperada" id="RespostaBreve" placeholder="Resposta esperada" />
+    <label for="RespostaBreve">Resposta esperada</label>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+}

@@ -7,6 +7,7 @@
 @inject MatrizReferenciaService MatrizService
 @inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthProvider
+@inject ILogger<MatrizItensImportar> Logger
 
 <PageTitle>Importar itens da matriz</PageTitle>
 
@@ -20,7 +21,7 @@ else if (matriz is null)
 }
 else
 {
-    <h1>Importar itens</h1>
+    <PageHeader Titulo="Importar itens" />
     <p class="text-muted">@matriz.Nome — @(matriz.Curso?.Nome ?? matriz.AreaCurso?.Nome)</p>
     <p>
         <a href="@($"matrizes/{MatrizId}/itens")" class="btn btn-sm btn-link px-0">&laquo; Voltar aos itens da matriz</a>
@@ -193,8 +194,9 @@ else
                 textoOriginal = await reader.ReadToEndAsync();
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Falha ao ler arquivo de importação de itens de matriz \"{Arquivo}\"", e.File.Name);
             erro = "Não foi possível ler o arquivo (verifique o formato e o tamanho, até 5 MB).";
         }
     }
@@ -213,8 +215,9 @@ else
                 _ => ItemMatrizImportParser.ParseCsv(textoOriginal),
             };
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Falha ao interpretar arquivo de importação de itens de matriz (formato {Formato})", formato);
             erro = "Não foi possível interpretar o arquivo — verifique se o formato selecionado corresponde ao conteúdo.";
             resultado = null;
         }

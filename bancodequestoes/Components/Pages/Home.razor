@@ -6,8 +6,7 @@
 
 <AuthorizeView>
     <Authorized>
-        <h1>Banco de Questões</h1>
-        <p class="text-muted">Olá, @context.User.Identity?.Name! O que você quer fazer?</p>
+        <PageHeader Titulo="Banco de Questões" Subtitulo="@($"Olá, {context.User.Identity?.Name}! O que você quer fazer?")" />
 
         <div class="row g-3 mt-2">
             <div class="col-12 col-md-4">

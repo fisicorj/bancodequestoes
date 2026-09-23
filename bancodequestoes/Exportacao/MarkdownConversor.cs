@@ -5,30 +5,20 @@ using Markdig.Syntax.Inlines;
 
 namespace BancoQuestoes.Exportacao;
 
-// Converte o Enunciado (Markdown + LaTeX) numa lista de blocos "prontos pra
-// desenhar" (ver BlocoMarkdown), andando pela árvore de sintaxe do Markdig uma
-// única vez. Os dois exportadores (DOCX, PDF) consomem o MESMO resultado desta
-// classe — nenhum dos dois entende Markdig diretamente, só sabe iterar
-// BlocoMarkdown/TrechoTexto. Isso evita ter duas implementações de parsing de
-// Markdown divergindo aos poucos.
+// Converte o Enunciado (Markdown + LaTeX) numa lista de BlocoMarkdown, andando pela
+// árvore do Markdig uma vez; DOCX e PDF consomem o mesmo resultado, sem duplicar parsing.
 public static class MarkdownConversor
 {
-    // Negrito, itálico, lista e código já vêm de graça no CommonMark básico —
-    // a única extensão que realmente precisamos ligar é a de tabelas (sintaxe
-    // "| a | b |"). Deliberadamente NÃO usamos UseAdvancedExtensions(): esse
-    // pacote inclui a extensão de Matemática, que passaria a interpretar
-    // "$...$" como um nó de fórmula PRÓPRIO do Markdig (MathInline/MathBlock)
-    // em vez de deixar como texto puro — e é o texto puro que o
-    // FormulaRenderer (CodeCogs) sabe procurar e converter em imagem. Ligar
-    // Math aqui quebraria silenciosamente todo o suporte a LaTeX existente.
-    // DisableHtml(): o professor não deveria conseguir injetar HTML bruto no
-    // enunciado (nem que seja sem querer, colando de outro lugar).
+    // Só liga tabelas; NÃO usa UseAdvancedExtensions() pois sua extensão de Matemática
+    // quebraria o LaTeX que o FormulaRenderer espera como texto puro.
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UsePipeTables()
         .DisableHtml()
         .Build();
 
-    public static async Task<List<BlocoMarkdown>> ConverterAsync(string? markdown)
+    // resolverImagem: resolve a URL da imagem pros bytes prontos pra desenhar; null
+    // (padrão ou URL não reconhecida) faz o parágrafo cair no tratamento normal de texto.
+    public static async Task<List<BlocoMarkdown>> ConverterAsync(string? markdown, Func<string, Task<ImagemExportDto?>>? resolverImagem = null)
     {
         var resultado = new List<BlocoMarkdown>();
         if (string.IsNullOrWhiteSpace(markdown))
@@ -37,11 +27,11 @@ public static class MarkdownConversor
         }
 
         var documento = Markdown.Parse(markdown, Pipeline);
-        await ConverterBlocosAsync(documento, resultado);
+        await ConverterBlocosAsync(documento, resultado, resolverImagem);
         return resultado;
     }
 
-    private static async Task ConverterBlocosAsync(ContainerBlock container, List<BlocoMarkdown> destino)
+    private static async Task ConverterBlocosAsync(ContainerBlock container, List<BlocoMarkdown> destino, Func<string, Task<ImagemExportDto?>>? resolverImagem)
     {
         foreach (var bloco in container)
         {
@@ -69,17 +59,26 @@ public static class MarkdownConversor
                     }
                     break;
 
-                // FencedCodeBlock (```) e CodeBlock (indentado com 4 espaços) —
-                // as duas formas do autor marcar "isto é código, não formate nada
-                // aqui dentro". FencedCodeBlock herda de CodeBlock, então um "case
-                // CodeBlock" já cobre as duas.
+                // FencedCodeBlock e CodeBlock indentado: FencedCodeBlock herda de
+                // CodeBlock, então "case CodeBlock" já cobre as duas formas.
                 case CodeBlock codigo:
                     destino.Add(new BlocoMarkdown { Tipo = TipoBlocoMarkdown.BlocoCodigo, CodigoBruto = codigo.Lines.ToString() });
                     break;
 
                 case LeafBlock folha when folha.Inline is not null:
-                    // Parágrafo, título (#), citação de uma linha etc. — qualquer
-                    // bloco "folha" com conteúdo inline vira um parágrafo.
+                    // Parágrafo cujo único conteúdo é uma imagem (ver ObterImagemUnica)
+                    // vira bloco Imagem; precisa vir antes do tratamento genérico abaixo.
+                    if (resolverImagem is not null && ObterImagemUnica(folha.Inline.FirstChild) is { } imagemLink)
+                    {
+                        var resolvida = await resolverImagem(imagemLink.Url ?? "");
+                        if (resolvida is not null)
+                        {
+                            destino.Add(new BlocoMarkdown { Tipo = TipoBlocoMarkdown.Imagem, Imagem = resolvida });
+                            break;
+                        }
+                    }
+
+                    // Qualquer bloco "folha" com conteúdo inline vira um parágrafo.
                     var trechosParagrafo = await ConverterInlineAsync(folha.Inline.FirstChild, negrito: false, italico: false);
                     if (trechosParagrafo.Count > 0)
                     {
@@ -88,21 +87,43 @@ public static class MarkdownConversor
                     break;
 
                 case ContainerBlock aninhado:
-                    // Blockquote e qualquer outro contêiner sem tratamento
-                    // específico: desce recursivamente em vez de descartar o
-                    // conteúdo silenciosamente.
-                    await ConverterBlocosAsync(aninhado, destino);
+                    // Blockquote e outros contêineres sem tratamento específico:
+                    // desce recursivamente em vez de descartar o conteúdo.
+                    await ConverterBlocosAsync(aninhado, destino, resolverImagem);
                     break;
             }
         }
     }
 
+    // Detecta parágrafo cujo único conteúdo visível é uma imagem sozinha na linha
+    // (como o botão "Imagem" do EnunciadoEditor insere); outro conteúdo invalida.
+    private static LinkInline? ObterImagemUnica(Inline? inicio)
+    {
+        LinkInline? encontrada = null;
+        for (var atual = inicio; atual is not null; atual = atual.NextSibling)
+        {
+            if (atual is LinkInline { IsImage: true } link)
+            {
+                if (encontrada is not null)
+                {
+                    return null; // mais de uma imagem no parágrafo — não é o caso simples
+                }
+                encontrada = link;
+                continue;
+            }
+            if (atual is LiteralInline literalVazio && string.IsNullOrWhiteSpace(literalVazio.Content.ToString()))
+            {
+                continue;
+            }
+            return null;
+        }
+        return encontrada;
+    }
+
     private static async Task<List<TrechoTexto>> ConverterConteudoDeItemAsync(ListItemBlock item)
     {
-        // Um item de lista normalmente tem um único parágrafo dentro. Uma lista
-        // "solta" (com linha em branco entre itens) pode gerar mais de um bloco
-        // por item — junta tudo num item só (não suportamos múltiplos parágrafos
-        // dentro do mesmo item por ora).
+        // Uma lista "solta" pode gerar mais de um bloco por item; junta tudo num
+        // item só (não suportamos múltiplos parágrafos dentro do mesmo item).
         var trechos = new List<TrechoTexto>();
         foreach (var filho in item)
         {
@@ -157,11 +178,8 @@ public static class MarkdownConversor
         return new BlocoMarkdown { Tipo = TipoBlocoMarkdown.Tabela, Tabela = linhas, TabelaTemCabecalho = temCabecalho };
     }
 
-    // Anda pela lista encadeada de inlines (texto, negrito, itálico, código,
-    // quebra de linha...) carregando o negrito/itálico "herdado" de fora pra
-    // dentro (um <strong><em>...</em></strong> aninhado precisa das duas
-    // marcações no texto final). Fórmulas ($...$) só são detectadas dentro de
-    // texto literal puro — nunca dentro de um CodeInline.
+    // Anda pela lista de inlines carregando negrito/itálico herdado de fora pra
+    // dentro. Fórmulas ($...$) só são detectadas em texto literal puro, nunca em CodeInline.
     private static async Task<List<TrechoTexto>> ConverterInlineAsync(Inline? inicio, bool negrito, bool italico)
     {
         var resultado = new List<TrechoTexto>();
@@ -174,15 +192,12 @@ public static class MarkdownConversor
                     break;
 
                 case CodeInline codigo:
-                    // .ToString() funciona tanto se Content for string quanto
-                    // StringSlice (versões diferentes do Markdig usam tipos
-                    // diferentes aqui) — dessa forma funciona nos dois casos.
+                    // .ToString() funciona tanto se Content for string quanto StringSlice.
                     resultado.Add(new TrechoTexto { Texto = codigo.Content.ToString(), CodigoInline = true });
                     break;
 
                 case EmphasisInline enfase:
-                    // DelimiterCount: 1 = itálico (*/_), 2 = negrito (**/__),
-                    // 3 = os dois juntos (***/___).
+                    // DelimiterCount: 1 = itálico, 2 = negrito, 3 = os dois juntos.
                     var novoNegrito = negrito || enfase.DelimiterCount is 2 or 3;
                     var novoItalico = italico || enfase.DelimiterCount is 1 or 3;
                     resultado.AddRange(await ConverterInlineAsync(enfase.FirstChild, novoNegrito, novoItalico));
@@ -193,15 +208,13 @@ public static class MarkdownConversor
                     break;
 
                 case ContainerInline container:
-                    // Link, e qualquer outro inline "com filhos" sem tratamento
-                    // especial: desce recursivamente (perde a URL do link, mas
-                    // mantém o texto visível em vez de sumir com ele).
+                    // Link e outros inlines "com filhos": desce recursivamente,
+                    // perde a URL mas mantém o texto visível.
                     resultado.AddRange(await ConverterInlineAsync(container.FirstChild, negrito, italico));
                     break;
 
                 default:
-                    // Autolink, entidade HTML etc. — mantém como texto puro em
-                    // vez de simplesmente descartar o conteúdo.
+                    // Autolink, entidade HTML etc.: mantém como texto puro em vez de descartar.
                     var textoBruto = atual.ToString();
                     if (!string.IsNullOrEmpty(textoBruto))
                     {

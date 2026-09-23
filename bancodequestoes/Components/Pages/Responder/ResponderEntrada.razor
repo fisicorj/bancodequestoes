@@ -1,0 +1,44 @@
+@page "/responder"
+@rendermode InteractiveServer
+@inject NavigationManager NavigationManager
+
+<PageTitle>Responder prova</PageTitle>
+
+<div class="container" style="max-width: 480px; margin-top: 4rem;">
+    <div class="form-card text-center">
+        <h3 class="mb-3">Responder prova</h3>
+        <p class="text-muted">Digite o código de acesso que o seu professor informou.</p>
+
+        <EditForm Model="this" OnValidSubmit="Entrar">
+            <div class="form-floating mb-3">
+                <input class="form-control text-center text-uppercase" style="letter-spacing: 0.2em; font-size: 1.4rem;"
+                       id="Codigo" @bind="codigo" @bind:event="oninput" maxlength="10" placeholder="Código" />
+                <label for="Codigo">Código de acesso</label>
+            </div>
+
+            @if (erro is not null)
+            {
+                <div class="alert alert-danger">@erro</div>
+            }
+
+            <button type="submit" class="btn btn-primary w-100" disabled="@string.IsNullOrWhiteSpace(codigo)">Entrar</button>
+        </EditForm>
+    </div>
+</div>
+
+@code {
+    private string codigo = "";
+    private string? erro;
+
+    private void Entrar()
+    {
+        var codigoLimpo = codigo.Trim();
+        if (string.IsNullOrWhiteSpace(codigoLimpo))
+        {
+            erro = "Informe o código de acesso.";
+            return;
+        }
+
+        NavigationManager.NavigateTo($"responder/{Uri.EscapeDataString(codigoLimpo.ToUpperInvariant())}");
+    }
+}

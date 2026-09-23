@@ -1,11 +1,7 @@
 namespace BancoQuestoes.Models;
 
-// "Cloze" simplificado: o professor escreve o Enunciado (herdado de Questao)
-// marcando cada lacuna com "___" (três ou mais underscores), na ordem em que
-// aparecem no texto. Cada item de Lacunas guarda a resposta esperada de uma
-// delas, casando pela posição (a primeira lacuna do texto usa Lacunas[0], e
-// assim por diante). Diferente do Cloze completo do Moodle, aqui não dá pra
-// misturar múltipla escolha/numérica dentro da lacuna — só texto esperado.
+// "Cloze" simplificado: lacunas marcadas com "___" no Enunciado casam por posição com
+// Lacunas[0], [1]... — diferente do Moodle, só aceita texto esperado (sem múltipla escolha/numérica).
 public class QuestaoLacunas : Questao
 {
     public List<LacunaResposta> Lacunas { get; set; } = new();

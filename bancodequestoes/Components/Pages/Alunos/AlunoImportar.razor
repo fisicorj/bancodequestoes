@@ -1,0 +1,181 @@
+@page "/alunos/importar"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using BancoQuestoes.Importacao
+@inject AlunoService AlunoService
+@inject InstituicaoService InstituicaoService
+@inject CursoService CursoService
+@inject NavigationManager NavigationManager
+@inject ILogger<AlunoImportar> Logger
+
+<PageTitle>Importar alunos</PageTitle>
+
+<PageHeader Titulo="Importar alunos (CSV)" />
+<p><a href="alunos" class="btn btn-sm btn-link px-0">&laquo; Voltar aos alunos</a></p>
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+<div class="form-card mb-3">
+    <p class="small text-muted mb-2">
+        Cabeçalho obrigatório: <code>Nome</code>. <code>Email</code> e <code>Matricula</code> são opcionais.
+        Um aluno já cadastrado (mesma Matrícula ou Email, na mesma instituição) é reaproveitado em vez de duplicado.
+    </p>
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <div class="form-floating">
+                <select class="form-select" id="InstituicaoId" @bind="instituicaoId">
+                    <option value="0">Sem instituição</option>
+                    @foreach (var i in instituicoes)
+                    {
+                        <option value="@i.Id">@i.Nome</option>
+                    }
+                </select>
+                <label for="InstituicaoId">Instituição dos novos alunos</label>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="form-floating">
+                <select class="form-select" id="TurmaId" @bind="turmaId">
+                    <option value="0">Não matricular automaticamente</option>
+                    @foreach (var t in turmas)
+                    {
+                        <option value="@t.Id">@t.Rotulo</option>
+                    }
+                </select>
+                <label for="TurmaId">Matricular na turma (opcional)</label>
+            </div>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Arquivo (.csv)</label>
+        <InputFile OnChange="OnArquivoSelecionadoAsync" accept=".csv" class="form-control" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Ou cole o conteúdo aqui</label>
+        <textarea class="form-control" style="height: 220px; font-family: monospace;" @bind="textoOriginal" placeholder="Nome,Email,Matricula&#10;Maria Silva,maria@exemplo.com,2026001"></textarea>
+    </div>
+
+    <button type="button" class="btn btn-primary" @onclick="Analisar" disabled="@string.IsNullOrWhiteSpace(textoOriginal)">Analisar</button>
+</div>
+
+@if (resultado is not null)
+{
+    @if (resultado.Erros.Count > 0)
+    {
+        <div class="alert alert-warning">
+            <strong>@resultado.Erros.Count aviso(s)/erro(s):</strong>
+            <ul class="mb-0">
+                @foreach (var e in resultado.Erros)
+                {
+                    <li>@e</li>
+                }
+            </ul>
+        </div>
+    }
+
+    @if (resultado.Alunos.Count == 0)
+    {
+        <p><em>Nenhum aluno importável foi reconhecido.</em></p>
+    }
+    else
+    {
+        <h5>Pré-visualização (@resultado.Alunos.Count aluno(s) reconhecido(s))</h5>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th style="width:40px;"></th>
+                    <th>Nome</th>
+                    <th>Email</th>
+                    <th>Matrícula</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var linha in resultado.Alunos)
+                {
+                    <tr>
+                        <td><input type="checkbox" class="form-check-input" @bind="linha.Selecionado" /></td>
+                        <td>@linha.Nome</td>
+                        <td>@linha.Email</td>
+                        <td>@linha.Matricula</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        <button type="button" class="btn btn-success" @onclick="ImportarAsync" disabled="@(!resultado.Alunos.Any(a => a.Selecionado))">
+            Importar selecionados (@resultado.Alunos.Count(a => a.Selecionado))
+        </button>
+    }
+}
+
+@code {
+    private List<Instituicao> instituicoes = new();
+    private List<Turma> turmas = new();
+    private int instituicaoId;
+    private int turmaId;
+
+    private string textoOriginal = "";
+    private ResultadoImportacaoAlunos? resultado;
+    private string? erro;
+
+    protected override async Task OnInitializedAsync()
+    {
+        instituicoes = await InstituicaoService.ListarTodasAsync();
+        turmas = await CursoService.ListarTodasTurmasAsync();
+    }
+
+    private async Task OnArquivoSelecionadoAsync(InputFileChangeEventArgs e)
+    {
+        erro = null;
+        try
+        {
+            using var reader = new StreamReader(e.File.OpenReadStream(5 * 1024 * 1024)); // até 5 MB
+            textoOriginal = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Falha ao ler arquivo de importação de alunos \"{Arquivo}\"", e.File.Name);
+            erro = "Não foi possível ler o arquivo (verifique o formato e o tamanho, até 5 MB).";
+        }
+    }
+
+    private void Analisar()
+    {
+        erro = null;
+        resultado = AlunoImportParser.ParseCsv(textoOriginal);
+    }
+
+    private async Task ImportarAsync()
+    {
+        if (resultado is null)
+        {
+            return;
+        }
+
+        erro = null;
+
+        try
+        {
+            var selecionados = resultado.Alunos.Where(a => a.Selecionado).ToList();
+            var resumo = await AlunoService.ImportarAsync(
+                selecionados,
+                instituicaoId == 0 ? null : instituicaoId,
+                turmaId == 0 ? null : turmaId);
+
+            var mensagem = $"{resumo.AlunosCriados} aluno(s) criado(s), {resumo.AlunosReaproveitados} reaproveitado(s)" +
+                (turmaId != 0 ? $", {resumo.Matriculas} matrícula(s)." : ".");
+
+            NavigationManager.NavigateTo($"alunos?msg={Uri.EscapeDataString(mensagem)}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

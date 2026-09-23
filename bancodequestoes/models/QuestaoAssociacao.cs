@@ -1,9 +1,7 @@
 namespace BancoQuestoes.Models;
 
-// Questão de associação: o aluno liga cada "Termo" (coluna A) ao seu
-// "Correspondente" certo (coluna B). Guardamos os pares já casados — na hora
-// de exportar é que a coluna B é embaralhada e letrada, pra não ficar óbvio
-// que o item 1 da coluna A sempre bate com o item 1 da coluna B.
+// Pares já casados são guardados na ordem certa; a coluna B só é embaralhada
+// e letrada na exportação, pra não ficar óbvio que item 1 bate com item 1.
 public class QuestaoAssociacao : Questao
 {
     public List<ParAssociacao> Pares { get; set; } = new();

@@ -1,13 +1,13 @@
 @page "/instituicoes/novo"
 @page "/instituicoes/editar/{Id:int}"
-@attribute [Authorize]
+@attribute [Authorize(Roles = "Admin")]
 @rendermode InteractiveServer
 @inject InstituicaoService InstituicaoService
 @inject NavigationManager NavigationManager
 
 <PageTitle>@(Id is null ? "Nova instituição" : "Editar instituição")</PageTitle>
 
-<h1>@(Id is null ? "Nova instituição" : "Editar instituição")</h1>
+<PageHeader Titulo="@(Id is null ? "Nova instituição" : "Editar instituição")" />
 
 @if (erro is not null)
 {
@@ -161,10 +161,22 @@ else
 
         using var ms = new MemoryStream();
         await arquivo.OpenReadStream(TamanhoMaximoLogo).CopyToAsync(ms);
+        var conteudo = ms.ToArray();
+
+        // Ignora o Content-Type declarado pelo navegador — confia só na assinatura real
+        // dos bytes (ver ValidadorImagem.cs). Importante aqui em especial: a logo é servida
+        // de volta por /instituicoes/logo/{id} pra QUALQUER usuário autenticado.
+        var contentTypeReal = ValidadorImagem.DetectarContentType(conteudo);
+        if (contentTypeReal is null)
+        {
+            erroLogo = "O arquivo não parece ser uma imagem válida (PNG, JPEG, GIF, WEBP ou BMP).";
+            return;
+        }
+
         logoNova = new LogoPendente
         {
-            ContentType = string.IsNullOrWhiteSpace(arquivo.ContentType) ? "application/octet-stream" : arquivo.ContentType,
-            Conteudo = ms.ToArray(),
+            ContentType = contentTypeReal,
+            Conteudo = conteudo,
         };
         removerLogo = false;
     }

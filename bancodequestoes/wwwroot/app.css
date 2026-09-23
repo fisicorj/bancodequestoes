@@ -79,6 +79,396 @@ a, .btn-link {
         color: var(--bq-primary-dark);
     }
 
+/* ---------- Hierarquia visual e layout (Etapa 1 UX/UI) -----------------
+   Escala de espaçamento de referência pra próximas etapas (não é preciso
+   migrar tudo agora — os utilitários do Bootstrap (p-1..p-5, gap-1..gap-5)
+   já cobrem a maior parte disso; isto aqui documenta a escala-alvo):
+   4 · 8 · 12 · 16 · 24 · 32px.
+   ------------------------------------------------------------------------ */
+
+:root {
+    --bq-space-1: 0.25rem; /* 4px */
+    --bq-space-2: 0.5rem;  /* 8px */
+    --bq-space-3: 0.75rem; /* 12px */
+    --bq-space-4: 1rem;    /* 16px */
+    --bq-space-5: 1.5rem;  /* 24px */
+    --bq-space-6: 2rem;    /* 32px */
+}
+
+/* Container de largura máxima — evita conteúdo esticado em monitores
+   grandes. Tabelas/listagens usam a variante larga; formulários, a estreita.
+   Aplicado em MainLayout.razor envolvendo @Body; páginas não precisam saber
+   disso, só entram automaticamente. */
+.container-page {
+    max-width: 1320px;
+    margin: 0 auto;
+}
+
+.container-page.container-page-form {
+    max-width: 760px;
+}
+
+/* Tipografia com nomes semânticos (page/section/card/caption), pra não
+   depender de h1/h5/p.text-muted genéricos do Bootstrap em cada página. */
+.page-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #16182a;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.25rem;
+}
+
+.page-subtitle {
+    color: var(--bq-text-muted);
+    margin-bottom: 0;
+    max-width: 70ch;
+}
+
+.section-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #16182a;
+    margin-bottom: 0.15rem;
+}
+
+.section-subtitle {
+    color: var(--bq-text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 0;
+}
+
+.text-caption {
+    font-size: 0.78rem;
+    color: var(--bq-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+
+/* Cabeçalho de página padrão (componente Components/Shared/PageHeader.razor):
+   título + subtítulo curto à esquerda, UMA ação principal à direita. */
+.page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--bq-space-4);
+    margin-bottom: var(--bq-space-5);
+}
+
+.page-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--bq-space-2);
+    flex-shrink: 0;
+    position: relative;
+}
+
+/* Menu "Mais ações" — sem depender do JS do Bootstrap (o app não carrega
+   bootstrap.bundle.js; modais e afins já são controlados via @if do Blazor),
+   então esse dropdown também é resolvido só com estado Blazor + CSS. */
+.dropdown-simples {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-simples-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 0.35rem);
+    z-index: 20;
+    min-width: 260px;
+    background-color: var(--bq-surface);
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius);
+    box-shadow: var(--bq-shadow-lg);
+    padding: 0.4rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.dropdown-simples-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: var(--bq-radius-sm);
+    padding: 0.5rem 0.6rem;
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--bq-text);
+    text-decoration: none;
+}
+
+    .dropdown-simples-item:hover {
+        background-color: var(--bq-primary-light);
+        color: var(--bq-primary-dark);
+    }
+
+.dropdown-simples-divider {
+    margin: 0.3rem 0.2rem;
+    border: none;
+    border-top: 1px solid var(--bq-border);
+}
+
+/* Item do menu que também é um "form-check" (checkbox + label) — ex.: "usar IA
+   (Ollama)..." em QuestaoList.razor. O Bootstrap posiciona o checkbox com
+   float:left + margin-left:-1.5em (esperando um container display:block com
+   padding-left), mas .dropdown-simples-item é display:flex — floats são
+   ignorados dentro de flex, então aquela margem negativa só empurra o
+   checkbox pra fora do menu (bug reportado). Como o gap:0.4rem do
+   .dropdown-simples-item já separa checkbox e texto, é só zerar o
+   float/margem do Bootstrap aqui. */
+.dropdown-simples-item.form-check {
+    padding-left: 0.6rem;
+}
+
+    .dropdown-simples-item.form-check .form-check-input {
+        float: none;
+        margin-left: 0;
+        flex-shrink: 0;
+    }
+
+.dropdown-simples-item-perigo {
+    color: var(--bq-danger);
+}
+
+    .dropdown-simples-item-perigo:hover {
+        background-color: var(--bq-danger-light);
+        color: var(--bq-danger);
+    }
+
+/* ---------- Card de questão (Etapa 2 UX/UI) ----------------------------- */
+/* O enunciado é o que deve dominar visualmente o card — maior que o texto
+   corrido normal, mas sem virar título (h5/h6 chamaria atenção demais). */
+.questao-card-enunciado {
+    font-size: 1rem;
+    color: var(--bq-text);
+    line-height: 1.45;
+}
+
+/* Bloco de metadados secundários (visibilidade, uso, alinhamento, tags) —
+   discreto de propósito: nada foi removido, só não compete mais com
+   tipo/dificuldade/enunciado acima. */
+.questao-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    row-gap: 0.25rem;
+}
+
+    .questao-card-meta > div {
+        flex-basis: 100%;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.3rem;
+    }
+
+/* ---------- QuestaoForm: seções e assistente de IA (Etapa 2 UX/UI) ----- */
+
+/* Espaçamento entre as 4 seções do formulário (Conteúdo/Classificação/
+   Aderência/Configurações) — mesma página, sem virar wizard: só uma régua
+   visual (borda fina) separando cada bloco ao rolar. */
+.form-section {
+    margin-bottom: 2rem;
+}
+
+    .form-section + .form-section {
+        padding-top: 1.75rem;
+        border-top: 1px solid var(--bq-border);
+    }
+
+/* <details> da seção "Aderência curricular e ENADE" — já era recolhível
+   antes desta etapa, só ganhou o título/estilo padrão das outras seções. */
+.details-secao > summary {
+    cursor: pointer;
+    list-style: revert;
+}
+
+    .details-secao > summary::marker {
+        color: var(--bq-text-muted);
+    }
+
+/* Cartões de sugestão por IA — deliberadamente mais discretos que os
+   cartões de conteúdo (borda tracejada, sem sombra), pra parecer um
+   assistente opcional, não mais um bloco "oficial" do formulário. */
+.ia-assistente-box {
+    background-color: var(--bq-primary-light);
+    border: 1px dashed rgba(var(--bq-primary-rgb), 0.35);
+    border-radius: var(--bq-radius);
+    padding: 0.85rem 1rem;
+}
+
+/* ---------- Janela flutuante arrastável (Importador ENADE: "Ver original") */
+.janela-flutuante {
+    position: fixed;
+    top: 96px;
+    right: 24px;
+    width: min(480px, calc(100vw - 48px));
+    max-height: min(640px, calc(100vh - 120px));
+    background: var(--bq-surface);
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius-lg);
+    box-shadow: var(--bq-shadow-lg);
+    z-index: 1050;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.janela-flutuante-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--bq-space-2);
+    padding: var(--bq-space-2) var(--bq-space-3);
+    background: var(--bq-bg);
+    border-bottom: 1px solid var(--bq-border);
+    cursor: move;
+    -webkit-user-select: none;
+    user-select: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--bq-text);
+}
+
+.janela-flutuante-fechar {
+    border: none;
+    background: transparent;
+    font-size: 1.15rem;
+    line-height: 1;
+    color: var(--bq-text-muted);
+    cursor: pointer;
+    padding: 0 var(--bq-space-1);
+}
+
+.janela-flutuante-fechar:hover {
+    color: var(--bq-text);
+}
+
+.janela-flutuante-corpo {
+    padding: var(--bq-space-2);
+    overflow: auto;
+}
+
+.janela-flutuante-corpo img {
+    max-width: 100%;
+    display: block;
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius-sm);
+    margin-bottom: var(--bq-space-2);
+}
+
+/* ---------- Empty states (Etapa 2 UX/UI) -------------------------------- */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    background-color: var(--bq-surface);
+    border: 1px dashed var(--bq-border);
+    border-radius: var(--bq-radius-lg);
+}
+
+.empty-state-icon {
+    font-size: 2.2rem;
+    color: var(--bq-text-muted);
+    margin-bottom: 0.75rem;
+    display: block;
+}
+
+.empty-state-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #16182a;
+    margin-bottom: 0.25rem;
+}
+
+.empty-state-text {
+    color: var(--bq-text-muted);
+    margin-bottom: 1.25rem;
+}
+
+/* ---------- Banco de Questões: busca e filtros (Etapa 2 UX/UI) --------- */
+
+/* Busca dominante — maior, com ícone, sozinha acima dos filtros (em vez de
+   ser só mais um campo do grid, do tamanho dos outros). */
+.search-bar-questoes {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+    .search-bar-questoes > .bi-search {
+        position: absolute;
+        left: 1rem;
+        color: var(--bq-text-muted);
+        font-size: 1.05rem;
+        pointer-events: none;
+    }
+
+    .search-bar-questoes > input.form-control {
+        padding-left: 2.6rem;
+        padding-right: 2.6rem;
+        border-radius: var(--bq-radius);
+        box-shadow: var(--bq-shadow-sm);
+    }
+
+.search-bar-questoes-clear {
+    position: absolute;
+    right: 0.6rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.8rem;
+    height: 1.8rem;
+    border: none;
+    background: none;
+    border-radius: 50%;
+    color: var(--bq-text-muted);
+}
+
+    .search-bar-questoes-clear:hover {
+        background-color: var(--bq-primary-light);
+        color: var(--bq-primary-dark);
+    }
+
+/* Chips de filtro ativo — removível individualmente, mais legível que um
+   <select> voltando pra "Todos" escondido no meio do formulário. */
+.filtro-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background-color: var(--bq-primary-light);
+    color: var(--bq-primary-dark);
+    border-radius: 999px;
+    padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+    .filtro-chip button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.15rem;
+        height: 1.15rem;
+        border: none;
+        background: rgba(var(--bq-primary-rgb), 0.15);
+        border-radius: 50%;
+        color: inherit;
+        font-size: 0.7rem;
+        line-height: 1;
+    }
+
+        .filtro-chip button:hover {
+            background: rgba(var(--bq-primary-rgb), 0.3);
+        }
+
 /* ---------- Botões ---------------------------------------------------- */
 
 .btn {
@@ -180,6 +570,15 @@ a, .btn-link {
 
 .btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus, .form-select:focus {
     box-shadow: 0 0 0 0.2rem rgba(var(--bq-primary-rgb), 0.25);
+}
+
+/* Elementos clicáveis "customizados" (Etapas 2-4) que não usam a classe
+   .btn acima e por isso ficavam sem nenhum indicador de foco por teclado
+   (Etapa 4 UX/UI, item 11 — acessibilidade). */
+.dropdown-simples-item:focus-visible,
+.modo-montagem-card:focus-visible {
+    outline: 2px solid var(--bq-primary);
+    outline-offset: -2px;
 }
 
 /* ---------- Formulários ------------------------------------------------ */
@@ -439,3 +838,249 @@ a, .btn-link {
     .blazor-error-boundary::after {
         content: "An error has occurred."
     }
+
+/* ---------- ProvaForm: escolha de modo de montagem (Etapa 3 UX/UI) ------ */
+/* Duas opções de mesmo peso visual (Automático / Manual) + um terceiro
+   placeholder desabilitado ("Em breve") — nenhuma das opções deve competir
+   visualmente com a outra (item 2 do pedido). */
+.modo-montagem-opcoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bq-space-4);
+}
+
+.modo-montagem-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+    width: 260px;
+    text-align: left;
+    background-color: var(--bq-surface);
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius);
+    padding: 1rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+    .modo-montagem-card:hover {
+        border-color: var(--bq-primary);
+        box-shadow: var(--bq-shadow-sm);
+    }
+
+.modo-montagem-card-icone {
+    font-size: 1.4rem;
+}
+
+.modo-montagem-card-titulo {
+    font-weight: 700;
+    color: var(--bq-text);
+}
+
+.modo-montagem-card-desc {
+    font-size: 0.85rem;
+    color: var(--bq-text-muted);
+}
+
+.modo-montagem-card-em-breve {
+    cursor: default;
+    opacity: 0.6;
+}
+
+    .modo-montagem-card-em-breve:hover {
+        border-color: var(--bq-border);
+        box-shadow: none;
+    }
+
+/* ---------- GeradorAutomatico: agrupamento de critérios (Etapa 3 UX/UI) - */
+/* Só separa visualmente Quantidade+Dificuldade / Conteúdo / Tipos — nenhum
+   cálculo mudou, só a moldura ao redor de cada bloco (item 4 do pedido). */
+.gerador-grupo {
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius);
+    padding: 1rem;
+    background-color: var(--bq-bg);
+}
+
+.gerador-grupo-titulo {
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--bq-text-muted);
+    margin-bottom: 0.75rem;
+}
+
+/* ---------- Resumo vivo da prova (Etapa 3 UX/UI, item 10) --------------- */
+/* Aparece em ambos os modos (Manual e Automático) assim que há questão
+   selecionada — só leitura de números já calculados (quantidade, soma de
+   valor, tempo estimado). */
+.resumo-prova-sticky {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: var(--bq-surface);
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius);
+    box-shadow: var(--bq-shadow);
+    padding: 0.65rem 1rem;
+    font-size: 0.9rem;
+}
+
+.resumo-prova-sticky-sep {
+    color: var(--bq-text-muted);
+}
+
+/* ---------- Card "Proposta gerada" (Etapa 3 UX/UI, item 7) -------------- */
+.proposta-gerada-card {
+    background-color: var(--bq-success-light);
+    border: 1px solid rgba(22, 163, 74, 0.25);
+    border-radius: var(--bq-radius);
+    padding: 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.proposta-gerada-titulo {
+    font-weight: 700;
+    color: var(--bq-success);
+    flex-basis: 100%;
+}
+
+.proposta-gerada-metricas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    font-size: 0.9rem;
+}
+
+.proposta-gerada-acoes {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+/* ---------- Identidade ENADE (Etapa 4 UX/UI, item 2) --------------------- */
+/* Um único selo reusado em toda parte que identifica uma prova/matriz/
+   questão do ENADE — deliberadamente sóbrio (reusa --bq-primary, sem cor
+   nova só pra ENADE) e sempre no formato "ENADE {ano}" + área/curso. */
+.enade-badge {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.enade-badge-selo {
+    display: inline-block;
+    background-color: var(--bq-primary-light);
+    color: var(--bq-primary-dark);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    border-radius: var(--bq-radius-sm);
+    padding: 0.15rem 0.5rem;
+    white-space: nowrap;
+}
+
+.enade-badge-area {
+    color: var(--bq-text-muted);
+    font-size: 0.85rem;
+}
+
+/* ---------- Recap "Aderência curricular" (Etapa 4 UX/UI, item 4) -------- */
+.aderencia-curricular-resumo {
+    background-color: var(--bq-bg);
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius);
+    padding: 0.75rem 1rem;
+}
+
+.aderencia-curricular-grupo + .aderencia-curricular-grupo {
+    margin-top: 0.6rem;
+}
+
+.aderencia-curricular-lista {
+    list-style: none;
+    padding-left: 0;
+    margin-top: 0.25rem;
+    font-size: 0.88rem;
+    color: var(--bq-text);
+}
+
+/* ---------- Importador ENADE: fluxo em 4 passos (Etapa 4 UX/UI) --------- */
+.import-passos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    list-style: none;
+    padding-left: 0;
+    margin-bottom: 0;
+}
+
+.import-passos li {
+    background-color: var(--bq-bg);
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius-sm);
+    padding: 0.35rem 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--bq-text-muted);
+}
+
+.import-passo-ativo {
+    background-color: var(--bq-primary-light) !important;
+    border-color: var(--bq-primary) !important;
+    color: var(--bq-primary-dark) !important;
+}
+
+.documento-item {
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius);
+    padding: 0.75rem;
+    height: 100%;
+}
+
+.documento-item-cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.documento-item-nome {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.processamento-resumo {
+    background-color: var(--bq-surface);
+    border: 1px solid var(--bq-border);
+    border-radius: var(--bq-radius);
+    padding: 1rem;
+}
+
+.processamento-resumo-docs,
+.processamento-resumo-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    font-size: 0.88rem;
+    color: var(--bq-text-muted);
+}
+
+.processamento-resumo-metricas {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+    font-size: 0.9rem;
+}

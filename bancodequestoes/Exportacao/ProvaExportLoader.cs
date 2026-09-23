@@ -15,9 +15,15 @@ public static class ProvaExportLoader
                 .ThenInclude(c => c!.Instituicao)
             .Include(p => p.Turma)
             .Include(p => p.CriadoPor)
+            // Escopo: só o necessário pro cabeçalho impresso (ver ProvaExportDto.EscopoRotulo).
+            .Include(p => p.ProvaDisciplinas)
+                .ThenInclude(pd => pd.Disciplina)
+            .Include(p => p.MatrizReferencia)
             .Include(p => p.ProvaQuestoes)
                 .ThenInclude(pq => pq.Questao)
                     .ThenInclude(q => q!.Imagens)
+            // Várias coleções na mesma consulta — ver comentário equivalente em ProvaService.ListarAsync.
+            .AsSplitQuery()
             .FirstOrDefaultAsync(p => p.Id == provaId);
 
         if (prova is null)
@@ -32,6 +38,14 @@ public static class ProvaExportLoader
             Professor = prova.CriadoPor?.NomeCompleto,
             Curso = prova.Curso?.Nome,
             Tipo = prova.Tipo,
+            TipoEscopo = prova.TipoEscopo,
+            DisciplinasMultidisciplinar = prova.ProvaDisciplinas
+                .Select(pd => pd.Disciplina?.Nome)
+                .Where(nome => nome is not null)
+                .Select(nome => nome!)
+                .OrderBy(nome => nome)
+                .ToList(),
+            MatrizTipo = prova.MatrizReferencia?.Tipo,
             Turma = prova.Turma?.Rotulo,
             DataAplicacao = prova.DataAplicacao,
             TempoEstimadoMinutos = prova.TempoEstimadoMinutos,
@@ -59,24 +73,20 @@ public static class ProvaExportLoader
                 continue;
             }
 
+            // Capturado numa variável local pra função local ResolverImagemDoEnunciado
+            // abaixo não depender do analisador de nulidade propagar o "is null" acima.
+            var questaoEntidade = pq.Questao;
+
             var questaoDto = new QuestaoExportDto
             {
                 Enunciado = pq.Questao.Enunciado,
                 Tipo = pq.Questao.TipoQuestao,
                 Valor = pq.Valor,
+                Origem = pq.Questao.Origem,
+                Ano = pq.Questao.Ano,
                 Explicacao = pq.Questao.Explicacao,
-                Imagens = pq.Questao.Imagens
-                    .OrderBy(im => im.Ordem)
-                    .Select(im => new ImagemExportDto
-                    {
-                        Conteudo = im.Conteudo,
-                        ContentType = im.ContentType,
-                        Legenda = im.Legenda,
-                        TextoAlternativo = im.TextoAlternativo,
-                        Alinhamento = im.Alinhamento,
-                        LarguraPercentual = im.LarguraPercentual,
-                    })
-                    .ToList(),
+                // Imagens é preenchido mais abaixo, depois de converter o Enunciado
+                // (precisa saber quais já foram desenhadas embutidas — ver idsRenderizadosInline).
             };
 
             if (pq.Questao is QuestaoMultiplaEscolha me)
@@ -116,9 +126,8 @@ public static class ProvaExportLoader
                     .Select(p => new ParAssociacaoExportDto { Termo = p.Termo, Correspondente = p.Correspondente })
                     .ToList();
                 questaoDto.Pares = pares;
-                // Sorteia a ordem da coluna B aqui (não na exportação de variações,
-                // que gera sua PRÓPRIA ordem por versão) — cobre a exportação simples,
-                // que passa a prova direto sem passar pelo embaralhador de versões.
+                // Sorteia a ordem da coluna B aqui pra cobrir a exportação simples
+                // (a de variações gera sua própria ordem por versão).
                 questaoDto.OrdemCorrespondentes = Enumerable.Range(0, pares.Count).OrderBy(_ => Random.Shared.Next()).ToList();
             }
             else if (pq.Questao is QuestaoLacunas lacunas)
@@ -131,13 +140,78 @@ public static class ProvaExportLoader
                 questaoDto.Enunciado = SubstituirMarcadoresDeLacuna(questaoDto.Enunciado);
             }
 
+            // Resolve referências "imagem:existente:{id}" do EnunciadoEditor pra desenhar a
+            // imagem embutida; idsRenderizadosInline evita desenhar de novo no bloco final.
+            var idsRenderizadosInline = new HashSet<int>();
+            Task<ImagemExportDto?> ResolverImagemDoEnunciado(string url)
+            {
+                const string prefixo = "imagem:existente:";
+                if (!url.StartsWith(prefixo, StringComparison.Ordinal) || !int.TryParse(url.AsSpan(prefixo.Length), out var imagemId))
+                {
+                    return Task.FromResult<ImagemExportDto?>(null);
+                }
+                var imagem = questaoEntidade.Imagens.FirstOrDefault(im => im.Id == imagemId);
+                if (imagem is null)
+                {
+                    return Task.FromResult<ImagemExportDto?>(null);
+                }
+                idsRenderizadosInline.Add(imagemId);
+                return Task.FromResult<ImagemExportDto?>(new ImagemExportDto
+                {
+                    Conteudo = imagem.Conteudo,
+                    ContentType = imagem.ContentType,
+                    Legenda = imagem.Legenda,
+                    TextoAlternativo = imagem.TextoAlternativo,
+                    Alinhamento = imagem.Alinhamento,
+                    LarguraPercentual = imagem.LarguraPercentual,
+                });
+            }
+
             // Fica por último de propósito: roda depois da substituição de marcadores
             // de Lacunas, então opera sempre sobre o texto final que será impresso.
-            var blocos = await MarkdownConversor.ConverterAsync(questaoDto.Enunciado);
+            var blocos = await MarkdownConversor.ConverterAsync(questaoDto.Enunciado, ResolverImagemDoEnunciado);
             if (blocos.Count > 0)
             {
                 questaoDto.EnunciadoBlocos = blocos;
             }
+
+            // Prova.MostrarValorNoEnunciado: valor entra como último trecho de texto,
+            // colado ao último bloco (ou em bloco novo se terminar em algo não-textual).
+            if (prova.MostrarValorNoEnunciado && pq.Valor is { } valorQuestao)
+            {
+                var textoValor = $" ({valorQuestao:0.##} pt{(valorQuestao == 1 ? "" : "s")})";
+                var blocoTextualFinal = blocos.LastOrDefault(b =>
+                    b.Tipo is TipoBlocoMarkdown.Paragrafo or TipoBlocoMarkdown.ItemListaComMarcador or TipoBlocoMarkdown.ItemListaNumerada);
+                if (blocoTextualFinal is not null)
+                {
+                    blocoTextualFinal.Trechos.Add(new TrechoTexto { Texto = textoValor, Italico = true });
+                }
+                else
+                {
+                    blocos.Add(new BlocoMarkdown
+                    {
+                        Tipo = TipoBlocoMarkdown.Paragrafo,
+                        Trechos = new List<TrechoTexto> { new() { Texto = textoValor.TrimStart(), Italico = true } },
+                    });
+                }
+                questaoDto.EnunciadoBlocos = blocos;
+            }
+
+            // Só as imagens que não foram desenhadas embutidas acima vão pro bloco
+            // final da questão — evita a mesma imagem aparecer duas vezes.
+            questaoDto.Imagens = questaoEntidade.Imagens
+                .OrderBy(im => im.Ordem)
+                .Where(im => !idsRenderizadosInline.Contains(im.Id))
+                .Select(im => new ImagemExportDto
+                {
+                    Conteudo = im.Conteudo,
+                    ContentType = im.ContentType,
+                    Legenda = im.Legenda,
+                    TextoAlternativo = im.TextoAlternativo,
+                    Alinhamento = im.Alinhamento,
+                    LarguraPercentual = im.LarguraPercentual,
+                })
+                .ToList();
 
             if (!string.IsNullOrWhiteSpace(questaoDto.Explicacao))
             {
@@ -154,19 +228,8 @@ public static class ProvaExportLoader
         return dto;
     }
 
-    // Troca cada sequência de 3+ underscores no enunciado por um marcador numerado
-    // ("_____(1)_____"), na ordem em que aparecem — assim o aluno (e o gabarito)
-    // conseguem referenciar "a lacuna 1", "a lacuna 2" etc. sem ambiguidade.
-    //
-    // Os underscores saem ESCAPADOS (\_) de propósito: esse texto passa por um
-    // conversor de Markdown logo em seguida (aqui ou em quem chamar isso — ver
-    // QuestaoList.razor, que reusa este método pro modal de prévia), e 5
-    // underscores seguidos sem escape seriam lidos como ênfase (negrito/itálico)
-    // em vez de aparecerem como a linha de preenchimento da lacuna.
-    //
-    // Público (não só interno ao loader) porque o modal de "prévia da questão"
-    // em QuestaoList.razor precisa do MESMO texto substituído pra mostrar a
-    // lacuna exatamente como vai sair na prova.
+    // Troca sequências de 3+ underscores por marcador numerado, escapado pra não virar
+    // ênfase no Markdown; público pois QuestaoList.razor reusa no modal de prévia.
     public static string SubstituirMarcadoresDeLacuna(string enunciado)
     {
         var contador = 0;

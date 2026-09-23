@@ -1,0 +1,812 @@
+@using BancoQuestoes.Importacao
+@inject SugestaoIaService SugestaoIa
+@inject IJSRuntime JS
+<!--
+    Painel de revisão de UMA questão do lote do Importador ENADE — extraído de
+    QuestaoImportarEnade.razor (Etapa 4 UX/UI + suporte a IA) pra poder guardar
+    estado próprio (sugestão carregando/erro/resultado, "ver original" aberto)
+    sem precisar de dicionário keyed por IdLote no pai. Só uma instância existe
+    por vez (o pai só renderiza este componente pra linha expandida).
+
+    Continua mutando Q diretamente (mesma referência da lista que o pai guarda
+    em resultado.Questoes) — mesmo padrão de referência compartilhada usado em
+    QuestaoInput/ProvaInput no resto do app.
+
+    Suporte a IA (sempre opcional, nunca decide sozinho, sempre revisável):
+    - "Sugerir com IA": Bloom + Assunto (Componente Específico), reusa
+      SugestaoIaService.SugerirAsync — mesmo serviço/prompt já usado em
+      SugestaoIaCard.razor no cadastro manual de questão.
+    - "Sugerir Alinhamento Curricular (ENADE)": chamada separada (catálogo de
+      itens pode ser grande), aplica em Q.ItemMatrizIds.
+    - "Verificar extração com IA": só SINALIZA possíveis problemas de
+      extração do PDF (texto truncado, alternativa incompleta...) — nunca
+      corrige nada sozinha, o parser continua 100% determinístico.
+-->
+
+<div class="border rounded p-3 bg-light">
+    @if (Q.Alertas.Count > 0)
+    {
+        <div class="mb-2">
+            @foreach (var a in Q.Alertas)
+            {
+                <div class="text-warning small">⚠ @a</div>
+            }
+        </div>
+    }
+    @if (Q.PossivelDuplicata)
+    {
+        <div class="alert alert-warning py-1 px-2 small">
+            ⚠ Possível questão já existente (Questão #@Q.QuestaoDuplicadaId) — desmarque a caixa de seleção na tabela acima se não quiser importar mesmo assim ("Não importar"), ou confira/edite aqui antes de decidir.
+        </div>
+    }
+
+    <div class="row g-2 mb-2">
+        <div class="col-md-3">
+            <label class="form-label small mb-0">Origem</label>
+            <input class="form-control form-control-sm" value="ENADE" disabled />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small mb-0">Ano</label>
+            <input class="form-control form-control-sm" value="@Q.Ano" disabled />
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small mb-0">Seção</label>
+            <select class="form-select form-select-sm" aria-label="Seção" value="@Q.Secao?.ToString()" @onchange="AoMudarSecao">
+                <option value="">(não identificada)</option>
+                <option value="@SecaoEnade.FormacaoGeral">Formação Geral</option>
+                <option value="@SecaoEnade.ComponenteEspecifico">Componente Específico</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small mb-0">Número original</label>
+            <input class="form-control form-control-sm" aria-label="Número original" @bind="Q.NumeroOriginal" @bind:event="oninput" />
+        </div>
+        <div class="col-md-2">
+            <label class="form-label small mb-0">Página original</label>
+            <input class="form-control form-control-sm" value="@(Q.PaginaFim is int fim && fim != Q.PaginaOrigem ? $"{Q.PaginaOrigem}-{fim}" : Q.PaginaOrigem?.ToString())" disabled />
+        </div>
+    </div>
+
+    @if (IaHabilitada)
+    {
+        <div class="ia-assistente-box mb-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(carregandoSugestao || string.IsNullOrWhiteSpace(Q.Enunciado))" @onclick="SugerirAsync">
+                    @if (carregandoSugestao)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-stars me-1"></i>
+                    }
+                    Sugerir com IA
+                </button>
+                <span class="text-muted small">Bloom e Assunto a partir do enunciado (modelo local, revisão sempre manual).</span>
+            </div>
+
+            @if (erroSugestao is not null)
+            {
+                <p class="text-danger small mb-0 mt-2">@erroSugestao</p>
+            }
+
+            @if (sugestao is not null)
+            {
+                <div class="mt-2 d-flex flex-column gap-2">
+                    @if (sugestao.Bloom is { } nivelSugerido)
+                    {
+                        <div>
+                            <span class="text-muted small me-2">Bloom sugerido:</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Q.Bloom = nivelSugerido">
+                                Usar "@nivelSugerido"
+                            </button>
+                        </div>
+                    }
+                    @if (Q.Secao == SecaoEnade.ComponenteEspecifico && !string.IsNullOrWhiteSpace(sugestao.AssuntoRotulo))
+                    {
+                        <div>
+                            <span class="text-muted small me-2">Assunto sugerido:</span>
+                            @if (sugestao.AssuntoId is { } assuntoIdSugerido)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AplicarAssuntoSugerido(assuntoIdSugerido)">
+                                    Usar "@sugestao.AssuntoRotulo"
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="small">"@sugestao.AssuntoRotulo" (não encontrado na lista — escolha manualmente)</span>
+                            }
+                        </div>
+                    }
+                    @if (sugestao.Bloom is null && string.IsNullOrWhiteSpace(sugestao.AssuntoRotulo))
+                    {
+                        <span class="text-muted small">Nenhuma sugestão desta vez.</span>
+                    }
+                </div>
+            }
+        </div>
+    }
+
+    @if (Q.Secao == SecaoEnade.FormacaoGeral)
+    {
+        <div class="row g-2 mb-2">
+            <div class="col-md-4">
+                <label class="form-label small mb-0">Disciplina</label>
+                <input class="form-control form-control-sm" value="Formação Geral" disabled />
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small mb-0">Área de Curso</label>
+                <input class="form-control form-control-sm" value="nenhuma" disabled />
+            </div>
+        </div>
+    }
+    else if (Q.Secao == SecaoEnade.ComponenteEspecifico)
+    {
+        <div class="row g-2 mb-2">
+            <div class="col-md-4">
+                <label class="form-label small mb-0">Disciplina</label>
+                <select class="form-select form-select-sm" aria-label="Disciplina" value="@Q.DisciplinaId" @onchange="AoMudarDisciplina">
+                    <option value="0">Selecione...</option>
+                    @foreach (var d in Disciplinas)
+                    {
+                        <option value="@d.Id">@d.Nome</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small mb-0">Assunto</label>
+                <select class="form-select form-select-sm" aria-label="Assunto" value="@Q.AssuntoId" @onchange="AoMudarAssunto" disabled="@(Q.DisciplinaId == 0)">
+                    <option value="0">@(Q.DisciplinaId == 0 ? "Escolha a disciplina primeiro..." : "Selecione...")</option>
+                    @foreach (var a in Assuntos.Where(a => a.DisciplinaId == Q.DisciplinaId))
+                    {
+                        <option value="@a.Id">@a.Nome</option>
+                    }
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small mb-0">Área de Curso</label>
+                <input class="form-control form-control-sm" value="@NomeAreaCurso" disabled />
+            </div>
+        </div>
+    }
+
+    @if (IaHabilitada && ImagemPaginaOriginal is not null)
+    {
+        <div class="ia-assistente-box mb-2">
+            @if (ModeloVisaoConfigurado)
+            {
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <button type="button" class="btn btn-outline-primary btn-sm" disabled="@carregandoRetranscricao" @onclick="RetranscreverAsync">
+                        @if (carregandoRetranscricao)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-camera me-1"></i>
+                        }
+                        Re-transcrever a partir da imagem
+                    </button>
+                    <span class="text-muted small">Lê a imagem da página original (@(Q.RepresentacoesOriginais.Count > 1 ? "primeira página" : "página")) e sugere enunciado/alternativas — útil quando o texto extraído do PDF parece corrompido.</span>
+                </div>
+
+                @if (erroRetranscricao is not null)
+                {
+                    <p class="text-danger small mb-0 mt-2">@erroRetranscricao</p>
+                }
+
+                @if (retranscricao is not null)
+                {
+                    <div class="mt-2 d-flex flex-column gap-2">
+                        <div class="d-flex align-items-start gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" @onclick="UsarEnunciadoRetranscrito">Usar este enunciado</button>
+                            <span class="small" style="white-space:pre-wrap;">@retranscricao.Enunciado</span>
+                        </div>
+                        @for (var i = 0; i < retranscricao.Alternativas.Count; i++)
+                        {
+                            var indice = i;
+                            <div class="d-flex align-items-start gap-2">
+                                @if (indice < Q.Alternativas.Count)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap" @onclick="() => UsarAlternativaRetranscrita(indice)">
+                                        Usar "@Q.Alternativas[indice].Letra"
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="text-muted small text-nowrap">(sem alternativa correspondente)</span>
+                                }
+                                <span class="small">@retranscricao.Alternativas[indice]</span>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <p class="text-muted small mb-0">
+                    Re-transcrição a partir da imagem exige um modelo de visão configurado (nenhum modelo de texto comum lê imagem) —
+                    <a href="admin/configuracao-ia">configure em Admin &gt; Configuração de IA</a>.
+                </p>
+            }
+        </div>
+    }
+
+    <div class="mb-2">
+        <label class="form-label small mb-0">Enunciado</label>
+        <textarea class="form-control form-control-sm" aria-label="Enunciado" style="height:120px; font-family:monospace;" @bind="Q.Enunciado" @bind:event="oninput"></textarea>
+    </div>
+
+    @if (IaHabilitada)
+    {
+        <div class="ia-assistente-box mb-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(carregandoExtracao || string.IsNullOrWhiteSpace(Q.Enunciado))" @onclick="VerificarExtracaoAsync">
+                    @if (carregandoExtracao)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-search me-1"></i>
+                    }
+                    Verificar extração com IA
+                </button>
+                <span class="text-muted small">A IA só aponta trechos que parecem quebrados/incompletos — nunca corrige nada sozinha.</span>
+            </div>
+
+            @if (erroExtracao is not null)
+            {
+                <p class="text-danger small mb-0 mt-2">@erroExtracao</p>
+            }
+
+            @if (problemasExtracao is not null)
+            {
+                @if (problemasExtracao.Count == 0)
+                {
+                    <p class="text-success small mb-0 mt-2">✓ Nada de suspeito encontrado nesta passada.</p>
+                }
+                else
+                {
+                    <ul class="text-warning small mb-0 mt-2">
+                        @foreach (var problema in problemasExtracao)
+                        {
+                            <li>⚠ @problema</li>
+                        }
+                    </ul>
+                }
+            }
+        </div>
+    }
+
+    <div class="mb-2">
+        <label class="form-label small mb-0 d-block">Imagens desta questão</label>
+        @if (Q.Imagens.Count > 0)
+        {
+            <div class="d-flex flex-wrap gap-2 mb-2">
+                @foreach (var img in Q.Imagens.ToList())
+                {
+                    <div class="border rounded p-1" style="width:140px;">
+                        <img src="@($"data:{img.ContentType};base64,{Convert.ToBase64String(img.Conteudo)}")" alt="Imagem da questão" style="max-width:100%; max-height:90px; display:block; margin:0 auto;" />
+                        <div class="text-muted small text-center">@(img.PaginaOrigem > 0 ? $"pág. {img.PaginaOrigem}" : "adicionada manualmente")</div>
+                        <button type="button" class="btn btn-sm btn-outline-danger w-100" @onclick="() => Q.Imagens.Remove(img)">Remover</button>
+                    </div>
+                }
+            </div>
+        }
+        @if (erroImagemManual is not null)
+        {
+            <div class="alert alert-warning py-1 px-2 small mb-1">@erroImagemManual</div>
+        }
+        <InputFile OnChange="AdicionarImagensAsync" multiple accept="image/*" class="form-control form-control-sm" />
+        <div class="form-text small">
+            Extração automática só pega imagens embutidas no PDF (fotos/bitmaps) — figuras desenhadas como vetor (linhas, circuitos, gráficos montados direto no PDF, sem ser uma imagem de verdade) não são extraídas.
+            Se a questão precisar de uma delas, tire um print/recorte e adicione aqui manualmente (veja também "Ver original da prova" abaixo, se disponível).
+        </div>
+    </div>
+
+    @if (Q.RepresentacoesOriginais.Count > 0)
+    {
+        <div class="mb-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => originalProvaExpandido = !originalProvaExpandido">
+                @(originalProvaExpandido ? "Ocultar original da prova" : "Ver original da prova")
+            </button>
+            <span class="text-muted small ms-1">— abre uma janela flutuante (arraste pelo topo) com a página @( Q.RepresentacoesOriginais.Count > 1 ? "original (várias páginas)" : "original") do PDF, pra deixar do lado do que você está editando</span>
+        </div>
+        @if (originalProvaExpandido)
+        {
+            <div id="@IdOriginalProva" class="janela-flutuante">
+                <div id="@IdOriginalProvaCabecalho" class="janela-flutuante-cabecalho">
+                    <span>Original da prova (@(Q.RepresentacoesOriginais.Count == 1 ? $"pág. {Q.RepresentacoesOriginais[0].Pagina}" : $"págs. {string.Join(", ", Q.RepresentacoesOriginais.Select(r => r.Pagina))}")) — só conferência, nunca editável aqui</span>
+                    <button type="button" class="janela-flutuante-fechar" aria-label="Fechar" @onclick="() => originalProvaExpandido = false">×</button>
+                </div>
+                <div class="janela-flutuante-corpo">
+                    @foreach (var rep in Q.RepresentacoesOriginais)
+                    {
+                        @if (rep.Conteudo is not null)
+                        {
+                            <img src="@($"data:{rep.ContentType};base64,{Convert.ToBase64String(rep.Conteudo)}")" alt="Página original @rep.Pagina" />
+                        }
+                        else
+                        {
+                            <div class="text-muted small mb-2">Não foi possível gerar a imagem da página @rep.Pagina — abra o PDF original nessa página para conferir.</div>
+                        }
+                    }
+                </div>
+            </div>
+        }
+    }
+
+    @if (Q.Tipo == TipoQuestao.MultiplaEscolha)
+    {
+        <div class="mb-2">
+            <label class="form-label small mb-0 d-block">Alternativas</label>
+            @foreach (var alt in Q.Alternativas)
+            {
+                <div class="input-group input-group-sm mb-1">
+                    <span class="input-group-text">@alt.Letra</span>
+                    <input class="form-control" @bind="alt.Texto" @bind:event="oninput" />
+                </div>
+            }
+        </div>
+        <div class="mb-2" style="max-width:260px;">
+            <label class="form-label small mb-0">Gabarito</label>
+            <select class="form-select form-select-sm" aria-label="Gabarito" value="@(Q.RespostaCorretaIndex?.ToString() ?? "")" @onchange="AoMudarGabarito">
+                <option value="">Gabarito pendente</option>
+                @for (var i = 0; i < Q.Alternativas.Count; i++)
+                {
+                    var idx = i;
+                    <option value="@idx">@Q.Alternativas[idx].Letra</option>
+                }
+            </select>
+        </div>
+    }
+    else
+    {
+        <div class="mb-2">
+            <label class="form-label small mb-0">Resposta esperada (padrão oficial)</label>
+            @if (Q.PaginaOrigemPadraoResposta is not null)
+            {
+                <div class="text-success small mb-1">✓ Padrão oficial reconhecido (pág. @Q.PaginaOrigemPadraoResposta do arquivo de padrão de respostas) — texto abaixo veio direto do documento oficial; edite se precisar.</div>
+            }
+            <textarea class="form-control form-control-sm" aria-label="Resposta esperada (padrão oficial)" style="height:100px;" @bind="Q.RespostaEsperadaDiscursiva" @bind:event="oninput"></textarea>
+        </div>
+
+        @if (Q.ItensDiscursivos.Count > 0)
+        {
+            <div class="mb-2">
+                <label class="form-label small mb-0 d-block">Subitens reconhecidos no padrão oficial</label>
+                <table class="table table-sm table-bordered small mb-1">
+                    <thead><tr><th style="width:60px;">Item</th><th style="width:100px;">Pontuação</th><th>Resposta padrão</th></tr></thead>
+                    <tbody>
+                        @foreach (var item in Q.ItensDiscursivos)
+                        {
+                            <tr>
+                                <td>@item.Codigo)</td>
+                                <td>@(item.Pontuacao is decimal p ? p.ToString("0.##") : "—")</td>
+                                <td>@Truncar(item.RespostaPadrao)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <div class="mb-2">
+            <label class="form-label small mb-0">Critério de avaliação (rubrica)</label>
+            <textarea class="form-control form-control-sm" aria-label="Critério de avaliação (rubrica)" style="height:80px;" @bind="Q.CriterioAvaliacaoDiscursiva" @bind:event="oninput"></textarea>
+        </div>
+
+        @if (Q.RepresentacoesOriginaisPadraoResposta.Count > 0)
+        {
+            <div class="mb-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => originalPadraoExpandido = !originalPadraoExpandido">
+                    @(originalPadraoExpandido ? "Ocultar original do padrão" : "Ver original do padrão")
+                </button>
+                <span class="text-muted small ms-1">— abre uma janela flutuante (arraste pelo topo) com a página original do arquivo de padrão de respostas</span>
+            </div>
+            @if (originalPadraoExpandido)
+            {
+                <div id="@IdOriginalPadrao" class="janela-flutuante" style="top: 140px; right: 64px;">
+                    <div id="@IdOriginalPadraoCabecalho" class="janela-flutuante-cabecalho">
+                        <span>Original do padrão de respostas — só conferência, nunca editável aqui</span>
+                        <button type="button" class="janela-flutuante-fechar" aria-label="Fechar" @onclick="() => originalPadraoExpandido = false">×</button>
+                    </div>
+                    <div class="janela-flutuante-corpo">
+                        @foreach (var rep in Q.RepresentacoesOriginaisPadraoResposta)
+                        {
+                            @if (rep.Conteudo is not null)
+                            {
+                                <img src="@($"data:{rep.ContentType};base64,{Convert.ToBase64String(rep.Conteudo)}")" alt="Página original do padrão @rep.Pagina" />
+                            }
+                            else
+                            {
+                                <div class="text-muted small">Não foi possível gerar a imagem da página @rep.Pagina do padrão — abra o PDF original nessa página para conferir.</div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        }
+    }
+
+    <div class="row g-2 mb-2">
+        <div class="col-md-3">
+            <label class="form-label small mb-0">Dificuldade</label>
+            <select class="form-select form-select-sm" aria-label="Dificuldade" @bind="Q.Dificuldade">
+                <option value="@Dificuldade.Facil">Fácil</option>
+                <option value="@Dificuldade.Media">Média</option>
+                <option value="@Dificuldade.Dificil">Difícil</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label small mb-0">Bloom (opcional)</label>
+            <select class="form-select form-select-sm" aria-label="Bloom" @bind="Q.Bloom">
+                <option value="">Não classificado</option>
+                <option value="@NivelBloom.Lembrar">Lembrar</option>
+                <option value="@NivelBloom.Entender">Entender</option>
+                <option value="@NivelBloom.Aplicar">Aplicar</option>
+                <option value="@NivelBloom.Analisar">Analisar</option>
+                <option value="@NivelBloom.Avaliar">Avaliar</option>
+                <option value="@NivelBloom.Criar">Criar</option>
+            </select>
+        </div>
+    </div>
+
+    <!--
+        Alinhamento Curricular/ENADE — não existia nenhuma forma de vincular
+        itens de matriz durante a importação antes desta etapa (o professor
+        tinha que editar a questão depois de importada). Mesma linguagem/
+        checklist já usados em QuestaoAlinhamentoCurricularSection.razor.
+    -->
+    <div class="mb-2">
+        <label class="form-label small mb-1 d-block">Alinhamento Curricular / ENADE <span class="text-muted">(opcional)</span></label>
+
+        @if (IaHabilitada && ItensEnadeDisponiveis.Count > 0)
+        {
+            <div class="ia-assistente-box mb-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(carregandoCurricular || string.IsNullOrWhiteSpace(Q.Enunciado))" @onclick="SugerirAlinhamentoCurricularAsync">
+                        @if (carregandoCurricular)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-diagram-3 me-1"></i>
+                        }
+                        Sugerir Alinhamento Curricular (ENADE)
+                    </button>
+                    <span class="text-muted small">Chamada separada — o catálogo de itens ENADE deixa o prompt maior, só roda quando pedida.</span>
+                </div>
+
+                @if (erroCurricular is not null)
+                {
+                    <p class="text-danger small mb-0 mt-2">@erroCurricular</p>
+                }
+
+                @if (sugestaoCurricular is not null)
+                {
+                    <div class="mt-2">
+                        @if (!string.IsNullOrWhiteSpace(sugestaoCurricular.ItemMatrizRotulo))
+                        {
+                            @if (sugestaoCurricular.ItemMatrizId is { } itemMatrizIdSugerido)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => Q.ItemMatrizIds.Add(itemMatrizIdSugerido)">
+                                    Usar "@sugestaoCurricular.ItemMatrizRotulo"
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="small">"@sugestaoCurricular.ItemMatrizRotulo" (não encontrado na lista — escolha manualmente)</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="text-muted small">Nenhuma sugestão desta vez.</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
+
+        @if (ItensEnadeDisponiveis.Count == 0)
+        {
+            <p class="text-muted small mb-0">Nenhum item de matriz ENADE ativo pra esta Área de Curso ainda. <a href="matrizes">Cadastrar matrizes</a></p>
+        }
+        else
+        {
+            <ItemMatrizChecklist Itens="ItensEnadeDisponiveis" Selecionados="Q.ItemMatrizIds" OnAlterado="() => {}" />
+        }
+    </div>
+
+    <button type="button" class="btn btn-sm btn-primary" @onclick="SalvarAsync">Salvar revisão</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public QuestaoImportacaoEnade Q { get; set; } = null!;
+    [Parameter] public List<Disciplina> Disciplinas { get; set; } = new();
+    [Parameter] public List<Assunto> Assuntos { get; set; } = new();
+    [Parameter] public string? NomeAreaCurso { get; set; }
+
+    // Contexto fixo do lote inteiro (a Área de Curso escolhida na tela
+    // inicial) — usado só quando a Seção muda pra Componente Específico.
+    [Parameter] public int? AreaCursoIdContexto { get; set; }
+
+    [Parameter] public List<ItemMatrizReferencia> ItensEnadeDisponiveis { get; set; } = new();
+    [Parameter] public bool IaHabilitada { get; set; }
+
+    // Separado de IaHabilitada: a IA de texto pode estar ligada sem nenhum
+    // modelo de visão configurado (ver ConfiguracaoIa.ModeloVisaoEfetivo) —
+    // nesse caso a retranscrição mostra uma dica em vez do botão.
+    [Parameter] public bool ModeloVisaoConfigurado { get; set; }
+
+    [Parameter] public EventCallback OnSalvar { get; set; }
+
+    private bool originalProvaExpandido;
+    private bool originalPadraoExpandido;
+    private string? erroImagemManual;
+
+    // Ids estáveis (por questão do lote) pras janelas flutuantes de "Ver
+    // original" — bqTornarArrastavel (wwwroot/js/app.js) precisa de um id de
+    // DOM fixo pra guardar "já configurado" e não duplicar listener a cada render.
+    private string IdOriginalProva => $"original-prova-{Q.IdLote}";
+    private string IdOriginalProvaCabecalho => $"original-prova-cabecalho-{Q.IdLote}";
+    private string IdOriginalPadrao => $"original-padrao-{Q.IdLote}";
+    private string IdOriginalPadraoCabecalho => $"original-padrao-cabecalho-{Q.IdLote}";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Chamado de novo a cada render enquanto a janela estiver aberta — o
+        // próprio JS ignora se já estiver configurado (ver dataset ali), então
+        // não tem custo real além do lookup do elemento.
+        if (originalProvaExpandido)
+        {
+            await JS.InvokeVoidAsync("bqTornarArrastavel", IdOriginalProva, IdOriginalProvaCabecalho);
+        }
+
+        if (originalPadraoExpandido)
+        {
+            await JS.InvokeVoidAsync("bqTornarArrastavel", IdOriginalPadrao, IdOriginalPadraoCabecalho);
+        }
+    }
+
+    private const long TamanhoMaximoImagemManual = 5 * 1024 * 1024; // 5 MB — mesmo limite de QuestaoImagensEditor.
+
+    private bool carregandoSugestao;
+    private string? erroSugestao;
+    private SugestaoMetadadosDto? sugestao;
+
+    private bool carregandoCurricular;
+    private string? erroCurricular;
+    private SugestaoMetadadosDto? sugestaoCurricular;
+
+    private bool carregandoExtracao;
+    private string? erroExtracao;
+    private List<string>? problemasExtracao;
+
+    private bool carregandoRetranscricao;
+    private string? erroRetranscricao;
+    private RetranscricaoDto? retranscricao;
+
+    // Primeira página da prova associada a esta questão — nunca a do padrão de
+    // resposta (esse documento não mostra enunciado/alternativas da prova).
+    private byte[]? ImagemPaginaOriginal => Q.RepresentacoesOriginais.FirstOrDefault()?.Conteudo;
+
+    private void AoMudarSecao(ChangeEventArgs e)
+    {
+        var valor = e.Value?.ToString();
+        Q.Secao = string.IsNullOrEmpty(valor) ? null : Enum.Parse<SecaoEnade>(valor);
+
+        if (Q.Secao == SecaoEnade.FormacaoGeral)
+        {
+            var disciplinaFormacaoGeral = Disciplinas.FirstOrDefault(d => d.Codigo == Disciplina.CodigoFormacaoGeral);
+            var assuntoFormacaoGeral = Assuntos.FirstOrDefault(a => a.DisciplinaId == disciplinaFormacaoGeral?.Id && a.Nome == "Conhecimentos Gerais");
+            Q.DisciplinaId = disciplinaFormacaoGeral?.Id ?? 0;
+            Q.AssuntoId = assuntoFormacaoGeral?.Id ?? 0;
+            Q.AreaCursoId = null;
+        }
+        else if (Q.Secao == SecaoEnade.ComponenteEspecifico)
+        {
+            Q.DisciplinaId = 0;
+            Q.AssuntoId = 0;
+            Q.AreaCursoId = AreaCursoIdContexto;
+        }
+
+        RevisaoEnadeHelper.Revalidar(Q);
+    }
+
+    private void AoMudarDisciplina(ChangeEventArgs e)
+    {
+        Q.DisciplinaId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        Q.AssuntoId = 0;
+        RevisaoEnadeHelper.Revalidar(Q);
+    }
+
+    private void AoMudarAssunto(ChangeEventArgs e)
+    {
+        Q.AssuntoId = int.TryParse(e.Value?.ToString(), out var id) ? id : 0;
+        RevisaoEnadeHelper.Revalidar(Q);
+    }
+
+    private void AoMudarGabarito(ChangeEventArgs e)
+    {
+        var valor = e.Value?.ToString();
+        Q.RespostaCorretaIndex = string.IsNullOrEmpty(valor) ? null : int.Parse(valor);
+        RevisaoEnadeHelper.Revalidar(Q);
+    }
+
+    private async Task AdicionarImagensAsync(InputFileChangeEventArgs e)
+    {
+        erroImagemManual = null;
+        foreach (var arquivo in e.GetMultipleFiles(10))
+        {
+            if (arquivo.Size > TamanhoMaximoImagemManual)
+            {
+                erroImagemManual = $"\"{arquivo.Name}\" passa de 5 MB e foi ignorado.";
+                continue;
+            }
+
+            using var ms = new MemoryStream();
+            await arquivo.OpenReadStream(TamanhoMaximoImagemManual).CopyToAsync(ms);
+            var conteudo = ms.ToArray();
+
+            // Ignora o Content-Type declarado pelo navegador — confia só na assinatura
+            // real dos bytes (ver ValidadorImagem.cs).
+            var contentTypeReal = ValidadorImagem.DetectarContentType(conteudo);
+            if (contentTypeReal is null)
+            {
+                erroImagemManual = $"\"{arquivo.Name}\" não parece ser uma imagem válida (PNG, JPEG, GIF, WEBP ou BMP) e foi ignorado.";
+                continue;
+            }
+
+            Q.Imagens.Add(new ImagemImportacaoEnade
+            {
+                NomeArquivo = arquivo.Name,
+                ContentType = contentTypeReal,
+                Conteudo = conteudo,
+                PaginaOrigem = 0,
+            });
+        }
+    }
+
+    private async Task SalvarAsync()
+    {
+        RevisaoEnadeHelper.Revalidar(Q);
+        Q.RevisaoSalva = true;
+        await OnSalvar.InvokeAsync();
+    }
+
+    private static string Truncar(string texto) => texto.Length > 90 ? texto[..90] + "..." : texto;
+
+    // --- Sugestões de IA — sempre opcionais, sob demanda, nunca aplicadas sozinhas. ---
+
+    private async Task SugerirAsync()
+    {
+        carregandoSugestao = true;
+        erroSugestao = null;
+        sugestao = null;
+
+        try
+        {
+            var assuntosDisponiveis = Q.Secao == SecaoEnade.ComponenteEspecifico
+                ? Assuntos.Where(a => Q.DisciplinaId == 0 || a.DisciplinaId == Q.DisciplinaId)
+                    .Select(a => (a.Id, Rotulo: a.Nome))
+                    .ToList()
+                : new List<(int Id, string Rotulo)>();
+
+            sugestao = await SugestaoIa.SugerirAsync(Q.Enunciado, assuntosDisponiveis);
+            if (sugestao is null)
+            {
+                erroSugestao = "Não foi possível obter sugestão agora — pode ser o Ollama fora do ar, ou o modelo ainda carregando/gerando. Tente de novo em instantes.";
+            }
+        }
+        finally
+        {
+            carregandoSugestao = false;
+        }
+    }
+
+    private void AplicarAssuntoSugerido(int assuntoId)
+    {
+        var assunto = Assuntos.FirstOrDefault(a => a.Id == assuntoId);
+        if (assunto is null)
+        {
+            return;
+        }
+
+        Q.AssuntoId = assuntoId;
+        Q.DisciplinaId = assunto.DisciplinaId;
+    }
+
+    private async Task SugerirAlinhamentoCurricularAsync()
+    {
+        carregandoCurricular = true;
+        erroCurricular = null;
+        sugestaoCurricular = null;
+
+        try
+        {
+            var itensDisponiveis = ItensEnadeDisponiveis
+                .Select(i => (i.Id, Rotulo: $"{i.Codigo} — {i.Titulo}"))
+                .ToList();
+
+            sugestaoCurricular = await SugestaoIa.SugerirAlinhamentoCurricularAsync(Q.Enunciado, itensDisponiveis);
+            if (sugestaoCurricular is null)
+            {
+                erroCurricular = "Não foi possível obter sugestão agora — pode ser o Ollama fora do ar, ou o modelo ainda carregando/gerando (o catálogo de itens ENADE deixa essa chamada mais lenta). Tente de novo em instantes.";
+            }
+        }
+        finally
+        {
+            carregandoCurricular = false;
+        }
+    }
+
+    private async Task VerificarExtracaoAsync()
+    {
+        carregandoExtracao = true;
+        erroExtracao = null;
+        problemasExtracao = null;
+
+        try
+        {
+            var alternativas = Q.Alternativas.Select(a => $"{a.Letra}) {a.Texto}").ToList();
+            problemasExtracao = await SugestaoIa.SugerirRevisaoExtracaoAsync(Q.Enunciado, alternativas);
+            if (problemasExtracao is null)
+            {
+                erroExtracao = "Não foi possível verificar agora — pode ser o Ollama fora do ar, ou o modelo ainda carregando/gerando. Tente de novo em instantes.";
+            }
+        }
+        finally
+        {
+            carregandoExtracao = false;
+        }
+    }
+
+    private async Task RetranscreverAsync()
+    {
+        if (ImagemPaginaOriginal is not { } imagem)
+        {
+            return;
+        }
+
+        carregandoRetranscricao = true;
+        erroRetranscricao = null;
+        retranscricao = null;
+
+        try
+        {
+            retranscricao = await SugestaoIa.SugerirRetranscricaoAsync(imagem);
+            if (retranscricao is null)
+            {
+                erroRetranscricao = "Não foi possível retranscrever agora — pode ser o Ollama fora do ar, o modelo configurado não suportar imagens, ou ainda carregando/gerando. Tente de novo em instantes.";
+            }
+        }
+        finally
+        {
+            carregandoRetranscricao = false;
+        }
+    }
+
+    private void UsarEnunciadoRetranscrito()
+    {
+        if (retranscricao?.Enunciado is { } texto)
+        {
+            Q.Enunciado = texto;
+        }
+    }
+
+    // Só substitui o Texto da alternativa já existente na mesma posição —
+    // nunca cria, remove ou reordena alternativas, então RespostaCorretaIndex
+    // (que aponta por posição) nunca fica desalinhado por causa disto.
+    private void UsarAlternativaRetranscrita(int indice)
+    {
+        if (retranscricao is null || indice >= retranscricao.Alternativas.Count || indice >= Q.Alternativas.Count)
+        {
+            return;
+        }
+
+        Q.Alternativas[indice].Texto = retranscricao.Alternativas[indice];
+    }
+}

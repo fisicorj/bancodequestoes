@@ -1,0 +1,123 @@
+@page "/alunos/novo"
+@page "/alunos/editar/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AlunoService AlunoService
+@inject InstituicaoService InstituicaoService
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(Id is null ? "Novo aluno" : "Editar aluno")</PageTitle>
+
+<PageHeader Titulo="@(Id is null ? "Novo aluno" : "Editar aluno")" />
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-card">
+                <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" />
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Nome" id="Nome" class="form-control" placeholder="Nome" />
+                        <label for="Nome">Nome</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Email" id="Email" class="form-control" placeholder="Email" />
+                        <label for="Email">Email (opcional)</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputText @bind-Value="modelo.Matricula" id="Matricula" class="form-control" placeholder="Matrícula" />
+                        <label for="Matricula">Matrícula (opcional)</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputSelect @bind-Value="modelo.InstituicaoId" id="InstituicaoId" class="form-select">
+                            <option value="">Sem instituição</option>
+                            @foreach (var i in instituicoes)
+                            {
+                                <option value="@i.Id">@i.Nome</option>
+                            }
+                        </InputSelect>
+                        <label for="InstituicaoId">Instituição (opcional)</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                    <a href="alunos" class="btn btn-link">Cancelar</a>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private AlunoInput modelo = new();
+    private List<Instituicao> instituicoes = new();
+    private bool carregando;
+    private string? erro;
+
+    protected override async Task OnInitializedAsync()
+    {
+        carregando = true;
+        instituicoes = await InstituicaoService.ListarTodasAsync();
+
+        if (Id is not null)
+        {
+            var aluno = await AlunoService.ObterAsync(Id.Value);
+            if (aluno is null)
+            {
+                erro = "Aluno não encontrado.";
+            }
+            else
+            {
+                modelo = new AlunoInput
+                {
+                    Nome = aluno.Nome,
+                    Email = aluno.Email,
+                    Matricula = aluno.Matricula,
+                    InstituicaoId = aluno.InstituicaoId,
+                };
+            }
+        }
+
+        carregando = false;
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+
+        try
+        {
+            if (Id is null)
+            {
+                await AlunoService.CriarAsync(modelo);
+            }
+            else
+            {
+                await AlunoService.AtualizarAsync(Id.Value, modelo);
+            }
+
+            NavigationManager.NavigateTo($"alunos?msg={Uri.EscapeDataString($"\"{modelo.Nome}\" salvo com sucesso.")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

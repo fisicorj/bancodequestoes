@@ -8,7 +8,8 @@
     componente irmao (QuestoesSelecionadas e o modal de preview).
 -->
 
-<h5>Questões disponíveis</h5>
+@{ var questoesDisponiveisCount = QuestoesFiltradas.Count(q => !Selecionadas.Any(s => s.QuestaoId == q.Id)); }
+<h5>Questões disponíveis (@questoesDisponiveisCount)</h5>
 @if (QuestoesFiltradas.Count == 0)
 {
     <p><em>Nenhuma questão ativa encontrada para esse filtro.</em></p>

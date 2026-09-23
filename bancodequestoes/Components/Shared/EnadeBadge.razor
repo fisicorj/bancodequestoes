@@ -1,0 +1,25 @@
+<!--
+    Identidade visual única do ENADE (Etapa 4 UX/UI, item 2 do pedido) — em
+    vez de cada tela escrever "ENADE 2023" solto de um jeito diferente, todo
+    lugar que precisa identificar uma prova/matriz/questão ENADE usa este
+    mesmo selo: "ENADE {Ano}" + (opcional) a Área de Curso ou Curso associado
+    logo ao lado, em texto discreto (sem inventar uma cor nova só para ENADE
+    — reusa o --bq-primary já usado no resto do app).
+
+    Puramente apresentacional: só recebe Ano/Area (e um Titulo opcional para
+    virar tooltip) já resolvidos pelo chamador — nenhuma lógica de negócio,
+    nenhuma consulta.
+-->
+<span class="enade-badge" title="@Titulo">
+    <span class="enade-badge-selo">ENADE@(Ano is { } ano ? $" {ano}" : "")</span>
+    @if (!string.IsNullOrWhiteSpace(Area))
+    {
+        <span class="enade-badge-area">@Area</span>
+    }
+</span>
+
+@code {
+    [Parameter] public int? Ano { get; set; }
+    [Parameter] public string? Area { get; set; }
+    [Parameter] public string? Titulo { get; set; }
+}

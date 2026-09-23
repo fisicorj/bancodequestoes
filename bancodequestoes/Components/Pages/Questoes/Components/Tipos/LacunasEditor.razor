@@ -1,0 +1,28 @@
+<!--
+    Editor do corpo específico de Preenchimento de Lacunas (Etapa 3 —
+    extraído de QuestaoForm.razor, markup e comportamento idênticos ao
+    original). Adicionar/remover lacuna só tocam Modelo.Lacunas —
+    autocontido.
+-->
+<p class="text-muted">Marque cada lacuna no enunciado com três ou mais underscores (<code>___</code>), na ordem em que devem aparecer, e informe a resposta esperada de cada uma abaixo, na mesma ordem.</p>
+<h5>Respostas das lacunas</h5>
+@for (var i = 0; i < Modelo.Lacunas.Count; i++)
+{
+    var idx = i;
+    <div class="input-group mb-2">
+        <span class="input-group-text">Lacuna @(idx + 1)</span>
+        <input class="form-control" @bind="Modelo.Lacunas[idx].RespostaEsperada" placeholder="Resposta esperada" />
+        @if (Modelo.Lacunas.Count > 1)
+        {
+            <button type="button" class="btn btn-outline-danger" @onclick="() => Modelo.Lacunas.RemoveAt(idx)">x</button>
+        }
+    </div>
+}
+@if (Modelo.Lacunas.Count < 20)
+{
+    <button type="button" class="btn btn-outline-secondary btn-sm mb-3" @onclick="() => Modelo.Lacunas.Add(new LacunaInput())">+ Lacuna</button>
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+}

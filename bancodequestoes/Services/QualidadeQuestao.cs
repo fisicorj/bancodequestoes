@@ -2,20 +2,8 @@ using BancoQuestoes.Models;
 
 namespace BancoQuestoes.Services;
 
-// "Farol" de qualidade de uma questão: quanto ela está com os metadados que
-// tornam ela mais útil/confiável num banco COMPARTILHADO entre professores
-// (Bloom, referência, explicação da resposta, alternativas bem construídas...).
-// É sobre METADADOS/COMPLETUDE, não sobre se o CONTEÚDO está certo — isso seria
-// auditoria de conteúdo, uma ideia à parte (ver a conversa sobre uso de IA pra
-// auditar questões).
-//
-// Assunto e Dificuldade, que o professor tinha citado como exemplo, ficaram de
-// fora de propósito: QuestaoService.ValidarModelo já exige os dois pra
-// qualquer questão existir, então entrariam sempre com 100% — não ajudam a
-// diferenciar uma questão capricada de uma feita correndo. Pelo mesmo motivo,
-// "alternativas bem formadas" não é só "nenhuma vazia" (RespostaCorretaIndex
-// já garante isso) — é ter alternativas suficientes pra não ficar óbvio, e
-// nenhuma duplicada.
+// "Farol" de qualidade: completude dos metadados (Bloom, referência,
+// explicação...) — não é auditoria de conteúdo.
 public static class QualidadeQuestao
 {
     public static QualidadeResultado Calcular(Questao questao)
@@ -40,11 +28,8 @@ public static class QualidadeQuestao
         return new QualidadeResultado { Percentual = percentual, Itens = itens };
     }
 
-    // Critério específico de cada tipo — a versão "de verdade" de "alternativas
-    // bem formadas" (pra múltipla escolha) e o equivalente pros outros tipos:
-    // um sinal de capricho que NÃO é já garantido pela validação de cadastro.
-    // Certo/Errado e Resposta breve não têm um sinal estrutural adicional óbvio
-    // além do que já é obrigatório, então contam como sempre atendidos aqui.
+    // Critério específico por tipo: um sinal de capricho não garantido pela
+    // validação de cadastro. Certo/Errado e Resposta breve não têm um extra óbvio.
     private static CriterioQualidade CriterioPorTipo(Questao questao) => questao switch
     {
         QuestaoMultiplaEscolha me => new(

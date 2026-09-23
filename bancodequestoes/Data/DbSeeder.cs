@@ -3,20 +3,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BancoQuestoes.Data;
 
-// Popula bancos de questões de teste para três disciplinas (Engenharia de Software,
-// Matemática, Introdução à Computação), ~20 questões cada, cobrindo os 7 tipos de
-// questão do sistema. Reaproveita Disciplina/Assuntos se já existirem (por nome) em
-// vez de exigir banco vazio, e só insere as questões cujo enunciado ainda não está
-// cadastrado — então é seguro rodar de novo (não duplica) mesmo que você já tenha
-// criado outras questões ou até essas mesmas disciplinas manualmente.
+// Popula questões de teste reaproveitando Disciplina/Assuntos existentes e só
+// inserindo enunciados novos — seguro rodar de novo, nunca duplica.
 public static class DbSeeder
 {
-    // Conserta questões que já foram inseridas por uma versão anterior do
-    // seeder (sem CriadoPorId nem Visibilidade=Compartilhada) e por isso
-    // ficaram invisíveis pra todo mundo — nenhuma questão criada pela UI tem
-    // CriadoPorId nulo, então isso identifica com segurança só as "órfãs" do
-    // seed antigo, sem mexer em questão nenhuma que algum professor criou de
-    // verdade. Seguro rodar de novo (não faz nada se não sobrar nenhuma).
+    // Conserta questões de seeder antigo sem CriadoPorId (ficavam invisíveis);
+    // não mexe em questão real, pois nenhuma da UI tem CriadoPorId nulo.
     public static async Task RepararQuestoesSemDonoAsync(ApplicationDbContext db, string? criadoPorId)
     {
         var orfas = await db.Questoes.Where(q => q.CriadoPorId == null).ToListAsync();
@@ -704,7 +696,39 @@ public static class DbSeeder
         await AplicarTipoEInserirNovasAsync(db, candidatas, criadoPorId);
     }
 
-    private static async Task<Disciplina> ObterOuCriarDisciplinaAsync(ApplicationDbContext db, string nome)
+    // Dependência estrutural da feature ENADE: reaproveita por Codigo, depois
+    // por Nome (com backfill), só então cria nova; garante um Assunto genérico.
+    public static async Task SeedDisciplinaFormacaoGeralAsync(ApplicationDbContext db)
+    {
+        var disciplina = await db.Disciplinas
+            .Include(d => d.Assuntos)
+            .FirstOrDefaultAsync(d => d.Codigo == Disciplina.CodigoFormacaoGeral);
+
+        if (disciplina is null)
+        {
+            disciplina = await db.Disciplinas
+                .Include(d => d.Assuntos)
+                .FirstOrDefaultAsync(d => d.Nome == "Formação Geral");
+
+            if (disciplina is null)
+            {
+                disciplina = new Disciplina { Nome = "Formação Geral", Codigo = Disciplina.CodigoFormacaoGeral };
+                db.Disciplinas.Add(disciplina);
+            }
+            else
+            {
+                disciplina.Codigo = Disciplina.CodigoFormacaoGeral;
+            }
+        }
+
+        ObterOuCriarAssunto(db, disciplina, "Conhecimentos Gerais");
+
+        await db.SaveChangesAsync();
+    }
+
+    // internal: os seeders de disciplinas novas reaproveitam esses três
+    // helpers em vez de duplicar a lógica de "existe? reaproveita : cria".
+    internal static async Task<Disciplina> ObterOuCriarDisciplinaAsync(ApplicationDbContext db, string nome)
     {
         var disciplina = await db.Disciplinas
             .Include(d => d.Assuntos)
@@ -719,7 +743,7 @@ public static class DbSeeder
         return disciplina;
     }
 
-    private static Assunto ObterOuCriarAssunto(ApplicationDbContext db, Disciplina disciplina, string nome)
+    internal static Assunto ObterOuCriarAssunto(ApplicationDbContext db, Disciplina disciplina, string nome)
     {
         var existente = disciplina.Assuntos.FirstOrDefault(a => a.Nome == nome);
         if (existente is not null)
@@ -733,14 +757,9 @@ public static class DbSeeder
         return novo;
     }
 
-    // Define TipoQuestao a partir do tipo concreto de cada questão (evita
-    // depender de quem monta a lista lembrar de setar isso manualmente), marca
-    // a questão como Compartilhada com CriadoPorId preenchido — sem isso, ela
-    // nasce Privada e sem dono (CriadoPorId nulo), e o filtro VisivelPara
-    // (usado em toda tela que lista questões) esconde isso de TODO MUNDO,
-    // porque "CriadoPorId == meuId" nunca bate com null — e só insere o que
-    // ainda não existe (por enunciado), permitindo rodar de novo sem duplicar.
-    private static async Task AplicarTipoEInserirNovasAsync(ApplicationDbContext db, List<Questao> candidatas, string? criadoPorId)
+    // Define TipoQuestao a partir do tipo concreto e marca Compartilhada com
+    // dono, senão o filtro VisivelPara esconderia de todo mundo; só insere o que não existe.
+    internal static async Task AplicarTipoEInserirNovasAsync(ApplicationDbContext db, List<Questao> candidatas, string? criadoPorId)
     {
         foreach (var questao in candidatas)
         {

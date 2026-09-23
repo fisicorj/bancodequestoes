@@ -9,12 +9,11 @@
 
 <PageTitle>Usuários</PageTitle>
 
-<h1>Usuários</h1>
-<p class="text-muted">Gerencie quem tem acesso ao sistema e quem é administrador.</p>
-
-<p>
-    <a class="btn btn-primary" href="admin/usuarios/novo">+ Novo usuário</a>
-</p>
+<PageHeader Titulo="Usuários" Subtitulo="Gerencie quem tem acesso ao sistema e quem é administrador.">
+    <Acao>
+        <a class="btn btn-primary" href="admin/usuarios/novo">+ Novo usuário</a>
+    </Acao>
+</PageHeader>
 
 @if (sucesso is not null)
 {
@@ -151,9 +150,8 @@ else
         }
         else
         {
-            // Bloqueio manual (não é o lockout automático por senha errada):
-            // habilita o lockout pra esse usuário e coloca a data lá longe no
-            // futuro, o suficiente pra funcionar como "bloqueado por tempo indeterminado".
+            // Bloqueio manual (não o lockout automático por senha errada): data no
+            // futuro distante funciona como "bloqueado por tempo indeterminado".
             await UserManager.SetLockoutEnabledAsync(vm.Usuario, true);
             await UserManager.SetLockoutEndDateAsync(vm.Usuario, DateTimeOffset.MaxValue);
             sucesso = $"\"{vm.Usuario.Email}\" bloqueado(a).";

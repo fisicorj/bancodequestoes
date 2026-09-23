@@ -4,25 +4,58 @@
 @using System.Security.Claims
 @using BancoQuestoes.Importacao
 @using BancoQuestoes.Exportacao
+@using BancoQuestoes.Components.Pages.Questoes.Components
+@using BancoQuestoes.Components.Pages.Provas.Components
 @inject QuestaoService QuestaoService
+@inject QuestaoTagService QuestaoTagService
+@inject SugestaoIaService SugestaoIa
+@inject QuestaoQueryService QuestaoQueryService
 @inject DisciplinaService DisciplinaService
 @inject CursoService CursoService
+@inject AreaCursoService AreaCursoService
 @inject MatrizReferenciaService MatrizService
 @inject IJSRuntime JS
 @inject AuthenticationStateProvider AuthProvider
 @inject NavigationManager NavigationManager
+@inject ILogger<QuestaoList> Logger
 
 <PageTitle>Questões</PageTitle>
 
-<h1>Questões</h1>
-
-<p>
-    <a class="btn btn-primary" href="questoes/novo">+ Nova questão</a>
-    <a class="btn btn-outline-primary" href="questoes/importar">Importar (Aiken/GIFT)</a>
-    <button type="button" class="btn btn-outline-secondary" @onclick="ClassificarBloomAsync">
-        Classificar Bloom automaticamente
-    </button>
-</p>
+<PageHeader Titulo="Questões" Subtitulo="Gerencie, encontre e reutilize suas questões.">
+    <Acao>
+        <a class="btn btn-primary" href="questoes/novo">+ Nova questão</a>
+        <div class="dropdown-simples">
+            <button type="button" class="btn btn-outline-secondary" @onclick="() => mostrarMaisAcoes = !mostrarMaisAcoes">
+                Mais ações <i class="bi bi-chevron-down" aria-hidden="true"></i>
+            </button>
+            @if (mostrarMaisAcoes)
+            {
+                <div class="dropdown-simples-menu">
+                    @if (iaHabilitada)
+                    {
+                        <a class="dropdown-simples-item" href="questoes/gerar-ia"><i class="bi bi-stars" aria-hidden="true"></i> Criar com IA</a>
+                    }
+                    <a class="dropdown-simples-item" href="questoes/importar">Importar (Aiken/GIFT)</a>
+                    <a class="dropdown-simples-item" href="questoes/importar-enade">Importar Prova ENADE</a>
+                    <button type="button" class="dropdown-simples-item" disabled="@classificandoBloom" @onclick="ClassificarBloomAsync">
+                        @if (classificandoBloom)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        }
+                        Classificar Bloom automaticamente
+                    </button>
+                    @if (iaHabilitada)
+                    {
+                        <div class="dropdown-simples-item form-check mb-0">
+                            <input class="form-check-input" type="checkbox" id="usarIaBloom" @bind="usarIaBloom" disabled="@classificandoBloom" />
+                            <label class="form-check-label small" for="usarIaBloom">usar IA nas sem palavra-chave reconhecida</label>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </Acao>
+</PageHeader>
 
 @if (sucesso is not null)
 {
@@ -34,148 +67,45 @@
     <div class="alert alert-danger">@erro</div>
 }
 
-<div class="row g-2 align-items-end mb-3 p-3 bg-light border rounded">
-    <div class="col-12 col-md-4">
-        <label class="form-label small mb-1">Buscar no enunciado</label>
-        <input type="text" class="form-control" placeholder="Digite para buscar..."
-               @bind="filtroTexto" @bind:event="oninput" @bind:after="AplicarFiltroAsync" />
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Disciplina</label>
-        <select class="form-select" @bind="filtroDisciplinaId" @bind:after="AoMudarDisciplinaAsync">
-            <option value="0">Todas</option>
-            @foreach (var d in disciplinas)
-            {
-                <option value="@d.Id">@d.Nome</option>
-            }
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Assunto</label>
-        <select class="form-select" @bind="filtroAssuntoId" @bind:after="AplicarFiltroAsync">
-            <option value="0">Todos</option>
-            @foreach (var a in AssuntosDoFiltro)
-            {
-                <option value="@a.Id">@a.Nome</option>
-            }
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Tipo</label>
-        <select class="form-select" @bind="filtroTipo" @bind:after="AplicarFiltroAsync">
-            <option value="">Todos</option>
-            <option value="@TipoQuestao.MultiplaEscolha">Múltipla escolha</option>
-            <option value="@TipoQuestao.Discursiva">Discursiva</option>
-            <option value="@TipoQuestao.CertoErrado">Certo/Errado</option>
-            <option value="@TipoQuestao.Associacao">Associação</option>
-            <option value="@TipoQuestao.RespostaBreve">Resposta breve</option>
-            <option value="@TipoQuestao.Numerica">Numérica</option>
-            <option value="@TipoQuestao.Lacunas">Preenchimento de lacunas</option>
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Dificuldade</label>
-        <select class="form-select" @bind="filtroDificuldade" @bind:after="AplicarFiltroAsync">
-            <option value="">Todas</option>
-            <option value="@Dificuldade.Facil">Fácil</option>
-            <option value="@Dificuldade.Media">Média</option>
-            <option value="@Dificuldade.Dificil">Difícil</option>
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Visibilidade</label>
-        <select class="form-select" @bind="filtroVisibilidade" @bind:after="AplicarFiltroAsync">
-            <option value="">Todas</option>
-            <option value="@VisibilidadeQuestao.Privada">🔒 Só eu</option>
-            <option value="@VisibilidadeQuestao.Institucional">👥 Instituição</option>
-            <option value="@VisibilidadeQuestao.Compartilhada">🌐 Todos</option>
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Bloom</label>
-        <select class="form-select" @bind="filtroBloom" @bind:after="AplicarFiltroAsync">
-            <option value="">Todos</option>
-            <option value="@NivelBloom.Lembrar">Lembrar</option>
-            <option value="@NivelBloom.Entender">Entender</option>
-            <option value="@NivelBloom.Aplicar">Aplicar</option>
-            <option value="@NivelBloom.Analisar">Analisar</option>
-            <option value="@NivelBloom.Avaliar">Avaliar</option>
-            <option value="@NivelBloom.Criar">Criar</option>
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Origem</label>
-        <select class="form-select" @bind="filtroOrigem" @bind:after="AplicarFiltroAsync">
-            <option value="">Todas</option>
-            <option value="@OrigemQuestao.Autoral">Autoral</option>
-            <option value="@OrigemQuestao.Livro">Livro</option>
-            <option value="@OrigemQuestao.Enade">ENADE</option>
-            <option value="@OrigemQuestao.Concurso">Concurso</option>
-            <option value="@OrigemQuestao.Vestibular">Vestibular</option>
-            <option value="@OrigemQuestao.Importada">Importada</option>
-            <option value="@OrigemQuestao.Ia">IA</option>
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Curso</label>
-        <select class="form-select" @bind="filtroCursoId" @bind:after="AoMudarCursoFiltroAsync">
-            <option value="0">Todos</option>
-            @foreach (var c in cursos)
-            {
-                <option value="@c.Id">@c.Instituicao?.Nome / @c.Nome</option>
-            }
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Matriz / ENADE</label>
-        <select class="form-select" @bind="filtroMatrizId" @bind:after="AoMudarMatrizFiltroAsync" disabled="@(filtroCursoId == 0)">
-            <option value="0">@(filtroCursoId == 0 ? "Escolha o curso primeiro..." : "Todas")</option>
-            @foreach (var m in matrizesDoFiltroCurso)
-            {
-                <option value="@m.Id">@m.Nome</option>
-            }
-        </select>
-    </div>
-    <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Item da matriz</label>
-        <select class="form-select" @bind="filtroItemMatrizId" @bind:after="AplicarFiltroAsync" disabled="@(filtroMatrizId == 0)">
-            <option value="0">@(filtroMatrizId == 0 ? "Escolha a matriz primeiro..." : "Todos")</option>
-            @foreach (var i in itensDoFiltroMatriz)
-            {
-                <option value="@i.Id">@i.Codigo — @i.Titulo</option>
-            }
-        </select>
-    </div>
-    @if (todasTags.Count > 0)
-    {
-        <div class="col-12">
-            <label class="form-label small mb-1">Tags</label>
-            <div class="d-flex flex-wrap gap-1">
-                @foreach (var tag in todasTags)
-                {
-                    <button type="button" class="btn btn-sm @(filtroTagIds.Contains(tag.Id) ? "btn-primary" : "btn-outline-secondary")" @onclick="() => AlternarFiltroTagAsync(tag.Id)">
-                        @tag.Nome
-                    </button>
-                }
-            </div>
-        </div>
-    }
-    <div class="col-12 d-flex align-items-center justify-content-between mt-2">
-        <div class="form-check">
-            <input class="form-check-input" type="checkbox" id="mostrarInativas" @bind="mostrarInativas" @bind:after="AplicarFiltroAsync" />
-            <label class="form-check-label" for="mostrarInativas">Mostrar inativas</label>
-        </div>
-        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="LimparFiltrosAsync">Limpar filtros</button>
-    </div>
-</div>
+<QuestaoFiltrosBar Filtro="filtro"
+                   Disciplinas="disciplinas"
+                   AssuntosDoFiltro="AssuntosDoFiltro"
+                   Cursos="cursos"
+                   AreasCurso="areasCurso"
+                   MatrizesDoFiltroCurso="matrizesDoFiltroCurso"
+                   ItensDoFiltroMatriz="itensDoFiltroMatriz"
+                   TodasTags="todasTags"
+                   OnFiltroAlterado="AplicarFiltroAsync"
+                   OnMudarDisciplina="AoMudarDisciplinaAsync"
+                   OnMudarCurso="AoMudarCursoFiltroAsync"
+                   OnMudarMatriz="AoMudarMatrizFiltroAsync"
+                   OnAlternarTag="AlternarFiltroTagAsync"
+                   OnLimparFiltros="LimparFiltrosAsync" />
 
 @if (questoes is null)
 {
     <p><em>Carregando...</em></p>
 }
+else if (questoes.Count == 0 && !FiltroEstaAtivo)
+{
+    <div class="empty-state">
+        <i class="bi bi-inbox empty-state-icon" aria-hidden="true"></i>
+        <p class="empty-state-title">Seu banco de questões está vazio.</p>
+        <p class="empty-state-text">Crie sua primeira questão ou importe questões.</p>
+        <div class="d-flex justify-content-center gap-2">
+            <a class="btn btn-primary" href="questoes/novo">+ Criar questão</a>
+            <a class="btn btn-outline-secondary" href="questoes/importar">Importar</a>
+        </div>
+    </div>
+}
 else if (questoes.Count == 0)
 {
-    <p><em>Nenhuma questão encontrada com os filtros atuais.</em></p>
+    <div class="empty-state">
+        <i class="bi bi-filter-circle empty-state-icon" aria-hidden="true"></i>
+        <p class="empty-state-title">Nenhuma questão encontrada.</p>
+        <p class="empty-state-text">Tente remover alguns filtros.</p>
+        <button type="button" class="btn btn-outline-secondary" @onclick="LimparFiltrosAsync">Limpar filtros</button>
+    </div>
 }
 else
 {
@@ -203,91 +133,17 @@ else
     <div class="d-flex flex-column gap-3">
         @foreach (var q in questoes)
         {
-            var minha = q.CriadoPorId == meuId;
-            <div class="card">
-                <div class="card-body">
-                    <div class="d-flex align-items-start justify-content-between gap-2 mb-1">
-                        <div class="d-flex align-items-center gap-2">
-                            <input type="checkbox" class="form-check-input mt-0" checked="@selecionadas.Contains(q.Id)" @onchange="e => AlternarSelecao(q.Id, (bool)e.Value!)" />
-                            <span class="fw-bold text-muted">Q@(q.Id)</span>
-                        </div>
-                        <div class="d-flex align-items-center gap-1">
-                            @{ var qualidadeQ = QualidadeQuestao.Calcular(q); }
-                            <span class="badge text-bg-@qualidadeQ.CorFarol" title="@(qualidadeQ.CriteriosFaltando.Count > 0 ? "Faltando: " + string.Join(", ", qualidadeQ.CriteriosFaltando) : "Todos os critérios atendidos")">
-                                Qualidade: @qualidadeQ.Percentual%
-                            </span>
-                            <span class="badge text-bg-light border" title="@(minha ? "" : "Criada por outro professor")">@RotuloVisibilidade(q.Visibilidade)</span>
-                            <span class="badge @(q.Ativa ? "text-bg-success" : "text-bg-secondary")">@(q.Ativa ? "Ativa" : "Inativa")</span>
-                        </div>
-                    </div>
-
-                    <p class="text-muted small mb-1">@q.Assunto?.Disciplina?.Nome / @q.Assunto?.Nome</p>
-
-                    <p class="mb-2">@Truncar(q.Enunciado)</p>
-
-                    <p class="text-muted small mb-1">
-                        @RotuloTipo(q.TipoQuestao) • @q.Dificuldade@(q.Bloom is { } bloom ? $" • {RotuloBloom(bloom)}" : "")
-                    </p>
-
-                    @if (q.ItensMatriz.Count > 0)
-                    {
-                        <p class="mb-1">
-                            <span class="text-muted small">Alinhamento:</span>
-                            @foreach (var grupoMatriz in q.ItensMatriz.GroupBy(i => i.MatrizReferencia?.Nome ?? "").OrderBy(g => g.Key))
-                            {
-                                <span class="text-muted small">@grupoMatriz.Key:</span>
-                                @foreach (var item in grupoMatriz.OrderBy(i => i.Codigo))
-                                {
-                                    <span class="badge text-bg-light border" title="@item.Titulo">@item.Codigo</span>
-                                }
-                            }
-                        </p>
-                    }
-
-                    @{ var usos = usosPorQuestao.GetValueOrDefault(q.Id); }
-                    <p class="text-muted small mb-1">
-                        @(usos > 0 ? $"Usada {usos} vez(es)" : "Nunca usada")
-                        @if (usos >= LimiarAltaExposicao)
-                        {
-                            <span class="badge text-bg-warning" title="Usada @usos vezes — considere dar preferência a questões menos usadas.">⚠ Alta exposição</span>
-                        }
-                        •
-                        Atualizada @TempoRelativo(q.AtualizadoEm ?? q.CriadoEm)
-                    </p>
-                    @if (ultimoUsoPorQuestao.TryGetValue(q.Id, out var ultimoUso))
-                    {
-                        <p class="text-muted small mb-2">Última utilização: @ultimoUso.Rotulo</p>
-                    }
-
-                    @if (q.Tags.Count > 0)
-                    {
-                        <div class="d-flex flex-wrap gap-1 mb-3">
-                            @foreach (var tag in q.Tags.OrderBy(t => t.Nome))
-                            {
-                                <span class="badge text-bg-light border">@tag.Nome</span>
-                            }
-                        </div>
-                    }
-
-                    <div class="d-flex flex-wrap gap-2">
-                        @if (minha)
-                        {
-                            <a class="btn btn-sm btn-secondary" href="@($"questoes/editar/{q.Id}")">Editar</a>
-                        }
-                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => DuplicarAsync(q)">Duplicar</button>
-                        <button type="button" class="btn btn-sm btn-outline-primary" @onclick="() => AbrirPreviewAsync(q.Id)">
-                            <i class="bi bi-eye" aria-hidden="true"></i> Prévia
-                        </button>
-                        @if (minha)
-                        {
-                            <button type="button" class="btn btn-sm @(q.Ativa ? "btn-warning" : "btn-success")" @onclick="() => AlternarAtivaAsync(q)">
-                                @(q.Ativa ? "Desativar" : "Reativar")
-                            </button>
-                            <button type="button" class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(q)">Excluir</button>
-                        }
-                    </div>
-                </div>
-            </div>
+            <QuestaoCard Questao="q"
+                         Selecionada="selecionadas.Contains(q.Id)"
+                         Minha="q.CriadoPorId == meuId"
+                         Usos="usosPorQuestao.GetValueOrDefault(q.Id)"
+                         UltimoUso="ultimoUsoPorQuestao.GetValueOrDefault(q.Id)"
+                         LimiarAltaExposicao="LimiarAltaExposicao"
+                         OnToggleSelecao="marcado => AlternarSelecao(q.Id, marcado)"
+                         OnDuplicar="() => DuplicarAsync(q)"
+                         OnPreview="() => AbrirPreviewAsync(q.Id)"
+                         OnAlternarAtiva="() => AlternarAtivaAsync(q)"
+                         OnExcluir="() => ConfirmarExcluirAsync(q)" />
         }
     </div>
 
@@ -296,197 +152,33 @@ else
     </div>
 }
 
-@if (questaoPreview is not null)
-{
-    <div class="modal-backdrop fade show" @onclick="FecharPreview"></div>
-    <div class="modal fade show" style="display:block;" tabindex="-1" role="dialog">
-        <div class="modal-dialog modal-dialog-scrollable modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Prévia da questão</h5>
-                    <button type="button" class="btn-close" aria-label="Fechar" @onclick="FecharPreview"></button>
-                </div>
-                <div class="modal-body">
-                    @{ var qualidadePreview = QualidadeQuestao.Calcular(questaoPreview); }
-                    <p class="mb-1">
-                        <span class="badge text-bg-@qualidadePreview.CorFarol">Qualidade: @qualidadePreview.Percentual%</span>
-                        @if (qualidadePreview.CriteriosFaltando.Count > 0)
-                        {
-                            <span class="text-muted small ms-1">Faltando: @string.Join(", ", qualidadePreview.CriteriosFaltando)</span>
-                        }
-                    </p>
-                    <p class="text-muted small mb-1">
-                        @RotuloTipo(questaoPreview.TipoQuestao) • @questaoPreview.Dificuldade • @questaoPreview.Assunto?.Disciplina?.Nome / @questaoPreview.Assunto?.Nome
-                        @(questaoPreview.Bloom is { } previaBloom ? $" • {RotuloBloom(previaBloom)}" : "")
-                    </p>
-                    <p class="text-muted small mb-2">
-                        Origem: @RotuloOrigem(questaoPreview.Origem)@(questaoPreview.Ano is { } ano ? $" ({ano})" : "")@(string.IsNullOrWhiteSpace(questaoPreview.Referencia) ? "" : $" — {questaoPreview.Referencia}")
-                    </p>
-                    @{ var previaUsos = usosPorQuestao.GetValueOrDefault(questaoPreview.Id); }
-                    <p class="text-muted small mb-2">
-                        @(previaUsos > 0 ? $"Utilizada {previaUsos} vez(es)" : "Nunca utilizada")
-                        @if (previaUsos >= LimiarAltaExposicao)
-                        {
-                            <span class="badge text-bg-warning">⚠ Alta exposição</span>
-                        }
-                        @(questaoPreviewUltimoUso is not null ? $" • Última utilização: {questaoPreviewUltimoUso.Rotulo}" : "")
-                    </p>
-                    @if (questaoPreview.Tags.Count > 0)
-                    {
-                        <div class="d-flex flex-wrap gap-1 mb-2">
-                            @foreach (var tag in questaoPreview.Tags.OrderBy(t => t.Nome))
-                            {
-                                <span class="badge text-bg-light border">@tag.Nome</span>
-                            }
-                        </div>
-                    }
-
-                    @if (questaoPreview.ItensMatriz.Count > 0)
-                    {
-                        <div class="mb-2">
-                            <p class="text-muted small mb-1"><strong>Alinhamento curricular:</strong></p>
-                            @foreach (var grupoMatriz in questaoPreview.ItensMatriz.GroupBy(i => i.MatrizReferencia?.Nome ?? "").OrderBy(g => g.Key))
-                            {
-                                <p class="small mb-1 fw-bold">@grupoMatriz.Key</p>
-                                <ul class="small mb-0">
-                                    @foreach (var item in grupoMatriz.OrderBy(i => i.Codigo))
-                                    {
-                                        <li>
-                                            <span class="badge text-bg-secondary">@item.Tipo.Rotulo()</span>
-                                            <strong>@item.Codigo</strong> — @item.Titulo
-                                        </li>
-                                    }
-                                </ul>
-                            }
-                        </div>
-                    }
-
-                    <div class="markdown-preview mb-3">@RenderizarEnunciadoPreview(questaoPreview)</div>
-
-                    @if (questaoPreview.Imagens.Count > 0)
-                    {
-                        <div class="mb-3">
-                            @foreach (var img in questaoPreview.Imagens.OrderBy(i => i.Ordem))
-                            {
-                                <div class="mb-2" style="text-align: @AlinhamentoCss(img.Alinhamento);">
-                                    <img src="@($"questoes/imagem/{img.Id}")" alt="@(img.TextoAlternativo ?? img.NomeArquivo)"
-                                         style="width: @(img.LarguraPercentual ?? 60)%; max-width: 100%;" />
-                                    @if (!string.IsNullOrWhiteSpace(img.Legenda))
-                                    {
-                                        <div class="text-muted small fst-italic">@img.Legenda</div>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-
-                    @switch (questaoPreview)
-                    {
-                        case QuestaoMultiplaEscolha me:
-                            <ol type="A" class="mb-0">
-                                @foreach (var alt in me.Alternativas.OrderBy(a => a.Letra))
-                                {
-                                    <li class="@(alt.Letra == me.RespostaCorreta ? "fw-bold text-success" : "")">
-                                        @alt.Texto @(alt.Letra == me.RespostaCorreta ? "✓" : "")
-                                    </li>
-                                }
-                            </ol>
-                            break;
-
-                        case QuestaoCertoErrado ce:
-                            <p class="mb-0">
-                                (@(ce.RespostaCorreta ? "✓" : "  ")) Certo &nbsp;&nbsp;&nbsp; (@(!ce.RespostaCorreta ? "✓" : "  ")) Errado
-                            </p>
-                            break;
-
-                        case QuestaoDiscursiva d:
-                            <p class="mb-1"><strong>Resposta esperada:</strong> @d.RespostaEsperada</p>
-                            @if (!string.IsNullOrWhiteSpace(d.CriterioAvaliacao))
-                            {
-                                <p class="mb-0 text-muted small"><strong>Critério de avaliação:</strong> @d.CriterioAvaliacao</p>
-                            }
-                            break;
-
-                        case QuestaoRespostaBreve rb:
-                            <p class="mb-0"><strong>Resposta esperada:</strong> @rb.RespostaEsperada</p>
-                            break;
-
-                        case QuestaoNumerica num:
-                            <p class="mb-0">
-                                <strong>Resposta esperada:</strong> @num.RespostaEsperada.ToString("0.####")
-                                @(num.Tolerancia > 0 ? $" (± {num.Tolerancia:0.####})" : "")
-                            </p>
-                            break;
-
-                        case QuestaoAssociacao assoc:
-                            var pares = assoc.Pares.OrderBy(p => p.Ordem).ToList();
-                            <div class="row">
-                                <div class="col-6">
-                                    @for (var i = 0; i < pares.Count; i++)
-                                    {
-                                        <p class="mb-1">@(i + 1). @pares[i].Termo</p>
-                                    }
-                                </div>
-                                <div class="col-6">
-                                    @for (var i = 0; i < pares.Count; i++)
-                                    {
-                                        <p class="mb-1">@LetraDe(i)) @pares[i].Correspondente</p>
-                                    }
-                                </div>
-                            </div>
-                            break;
-
-                        case QuestaoLacunas lac:
-                            <p class="mb-0 text-muted small">
-                                <strong>Respostas esperadas:</strong>
-                                @string.Join("; ", lac.Lacunas.OrderBy(l => l.Ordem).Select((l, i) => $"({i + 1}) {l.RespostaEsperada}"))
-                            </p>
-                            break;
-                    }
-
-                    @if (!string.IsNullOrWhiteSpace(questaoPreview.Explicacao))
-                    {
-                        <hr />
-                        <p class="text-muted small mb-1"><strong>Explicação da resposta:</strong></p>
-                        <div class="markdown-preview">@RenderizarPreview(questaoPreview.Explicacao)</div>
-                    }
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="FecharPreview">Fechar</button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
+<QuestaoPreviewModal QuestaoAtual="questaoPreview"
+                     JaSelecionada="false"
+                     UsosDaQuestao="questaoPreview is null ? 0 : usosPorQuestao.GetValueOrDefault(questaoPreview.Id)"
+                     OnFechar="FecharPreview"
+                     Titulo="Prévia da questão"
+                     MostrarAlinhamentoCurricular="true"
+                     UltimoUso="questaoPreviewUltimoUso"
+                     LimiarAltaExposicao="LimiarAltaExposicao"
+                     FormatarDificuldade="false"
+                     MostrarDisciplinaNoAssunto="true"
+                     MostrarBotaoAdicionar="false" />
 
 @code {
     private List<Questao>? questoes;
     private List<Disciplina> disciplinas = new();
     private List<Assunto> todosAssuntos = new();
-    private bool mostrarInativas;
 
-    private string filtroTexto = "";
-    private int filtroDisciplinaId;
-    private int filtroAssuntoId;
-    private TipoQuestao? filtroTipo;
-    private Dificuldade? filtroDificuldade;
-    private VisibilidadeQuestao? filtroVisibilidade;
-    private NivelBloom? filtroBloom;
-    private OrigemQuestao? filtroOrigem;
-    private HashSet<int> filtroTagIds = new();
+    // Todos os filtros num objeto só; QuestaoFiltrosBar liga direto nos campos.
+    private QuestaoFiltro filtro = new();
     private List<Tag> todasTags = new();
     private string? sucesso;
     private string? erro;
 
-    // Alinhamento Curricular / ENADE — CursoId escopa o <select> de Matriz
-    // (igual Disciplina escopa Assunto acima); MatrizReferenciaId escopa o
-    // <select> de Item; ItemMatrizId é quem filtra de fato (ver
-    // QuestaoService.ListarAsync). Itens são flat, então o filtro é direto,
-    // sem precisar expandir descendentes como no antigo modelo de Diretriz.
+    // CursoId escopa o <select> de Matriz; MatrizReferenciaId escopa o de Item;
+    // ItemMatrizId é quem filtra de fato.
     private List<Curso> cursos = new();
-    private int filtroCursoId;
-    private int filtroMatrizId;
-    private int filtroItemMatrizId;
+    private List<AreaCurso> areasCurso = new();
     private List<MatrizReferencia> matrizesDoFiltroCurso = new();
     private List<ItemMatrizReferencia> itensDoFiltroMatriz = new();
 
@@ -494,10 +186,7 @@ else
     private int pagina = 1;
     private int totalRegistros;
 
-    // Limiar simples e fixo pra marcar uma questão como "alta exposição" —
-    // não é uma ciência exata, é só um alerta visual pro professor considerar
-    // dar preferência a outras questões. O gerador (ProvaService.Sortear) usa
-    // um critério mais refinado (peso decrescente por uso, não um corte fixo).
+    // Limiar fixo só pro alerta visual; o gerador usa peso decrescente por uso.
     private const int LimiarAltaExposicao = 10;
 
     private Dictionary<int, int> usosPorQuestao = new();
@@ -509,16 +198,40 @@ else
 
     private Questao? questaoPreview;
 
+    // Estado do menu "Mais ações" do cabeçalho (ver PageHeader) — puramente
+    // visual, sem efeito em nenhuma regra de negócio.
+    private bool mostrarMaisAcoes;
+
     [SupplyParameterFromQuery(Name = "msg")]
     private string? Msg { get; set; }
 
     // Lista de assuntos exibida no <select>, restrita à disciplina escolhida
     // (ou todas, se nenhuma disciplina estiver selecionada no filtro).
-    private IEnumerable<Assunto> AssuntosDoFiltro => filtroDisciplinaId == 0
+    private IEnumerable<Assunto> AssuntosDoFiltro => filtro.DisciplinaId == 0
         ? todosAssuntos
-        : todosAssuntos.Where(a => a.DisciplinaId == filtroDisciplinaId);
+        : todosAssuntos.Where(a => a.DisciplinaId == filtro.DisciplinaId);
 
     private bool TodasNaPaginaSelecionadas => questoes is { Count: > 0 } && questoes.All(q => selecionadas.Contains(q.Id));
+
+    // Distingue "banco vazio de verdade" (nenhum filtro, zero questões) de
+    // "filtro não bateu com nada" — cada caso tem um empty state diferente.
+    private bool FiltroEstaAtivo =>
+        !string.IsNullOrWhiteSpace(filtro.Texto) ||
+        filtro.DisciplinaId != 0 ||
+        filtro.AssuntoId != 0 ||
+        filtro.Tipo is not null ||
+        filtro.Dificuldade is not null ||
+        filtro.Visibilidade is not null ||
+        filtro.Bloom is not null ||
+        filtro.Origem is not null ||
+        filtro.Ano is not null ||
+        filtro.SecaoEnade is not null ||
+        filtro.TagIds.Count > 0 ||
+        filtro.MostrarInativas ||
+        filtro.CursoId != 0 ||
+        filtro.AreaCursoId != 0 ||
+        filtro.MatrizReferenciaId != 0 ||
+        filtro.ItemMatrizId != 0;
 
     protected override async Task OnInitializedAsync()
     {
@@ -528,8 +241,10 @@ else
         minhaInstituicaoId = await QuestaoService.ObterInstituicaoDoUsuarioAsync(meuId);
         disciplinas = await DisciplinaService.ListarTodasAsync();
         todosAssuntos = await DisciplinaService.ListarTodosAssuntosAsync();
-        todasTags = await QuestaoService.ListarTagsAsync();
+        todasTags = await QuestaoTagService.ListarTagsAsync();
         cursos = await CursoService.ListarTodosAsync();
+        areasCurso = await AreaCursoService.ListarAtivasAsync();
+        iaHabilitada = await SugestaoIa.HabilitadaAsync();
         await CarregarAsync();
     }
 
@@ -537,12 +252,12 @@ else
     // curso), mesma lógica de AoMudarDisciplinaAsync abaixo pra Assunto.
     private async Task AoMudarCursoFiltroAsync()
     {
-        filtroMatrizId = 0;
-        filtroItemMatrizId = 0;
+        filtro.MatrizReferenciaId = 0;
+        filtro.ItemMatrizId = 0;
         itensDoFiltroMatriz = new();
-        matrizesDoFiltroCurso = filtroCursoId == 0
+        matrizesDoFiltroCurso = filtro.CursoId == 0
             ? new()
-            : await MatrizService.ListarPorCursoAsync(filtroCursoId);
+            : await MatrizService.ListarPorCursoAsync(filtro.CursoId);
         pagina = 1;
         await CarregarAsync();
     }
@@ -551,19 +266,19 @@ else
     // matriz).
     private async Task AoMudarMatrizFiltroAsync()
     {
-        filtroItemMatrizId = 0;
-        itensDoFiltroMatriz = filtroMatrizId == 0
+        filtro.ItemMatrizId = 0;
+        itensDoFiltroMatriz = filtro.MatrizReferenciaId == 0
             ? new()
-            : await MatrizService.ListarItensAsync(filtroMatrizId);
+            : await MatrizService.ListarItensAsync(filtro.MatrizReferenciaId);
         pagina = 1;
         await CarregarAsync();
     }
 
     private async Task AlternarFiltroTagAsync(int tagId)
     {
-        if (!filtroTagIds.Add(tagId))
+        if (!filtro.TagIds.Add(tagId))
         {
-            filtroTagIds.Remove(tagId);
+            filtro.TagIds.Remove(tagId);
         }
         pagina = 1;
         await CarregarAsync();
@@ -573,7 +288,7 @@ else
     // a outra disciplina), então zera antes de recarregar.
     private async Task AoMudarDisciplinaAsync()
     {
-        filtroAssuntoId = 0;
+        filtro.AssuntoId = 0;
         pagina = 1;
         await CarregarAsync();
     }
@@ -588,21 +303,9 @@ else
 
     private async Task LimparFiltrosAsync()
     {
-        filtroTexto = "";
-        filtroDisciplinaId = 0;
-        filtroAssuntoId = 0;
-        filtroTipo = null;
-        filtroDificuldade = null;
-        filtroVisibilidade = null;
-        filtroBloom = null;
-        filtroOrigem = null;
-        filtroTagIds.Clear();
-        filtroCursoId = 0;
-        filtroMatrizId = 0;
-        filtroItemMatrizId = 0;
+        filtro = new QuestaoFiltro();
         matrizesDoFiltroCurso = new();
         itensDoFiltroMatriz = new();
-        mostrarInativas = false;
         pagina = 1;
         await CarregarAsync();
     }
@@ -615,29 +318,12 @@ else
 
     private async Task CarregarAsync()
     {
-        var filtro = new QuestaoFiltro
-        {
-            Texto = filtroTexto,
-            DisciplinaId = filtroDisciplinaId,
-            AssuntoId = filtroAssuntoId,
-            Tipo = filtroTipo,
-            Dificuldade = filtroDificuldade,
-            Visibilidade = filtroVisibilidade,
-            Bloom = filtroBloom,
-            Origem = filtroOrigem,
-            TagIds = filtroTagIds,
-            MostrarInativas = mostrarInativas,
-            CursoId = filtroCursoId,
-            MatrizReferenciaId = filtroMatrizId,
-            ItemMatrizId = filtroItemMatrizId,
-        };
-
-        var resultado = await QuestaoService.ListarAsync(filtro, meuId, minhaInstituicaoId, pagina, TamanhoPagina);
+        var resultado = await QuestaoQueryService.ListarAsync(filtro, meuId, minhaInstituicaoId, pagina, TamanhoPagina);
         questoes = resultado.Itens;
         totalRegistros = resultado.Total;
 
         var idsNaPagina = questoes.Select(q => q.Id).ToList();
-        (usosPorQuestao, ultimoUsoPorQuestao) = await QuestaoService.ObterUsoAsync(idsNaPagina);
+        (usosPorQuestao, ultimoUsoPorQuestao) = await QuestaoQueryService.ObterUsoAsync(idsNaPagina);
     }
 
     private void AlternarSelecao(int id, bool marcado)
@@ -712,23 +398,34 @@ else
         }
     }
 
-    // Preenche o Bloom só de quem está em branco, entre as MINHAS questões
-    // (é uma edição de metadado, então segue a mesma regra de posse do resto
-    // — não mexe em questão de outro professor mesmo que compartilhada).
-    // Heurística por palavras-chave, aproximada — revise depois.
+    // Preenche o Bloom só de quem está em branco, entre as minhas questões, por
+    // heurística e, se marcado, IA (mais lenta, uma chamada por questão).
+    private bool iaHabilitada;
+
+    private bool usarIaBloom;
+    private bool classificandoBloom;
+
     private async Task ClassificarBloomAsync()
     {
         erro = null;
         sucesso = null;
+        classificandoBloom = true;
 
-        var (classificadas, semSugestao) = await QuestaoService.ClassificarBloomAutomaticamenteAsync(meuId);
+        try
+        {
+            var (classificadas, semSugestao) = await QuestaoService.ClassificarBloomAutomaticamenteAsync(meuId, usarIaBloom);
 
-        sucesso = classificadas == 0
-            ? "Nenhuma questão sua sem Bloom tinha um verbo reconhecível pra sugerir automaticamente."
-            : $"{classificadas} questão(ões) classificada(s) por Bloom automaticamente." +
-                (semSugestao > 0 ? $" {semSugestao} continuaram sem sugestão clara — classifique manualmente." : "");
+            sucesso = classificadas == 0
+                ? "Nenhuma questão sua sem Bloom tinha sugestão pra dar."
+                : $"{classificadas} questão(ões) classificada(s) por Bloom automaticamente." +
+                    (semSugestao > 0 ? $" {semSugestao} continuaram sem sugestão clara — classifique manualmente." : "");
 
-        await CarregarAsync();
+            await CarregarAsync();
+        }
+        finally
+        {
+            classificandoBloom = false;
+        }
     }
 
     private async Task DuplicarAsync(Questao original)
@@ -745,8 +442,9 @@ else
         {
             erro = ex.Message;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Logger.LogWarning(ex, "Falha ao duplicar questão {QuestaoId}", original.Id);
             erro = "Não foi possível duplicar essa questão.";
         }
     }
@@ -794,12 +492,8 @@ else
         }
     }
 
-    // Prévia "exatamente como vai sair na prova": carrega a questão completa
-    // (mesmo caminho de Duplicar/Exportar) e mostra num modal — enunciado
-    // renderizado em Markdown+LaTeX, imagens, e o corpo específico do tipo
-    // (alternativas com a correta marcada, resposta esperada etc.). É uma
-    // visão "de professor" (mostra a resposta certa) — não simula a versão
-    // embaralhada que sai no PDF/DOCX, só o conteúdo.
+    // Visão "de professor" (mostra a resposta certa), não a versão embaralhada do
+    // PDF/DOCX; usa o QuestaoPreviewModal compartilhado com ProvaForm.razor.
     private async Task AbrirPreviewAsync(int id)
     {
         erro = null;
@@ -810,7 +504,7 @@ else
             return;
         }
         questaoPreview = completa;
-        questaoPreviewUltimoUso = await QuestaoService.ObterUltimoUsoAsync(id);
+        questaoPreviewUltimoUso = await QuestaoQueryService.ObterUltimoUsoAsync(id);
     }
 
     private void FecharPreview()
@@ -819,108 +513,5 @@ else
         questaoPreviewUltimoUso = null;
     }
 
-    // Lacunas precisa do mesmo texto com marcadores numerados que aparece na
-    // prova exportada (ver ProvaExportLoader.SubstituirMarcadoresDeLacuna) —
-    // senão a prévia mostraria "___" cru em vez de "_____(1)_____".
-    private MarkupString RenderizarEnunciadoPreview(Questao q)
-    {
-        var texto = q.TipoQuestao == TipoQuestao.Lacunas
-            ? ProvaExportLoader.SubstituirMarcadoresDeLacuna(q.Enunciado)
-            : q.Enunciado;
-        return (MarkupString)MarkdownPreview.ParaHtml(texto);
-    }
-
-    // Mesma conversão usada pro enunciado (Markdown -> HTML), reaproveitada
-    // pra mostrar a Explicação da resposta no modal de prévia.
-    private static MarkupString RenderizarPreview(string markdown) => (MarkupString)MarkdownPreview.ParaHtml(markdown);
-
-    private static char LetraDe(int indice) => (char)('A' + indice);
-
-    // Formata a diferença entre "agora" e uma data em texto relativo curto
-    // ("há 5 dias", "ontem", "há 2 meses"...) — usado na listagem em vez da
-    // data completa, mais rápido de escanear numa lista de questões.
-    private static string TempoRelativo(DateTime dataUtc)
-    {
-        var diff = DateTime.UtcNow - dataUtc;
-        if (diff.TotalMinutes < 1)
-        {
-            return "agora mesmo";
-        }
-        if (diff.TotalMinutes < 60)
-        {
-            return $"há {(int)diff.TotalMinutes} min";
-        }
-        if (diff.TotalHours < 24)
-        {
-            return $"há {(int)diff.TotalHours}h";
-        }
-        if (diff.TotalDays < 2)
-        {
-            return "ontem";
-        }
-        if (diff.TotalDays < 30)
-        {
-            return $"há {(int)diff.TotalDays} dias";
-        }
-        if (diff.TotalDays < 365)
-        {
-            var meses = (int)(diff.TotalDays / 30);
-            return $"há {meses} {(meses == 1 ? "mês" : "meses")}";
-        }
-        var anos = (int)(diff.TotalDays / 365);
-        return $"há {anos} {(anos == 1 ? "ano" : "anos")}";
-    }
-
     private static string Truncar(string texto) => texto.Length > 160 ? texto[..160] + "..." : texto;
-
-    // Nulo = padrão do sistema (Centralizado) — mesma regra usada nos exportadores.
-    private static string AlinhamentoCss(AlinhamentoImagem? alinhamento) => alinhamento switch
-    {
-        AlinhamentoImagem.Esquerda => "left",
-        AlinhamentoImagem.Direita => "right",
-        _ => "center",
-    };
-
-    private static string RotuloBloom(NivelBloom bloom) => bloom switch
-    {
-        NivelBloom.Lembrar => "Lembrar",
-        NivelBloom.Entender => "Entender",
-        NivelBloom.Aplicar => "Aplicar",
-        NivelBloom.Analisar => "Analisar",
-        NivelBloom.Avaliar => "Avaliar",
-        NivelBloom.Criar => "Criar",
-        _ => bloom.ToString(),
-    };
-
-    private static string RotuloOrigem(OrigemQuestao origem) => origem switch
-    {
-        OrigemQuestao.Autoral => "Autoral",
-        OrigemQuestao.Livro => "Livro",
-        OrigemQuestao.Enade => "ENADE",
-        OrigemQuestao.Concurso => "Concurso",
-        OrigemQuestao.Vestibular => "Vestibular",
-        OrigemQuestao.Importada => "Importada",
-        OrigemQuestao.Ia => "IA",
-        _ => origem.ToString(),
-    };
-
-    private static string RotuloVisibilidade(VisibilidadeQuestao visibilidade) => visibilidade switch
-    {
-        VisibilidadeQuestao.Privada => "🔒 Só eu",
-        VisibilidadeQuestao.Institucional => "👥 Instituição",
-        VisibilidadeQuestao.Compartilhada => "🌐 Todos",
-        _ => visibilidade.ToString(),
-    };
-
-    private static string RotuloTipo(TipoQuestao tipo) => tipo switch
-    {
-        TipoQuestao.MultiplaEscolha => "Múltipla escolha",
-        TipoQuestao.Discursiva => "Discursiva",
-        TipoQuestao.CertoErrado => "Certo/Errado",
-        TipoQuestao.Associacao => "Associação",
-        TipoQuestao.RespostaBreve => "Resposta breve",
-        TipoQuestao.Numerica => "Numérica",
-        TipoQuestao.Lacunas => "Preenchimento de lacunas",
-        _ => tipo.ToString(),
-    };
 }

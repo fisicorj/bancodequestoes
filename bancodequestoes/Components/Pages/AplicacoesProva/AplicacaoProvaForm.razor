@@ -1,0 +1,122 @@
+@page "/aplicacoes-prova/novo"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using System.Security.Claims
+@inject AplicacaoProvaService AplicacaoProvaService
+@inject ProvaService ProvaService
+@inject CursoService CursoService
+@inject AuthenticationStateProvider AuthProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>Aplicar prova online</PageTitle>
+
+<PageHeader Titulo="Aplicar prova online" Subtitulo="Gera um código de acesso que os alunos matriculados na turma escolhida usam pra responder, sem precisar de login." />
+
+@if (erro is not null)
+{
+    <div class="alert alert-danger">@erro</div>
+}
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (provas.Count == 0)
+{
+    <p><em>Cadastre uma prova antes de aplicá-la online.</em> <a href="provas/novo">Criar prova</a></p>
+}
+else if (turmas.Count == 0)
+{
+    <p><em>Cadastre uma turma antes de aplicar uma prova online.</em> <a href="turmas/novo">Criar turma</a></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-card">
+                <EditForm Model="modelo" OnValidSubmit="SalvarAsync">
+                    <div class="form-floating mb-3">
+                        <InputSelect @bind-Value="modelo.ProvaId" id="ProvaId" class="form-select">
+                            <option value="0">Selecione...</option>
+                            @foreach (var p in provas)
+                            {
+                                <option value="@p.Id">@p.Titulo</option>
+                            }
+                        </InputSelect>
+                        <label for="ProvaId">Prova</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputSelect @bind-Value="modelo.TurmaId" id="TurmaId" class="form-select">
+                            <option value="0">Selecione...</option>
+                            @foreach (var t in turmas)
+                            {
+                                <option value="@t.Id">@t.Rotulo</option>
+                            }
+                        </InputSelect>
+                        <label for="TurmaId">Turma (só alunos matriculados nela podem responder)</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="dataLimiteLocal" id="DataLimite" class="form-control" />
+                        <label for="DataLimite">Prazo final (opcional)</label>
+                    </div>
+
+                    <div class="form-floating mb-3">
+                        <InputNumber @bind-Value="modelo.TempoLimiteMinutos" id="TempoLimite" class="form-control" placeholder="Tempo limite" />
+                        <label for="TempoLimite">Tempo limite em minutos por tentativa (opcional)</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">Gerar código de acesso</button>
+                    <a href="aplicacoes-prova" class="btn btn-link">Cancelar</a>
+                </EditForm>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "provaId")]
+    private int? ProvaIdInicial { get; set; }
+
+    private AplicacaoProvaInput modelo = new();
+    private DateTime? dataLimiteLocal;
+    private List<Prova> provas = new();
+    private List<Turma> turmas = new();
+    private string? meuId;
+    private string? erro;
+    private bool carregando = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        var resultado = await ProvaService.ListarAsync(new ProvaFiltro(), meuId, pagina: 1, tamanhoPagina: 1000);
+        provas = resultado.Itens;
+        turmas = await CursoService.ListarTodasTurmasAsync();
+
+        if (ProvaIdInicial is int id)
+        {
+            modelo.ProvaId = id;
+        }
+
+        carregando = false;
+    }
+
+    private async Task SalvarAsync()
+    {
+        erro = null;
+
+        try
+        {
+            modelo.DataLimite = dataLimiteLocal?.ToUniversalTime();
+            var aplicacao = await AplicacaoProvaService.CriarAsync(modelo, meuId);
+            NavigationManager.NavigateTo($"aplicacoes-prova?msg={Uri.EscapeDataString($"Aplicação criada — código de acesso: {aplicacao.CodigoAcesso}")}");
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

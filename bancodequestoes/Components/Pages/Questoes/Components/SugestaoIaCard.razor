@@ -1,0 +1,298 @@
+<!--
+    Dois botões opcionais e INDEPENDENTES que chamam SugestaoIaService
+    (Ollama local) passando o Enunciado atual:
+
+    "Sugerir com IA" — Bloom/Tags/Assunto, chamada rápida (nunca envia o
+    catálogo de itens ENADE, ver Modelo.Enunciado/SugerirAsync).
+
+    "Sugerir Alinhamento Curricular (ENADE)" — só o item de matriz, chamada
+    separada de propósito: o catálogo de itens ENADE ativos (ver
+    MatrizReferenciaService.ListarItensEnadeAtivosAsync) pode ser grande o
+    bastante pra, sozinho, deixar o prompt pesado demais em CPU e estourar o
+    timeout — não faz sentido pagar esse custo em toda sugestão rápida, só
+    quando o professor realmente quer essa sugestão específica.
+
+    Nenhum dos dois aplica nada sozinho: o professor aplica cada sugestão
+    individualmente clicando nela.
+
+    Fica fora de QuestaoMetadadosSection/QuestaoTagsEditor de propósito: a
+    sugestão mexe nos dois ao mesmo tempo (Bloom+Assunto ficam num
+    componente, Tags fica noutro), então precisa enxergar os dois — mais
+    simples centralizar aqui e reusar os mesmos parâmetros que QuestaoForm já
+    repassa pra QuestaoMetadadosSection (Assuntos/Disciplinas/DisciplinaId).
+-->
+@inject SugestaoIaService SugestaoIa
+
+@if (IaHabilitada)
+{
+    <div class="ia-assistente-box mb-3">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(carregando || string.IsNullOrWhiteSpace(Modelo.Enunciado))" @onclick="SugerirAsync">
+                @if (carregando)
+                {
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                }
+                else
+                {
+                    <i class="bi bi-stars me-1"></i>
+                }
+                Sugerir com IA
+            </button>
+            <span class="text-muted small">Bloom, Dificuldade, Tags e Assunto a partir do enunciado (modelo local, revisão sempre manual).</span>
+        </div>
+
+        @if (string.IsNullOrWhiteSpace(Modelo.Enunciado) && !carregando)
+        {
+            <p class="text-muted small mb-0 mt-1">Escreva o enunciado antes de pedir sugestões.</p>
+        }
+
+        @if (erro is not null)
+        {
+            <p class="text-danger small mb-0 mt-2">@erro</p>
+        }
+
+        @if (sugestao is not null)
+        {
+            <div class="mt-2 d-flex flex-column gap-2">
+                @if (sugestao.Bloom is { } nivel)
+                {
+                    <div>
+                        <span class="text-muted small me-2">Bloom sugerido:</span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AplicarBloom(nivel)">
+                            Usar "@nivel"
+                        </button>
+                    </div>
+                }
+
+                @if (sugestao.Dificuldade is { } dificuldade)
+                {
+                    <div>
+                        <span class="text-muted small me-2">Dificuldade sugerida:</span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AplicarDificuldade(dificuldade)">
+                            Usar "@dificuldade.Rotulo()"
+                        </button>
+                    </div>
+                }
+
+                @if (sugestao.Tags.Count > 0)
+                {
+                    <div>
+                        <span class="text-muted small me-2">Tags sugeridas:</span>
+                        @foreach (var tag in sugestao.Tags)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary me-1 mb-1" @onclick="() => AplicarTag(tag)">
+                                + @tag
+                            </button>
+                        }
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(sugestao.AssuntoRotulo))
+                {
+                    <div>
+                        <span class="text-muted small me-2">Assunto sugerido:</span>
+                        @if (sugestao.AssuntoId is { } assuntoId)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AplicarAssunto(assuntoId)">
+                                Usar "@sugestao.AssuntoRotulo"
+                            </button>
+                        }
+                        else
+                        {
+                            <span class="small">"@sugestao.AssuntoRotulo" (não encontrado na lista — escolha manualmente)</span>
+                        }
+                    </div>
+                }
+
+                @if (sugestao.Bloom is null && sugestao.Dificuldade is null && sugestao.Tags.Count == 0 && string.IsNullOrWhiteSpace(sugestao.AssuntoRotulo))
+                {
+                    <span class="text-muted small">Nenhuma sugestão desta vez.</span>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="ia-assistente-box mb-3">
+        @if (ItensMatrizDisponiveis.Count == 0)
+        {
+            <p class="text-muted small mb-0">
+                Nenhuma matriz ENADE ativa encontrada — a sugestão de Alinhamento Curricular fica desligada até existir
+                pelo menos uma matriz ENADE com Status "Ativa" vinculada a uma Área de Curso.
+                <a href="matrizes">Conferir matrizes cadastradas</a>.
+            </p>
+        }
+        else
+        {
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(carregandoCurricular || string.IsNullOrWhiteSpace(Modelo.Enunciado))" @onclick="SugerirAlinhamentoCurricularAsync">
+                    @if (carregandoCurricular)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-diagram-3 me-1"></i>
+                    }
+                    Sugerir Alinhamento Curricular (ENADE)
+                </button>
+                <span class="text-muted small">Chamada separada — o catálogo de itens ENADE deixa o prompt maior, então só roda quando pedida.</span>
+            </div>
+
+            @if (erroCurricular is not null)
+            {
+                <p class="text-danger small mb-0 mt-2">@erroCurricular</p>
+            }
+
+            @if (sugestaoCurricular is not null)
+            {
+                <div class="mt-2">
+                    @if (!string.IsNullOrWhiteSpace(sugestaoCurricular.ItemMatrizRotulo))
+                    {
+                        @if (sugestaoCurricular.ItemMatrizId is { } itemMatrizId)
+                        {
+                            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AplicarItemMatrizAsync(itemMatrizId)">
+                                Usar "@sugestaoCurricular.ItemMatrizRotulo"
+                            </button>
+                        }
+                        else
+                        {
+                            <span class="small">"@sugestaoCurricular.ItemMatrizRotulo" (não encontrado na lista — escolha manualmente)</span>
+                        }
+                    }
+                    else
+                    {
+                        <span class="text-muted small">Nenhuma sugestão desta vez.</span>
+                    }
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+    [Parameter] public List<Assunto> Assuntos { get; set; } = new();
+    [Parameter] public List<Disciplina> Disciplinas { get; set; } = new();
+
+    [Parameter] public int DisciplinaId { get; set; }
+    [Parameter] public EventCallback<int> DisciplinaIdChanged { get; set; }
+
+    // Universo de itens ENADE ativos (todas as Áreas, não só as já marcadas); este
+    // componente só decide QUAL item aplicar — QuestaoForm decide COMO (integridade curricular).
+    [Parameter] public List<ItemMatrizReferencia> ItensMatrizDisponiveis { get; set; } = new();
+    [Parameter] public EventCallback<ItemMatrizReferencia> OnAplicarItemMatriz { get; set; }
+
+    // Calculado uma vez em QuestaoForm.OnInitializedAsync e repassado por
+    // parâmetro (em vez de este componente consultar sozinho no próprio
+    // OnInitializedAsync): SugestaoIaCard e ExplicacaoEditor são irmãos
+    // renderizados no mesmo passe, e as duas chamadas concorrentes a
+    // SugestaoIa.HabilitadaAsync() batiam no mesmo DbContext (scoped por
+    // circuito) e estouravam "A second operation was started on this
+    // context instance before a previous operation completed".
+    [Parameter] public bool IaHabilitada { get; set; }
+
+    private bool carregando;
+    private string? erro;
+    private SugestaoMetadadosDto? sugestao;
+
+    private bool carregandoCurricular;
+    private string? erroCurricular;
+    private SugestaoMetadadosDto? sugestaoCurricular;
+
+    // Chamada rápida: não envia o catálogo de itens ENADE (isso fica pra
+    // SugerirAlinhamentoCurricularAsync, botão separado).
+    private async Task SugerirAsync()
+    {
+        carregando = true;
+        erro = null;
+        sugestao = null;
+
+        try
+        {
+            var disciplinasPorId = Disciplinas.ToDictionary(d => d.Id, d => d.Nome);
+
+            // Com Disciplina já escolhida, manda só os Assuntos dela — reduz o prompt
+            // e evita a IA errar pra Assunto de outra Disciplina; senão, catálogo inteiro.
+            var assuntosBase = DisciplinaId != 0
+                ? Assuntos.Where(a => a.DisciplinaId == DisciplinaId)
+                : Assuntos.Where(a => disciplinasPorId.ContainsKey(a.DisciplinaId));
+            var assuntosDisponiveis = assuntosBase
+                .Select(a => (a.Id, Rotulo: $"{disciplinasPorId[a.DisciplinaId]} > {a.Nome}"))
+                .ToList();
+
+            sugestao = await SugestaoIa.SugerirAsync(Modelo.Enunciado, assuntosDisponiveis);
+            if (sugestao is null)
+            {
+                erro = "Não foi possível obter sugestão agora — pode ser o Ollama fora do ar, ou o modelo ainda carregando/gerando (pode demorar mais na primeira vez). Tente de novo em instantes.";
+            }
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+
+    // Mais pesada (catálogo inteiro de itens ENADE no prompt); só roda quando
+    // o professor clica neste botão, nunca junto da sugestão rápida.
+    private async Task SugerirAlinhamentoCurricularAsync()
+    {
+        carregandoCurricular = true;
+        erroCurricular = null;
+        sugestaoCurricular = null;
+
+        try
+        {
+            var itensMatrizDisponiveis = ItensMatrizDisponiveis
+                .Select(i => (i.Id, Rotulo: RotuloItemMatriz(i)))
+                .ToList();
+
+            sugestaoCurricular = await SugestaoIa.SugerirAlinhamentoCurricularAsync(Modelo.Enunciado, itensMatrizDisponiveis);
+            if (sugestaoCurricular is null)
+            {
+                erroCurricular = "Não foi possível obter sugestão agora — pode ser o Ollama fora do ar, ou o modelo ainda carregando/gerando (o catálogo de itens ENADE deixa essa chamada mais lenta). Tente de novo em instantes.";
+            }
+        }
+        finally
+        {
+            carregandoCurricular = false;
+        }
+    }
+
+    private void AplicarBloom(NivelBloom nivel) => Modelo.Bloom = nivel;
+
+    private void AplicarDificuldade(Dificuldade nivel) => Modelo.Dificuldade = nivel;
+
+    private void AplicarTag(string tag)
+    {
+        if (!Modelo.Tags.Any(t => string.Equals(t, tag, StringComparison.OrdinalIgnoreCase)))
+        {
+            Modelo.Tags.Add(tag);
+        }
+    }
+
+    private async Task AplicarAssunto(int assuntoId)
+    {
+        var assunto = Assuntos.FirstOrDefault(a => a.Id == assuntoId);
+        if (assunto is null)
+        {
+            return;
+        }
+
+        Modelo.AssuntoId = assuntoId;
+        if (DisciplinaId != assunto.DisciplinaId)
+        {
+            DisciplinaId = assunto.DisciplinaId;
+            await DisciplinaIdChanged.InvokeAsync(DisciplinaId);
+        }
+    }
+
+    // Desambigua um Código que se repita entre Áreas de Curso diferentes.
+    private static string RotuloItemMatriz(ItemMatrizReferencia item) =>
+        $"{item.MatrizReferencia?.AreaCurso?.Nome} · {item.Codigo} — {item.Titulo}";
+
+    private Task AplicarItemMatrizAsync(int itemMatrizId)
+    {
+        var item = ItensMatrizDisponiveis.FirstOrDefault(i => i.Id == itemMatrizId);
+        return item is null ? Task.CompletedTask : OnAplicarItemMatriz.InvokeAsync(item);
+    }
+}

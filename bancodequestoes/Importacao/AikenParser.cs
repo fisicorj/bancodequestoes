@@ -3,17 +3,8 @@ using BancoQuestoes.Models;
 
 namespace BancoQuestoes.Importacao;
 
-// Formato Aiken: só múltipla escolha, em texto puro.
-//
-//   Qual a capital da França?
-//   A) Londres
-//   B) Paris
-//   C) Berlim
-//   D) Madri
-//   ANSWER: B
-//
-// Uma questão em branco separa a próxima (mas não é obrigatório — a linha
-// ANSWER: já fecha a questão atual de qualquer forma).
+// Formato Aiken: só múltipla escolha, texto puro (enunciado, opções "A) texto",
+// linha "ANSWER: B"); linha em branco separa questões, mas ANSWER: já fecha a atual.
 public static class AikenParser
 {
     private static readonly Regex OpcaoRegex = new(@"^\s*([A-Za-z])[).]\s*(.+)$", RegexOptions.Compiled);
@@ -71,9 +62,8 @@ public static class AikenParser
             }
             else if (!matchOpcao.Success)
             {
-                // Não é opção nem ANSWER — só pode ser o começo de uma nova questão.
-                // Se já havia uma questão em andamento sem ANSWER, ela é descartada
-                // com aviso (arquivo truncado ou mal formatado).
+                // Não é opção nem ANSWER — começo de nova questão; se havia uma em
+                // andamento sem ANSWER, é descartada com aviso.
                 if (enunciadoAtual is not null)
                 {
                     resultado.Erros.Add($"Linha {numeroLinhaEnunciado + 1}: questão \"{Truncar(enunciadoAtual)}\" não teve uma linha ANSWER: e foi ignorada.");

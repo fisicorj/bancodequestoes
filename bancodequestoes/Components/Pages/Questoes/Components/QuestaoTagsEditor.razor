@@ -1,0 +1,62 @@
+<!--
+    Editor de Tags do formulário de Questão (Etapa 3 da refatoração —
+    extraído de QuestaoForm.razor, markup e comportamento idênticos ao
+    original). Totalmente autocontido: "novaTag" (buffer do input) é estado
+    só desta seção, e Adicionar/Remover/Enter só tocam Modelo.Tags — nenhum
+    outro estado do formulário depende disso.
+-->
+<div class="mb-3">
+    <label class="form-label small mb-1">Tags</label>
+    <div class="d-flex flex-wrap gap-1 mb-2">
+        @foreach (var tag in Modelo.Tags)
+        {
+            <span class="badge text-bg-light border">
+                @tag
+                <button type="button" class="btn-close ms-1" style="font-size:0.55rem;" aria-label="Remover tag" @onclick="() => RemoverTag(tag)"></button>
+            </span>
+        }
+    </div>
+    <div class="input-group input-group-sm" style="max-width:320px;">
+        <input type="text" class="form-control" placeholder="Adicionar tag..." list="tags-existentes"
+               @bind="novaTag" @bind:event="oninput" @onkeydown="AoTeclarNaTag" />
+        <button type="button" class="btn btn-outline-secondary" @onclick="AdicionarTag">+</button>
+    </div>
+    <datalist id="tags-existentes">
+        @foreach (var t in TodasTagsExistentes)
+        {
+            <option value="@t.Nome" />
+        }
+    </datalist>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public QuestaoInput Modelo { get; set; } = null!;
+    [Parameter] public List<Tag> TodasTagsExistentes { get; set; } = new();
+
+    private string novaTag = "";
+
+    private void AdicionarTag()
+    {
+        var nome = novaTag.Trim();
+        if (nome.Length == 0)
+        {
+            return;
+        }
+        if (!Modelo.Tags.Any(t => string.Equals(t, nome, StringComparison.OrdinalIgnoreCase)))
+        {
+            Modelo.Tags.Add(nome);
+        }
+        novaTag = "";
+    }
+
+    private void RemoverTag(string nome) => Modelo.Tags.Remove(nome);
+
+    // Sem PreventDefault, Enter aqui recarregaria a página tentando submeter o EditForm.
+    private void AoTeclarNaTag(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AdicionarTag();
+        }
+    }
+}

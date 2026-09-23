@@ -20,8 +20,12 @@ else if (matriz is null)
 }
 else
 {
-    <h1>@matriz.Nome</h1>
-    <p class="text-muted">
+    <h1 class="page-title">@matriz.Nome</h1>
+    @if (matriz.Tipo == TipoMatrizReferencia.ENADE)
+    {
+        <p class="mb-1"><EnadeBadge Ano="matriz.Ano" Area="@matriz.AreaCurso?.Nome" /></p>
+    }
+    <p class="page-subtitle">
         @(matriz.Curso?.Nome ?? matriz.AreaCurso?.Nome) — @matriz.Tipo.Rotulo()
         @if (matriz.AreaCursoId is not null)
         {
@@ -219,13 +223,8 @@ else
     private int? minhaInstituicaoId;
     private bool ehAdmin;
 
-    // Escrita (novo item/editar/desativar/excluir/importar) numa matriz
-    // nacional (AreaCursoId) é Admin-only — ver
-    // MatrizReferenciaService.GarantirAcessoEscritaArea. Institucional segue
-    // a regra de sempre (quem tem acesso de leitura já validado em
-    // CarregarAsync também tem de escrita). Some os botões em vez de deixar
-    // o servidor recusar — evita um professor clicar "Editar" e só descobrir
-    // que não pode depois de preencher o formulário.
+    // Escrita em matriz nacional é Admin-only; some os botões em vez de deixar
+    // o servidor recusar, pra não descobrir só depois de preencher o formulário.
     private bool PodeEditar => matriz is not null && (matriz.AreaCursoId is null || ehAdmin);
 
     protected override async Task OnInitializedAsync()

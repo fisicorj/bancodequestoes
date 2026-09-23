@@ -4,16 +4,13 @@ using BancoQuestoes.Models;
 
 namespace BancoQuestoes.Importacao;
 
-// Formato GIFT (Moodle), suporte simplificado — cobre os tipos que também
-// existem no nosso banco: múltipla escolha, Certo/Errado, resposta breve,
-// numérica e associação. Tipos sem equivalente aqui (ensaio/redação livre,
-// cloze embutido "{...}" dentro do texto) são reportados como erro/ignorados
-// em vez de importados pela metade.
+// Formato GIFT (Moodle) simplificado — cobre múltipla escolha, Certo/Errado, resposta breve,
+// numérica, associação e discursiva (ensaio/redação livre, "{}" vazio — sem resposta esperada,
+// preenchida na revisão); "$CATEGORY:"/"$ASSUNTO:" marcam as questões seguintes, resolvido em ImportacaoService.
 public static class GiftParser
 {
-    // Cada questão é "texto { corpo }", opcionalmente com um título ::Título::
-    // antes do texto. [\s\S]*? (non-greedy) garante que cada bloco pega só até
-    // a PRÓXIMA chave de fechamento, sem vazar para a questão seguinte.
+    // Cada questão é "texto { corpo }", opcionalmente com título ::Título:: antes;
+    // [\s\S]*? non-greedy garante que o bloco pega só até a PRÓXIMA chave de fechamento.
     private static readonly Regex BlocoRegex = new(
         @"(?:::(?<titulo>[^:]*)::)?(?<texto>[\s\S]*?)\{(?<corpo>[\s\S]*?)\}",
         RegexOptions.Compiled);
@@ -26,32 +23,81 @@ public static class GiftParser
     {
         var resultado = new ResultadoImportacao();
 
-        // Remove comentários (linha inteira começando com //) e linhas de
-        // categoria ($CATEGORY:) antes de tudo — nenhuma das duas vira questão.
-        var linhasFiltradas = texto.Replace("\r\n", "\n").Split('\n')
-            .Where(l => !l.TrimStart().StartsWith("//") && !l.TrimStart().StartsWith("$CATEGORY"));
-        var textoLimpo = string.Join('\n', linhasFiltradas);
+        // Remove comentários (linha inteira começando com //) antes de tudo —
+        // nunca vira questão nem afeta categoria.
+        var linhasSemComentario = texto.Replace("\r\n", "\n").Split('\n')
+            .Where(l => !l.TrimStart().StartsWith("//"));
 
-        foreach (Match bloco in BlocoRegex.Matches(textoLimpo))
+        // "$CATEGORY: código1, código2" vincula as questões seguintes (até o
+        // próximo $CATEGORY:) a Itens de Matriz por Codigo; resolução de fato é do ImportacaoService.
+        var segmentos = new List<(List<string> Codigos, (string Disciplina, string Assunto)? DisciplinaAssunto, string Texto)>();
+        var codigosAtuais = new List<string>();
+        (string Disciplina, string Assunto)? disciplinaAssuntoAtual = null;
+        var linhasSegmentoAtual = new List<string>();
+
+        foreach (var linha in linhasSemComentario)
         {
-            var enunciado = bloco.Groups["texto"].Value.Trim();
-            var corpo = bloco.Groups["corpo"].Value.Trim();
-
-            if (enunciado.Length == 0)
+            if (linha.TrimStart().StartsWith("$CATEGORY"))
             {
-                continue; // trecho vazio entre duas questões, ou lixo antes da primeira — ignora silenciosamente
+                segmentos.Add((codigosAtuais, disciplinaAssuntoAtual, string.Join('\n', linhasSegmentoAtual)));
+                linhasSegmentoAtual = new List<string>();
+
+                var valor = linha.TrimStart()["$CATEGORY".Length..].TrimStart(':', ' ').Trim();
+                codigosAtuais = valor.Length == 0
+                    ? new List<string>()
+                    : valor.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(c => c.Trim())
+                        .Where(c => c.Length > 0)
+                        .ToList();
             }
-
-            enunciado = DesescaparGift(enunciado);
-
-            var questao = InterpretarCorpo(enunciado, corpo);
-            if (questao is null)
+            else if (linha.TrimStart().StartsWith("$ASSUNTO"))
             {
-                resultado.Erros.Add($"Questão \"{Truncar(enunciado)}\": tipo não suportado para importação (ex.: ensaio/redação livre) e foi ignorada.");
+                segmentos.Add((codigosAtuais, disciplinaAssuntoAtual, string.Join('\n', linhasSegmentoAtual)));
+                linhasSegmentoAtual = new List<string>();
+
+                var valor = linha.TrimStart()["$ASSUNTO".Length..].TrimStart(':', ' ').Trim();
+                var partes = valor.Split('/', 2);
+                disciplinaAssuntoAtual = partes.Length == 2 && partes[0].Trim().Length > 0 && partes[1].Trim().Length > 0
+                    ? (partes[0].Trim(), partes[1].Trim())
+                    : null;
+                if (valor.Length > 0 && disciplinaAssuntoAtual is null)
+                {
+                    resultado.Erros.Add($"Linha \"$ASSUNTO: {valor}\" mal formatada — use \"Disciplina / Assunto\". As questões seguintes usarão o Assunto escolhido na tela.");
+                }
             }
             else
             {
-                resultado.Questoes.Add(questao);
+                linhasSegmentoAtual.Add(linha);
+            }
+        }
+        segmentos.Add((codigosAtuais, disciplinaAssuntoAtual, string.Join('\n', linhasSegmentoAtual)));
+
+        foreach (var (codigos, disciplinaAssunto, textoSegmento) in segmentos)
+        {
+            foreach (Match bloco in BlocoRegex.Matches(textoSegmento))
+            {
+                var enunciado = bloco.Groups["texto"].Value.Trim();
+                var corpo = bloco.Groups["corpo"].Value.Trim();
+
+                if (enunciado.Length == 0)
+                {
+                    continue; // trecho vazio entre duas questões, ou lixo antes da primeira — ignora silenciosamente
+                }
+
+                enunciado = DesescaparGift(enunciado);
+
+                var questao = InterpretarCorpo(enunciado, corpo);
+                if (questao is null)
+                {
+                    resultado.Erros.Add($"Questão \"{Truncar(enunciado)}\": tipo não suportado para importação (ex.: ensaio/redação livre) e foi ignorada.");
+                }
+                else
+                {
+                    questao.CodigosItemMatriz = codigos.ToList();
+                    questao.DisciplinaSugerida = disciplinaAssunto?.Disciplina;
+                    questao.AssuntoSugerido = disciplinaAssunto?.Assunto;
+                    resultado.Questoes.Add(questao);
+                }
             }
         }
 
@@ -67,7 +113,16 @@ public static class GiftParser
     {
         if (corpo.Length == 0)
         {
-            return null; // {} = ensaio/redação livre, sem equivalente no sistema
+            // {} = ensaio/redação livre no GIFT padrão — o formato não guarda
+            // resposta esperada nenhuma pra esse tipo (nem o Moodle guarda),
+            // então importa como Discursiva com RespostaEsperada em branco;
+            // o professor completa na revisão antes de usar a questão de verdade.
+            return new QuestaoImportada
+            {
+                Enunciado = enunciado,
+                Tipo = TipoQuestao.Discursiva,
+                Aviso = "Questão discursiva — o GIFT não guarda resposta esperada para esse tipo; preencha depois de importar.",
+            };
         }
 
         // Certo/Errado: {T}, {TRUE}, {F}, {FALSE}

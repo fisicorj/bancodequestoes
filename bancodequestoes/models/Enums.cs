@@ -1,8 +1,5 @@
 namespace BancoQuestoes.Models;
 
-// Um "enum" em C# é um tipo que representa um conjunto fixo de valores nomeados.
-// Por baixo dos panos, cada valor é um número inteiro (MultiplaEscolha = 0, Discursiva = 1, etc.),
-// mas no código você trabalha com o nome, não com o número — isso evita "números mágicos" espalhados.
 public enum TipoQuestao
 {
     MultiplaEscolha,
@@ -21,10 +18,8 @@ public enum Dificuldade
     Dificil
 }
 
-// Quem pode ENXERGAR e USAR uma questão (montar prova com ela) — não confundir
-// com quem pode EDITAR/EXCLUIR: isso continua sendo só de quem criou (CriadoPorId),
-// não importa a visibilidade. Privada é o padrão pra questão nova: o professor
-// precisa optar ativamente por compartilhar, em vez de vazar sem querer.
+// Quem pode ENXERGAR/USAR a questão — não quem pode editar (sempre CriadoPorId).
+// Privada é o padrão: o professor opta ativamente por compartilhar.
 public enum VisibilidadeQuestao
 {
     Privada,
@@ -32,10 +27,8 @@ public enum VisibilidadeQuestao
     Compartilhada,
 }
 
-// Taxonomia de Bloom (versão revisada) — nível cognitivo que a questão exige
-// do aluno, do mais simples (Lembrar) ao mais complexo (Criar). Opcional
-// (nullable no Questao): nem toda questão precisa ser classificada, e forçar
-// isso em toda questão já existente no banco não faria sentido.
+// Taxonomia de Bloom: nível cognitivo do mais simples (Lembrar) ao mais complexo
+// (Criar). Nullable no Questao: nem toda questão precisa ser classificada.
 public enum NivelBloom
 {
     Lembrar,
@@ -46,9 +39,8 @@ public enum NivelBloom
     Criar,
 }
 
-// De onde a questão veio — ajuda a filtrar/entender a procedência do banco.
-// "Autoral" é o padrão pra questão nova (o professor escreveu do zero);
-// "Importada" é setada automaticamente por QuestaoImportar.razor (Aiken/GIFT).
+// "Autoral" é o padrão pra questão nova; "Importada" é setada automaticamente
+// por QuestaoImportar.razor (Aiken/GIFT).
 public enum OrigemQuestao
 {
     Autoral,
@@ -60,10 +52,8 @@ public enum OrigemQuestao
     Ia,
 }
 
-// Natureza/finalidade da prova — puramente informativo (não muda comportamento
-// do sistema), mas alimenta o cabeçalho da exportação e futuras estatísticas
-// ("quantas P1 essa disciplina já teve", etc.). Opcional: nem toda prova
-// precisa ser classificada no momento em que é criada.
+// Puramente informativo (não muda comportamento) — alimenta o cabeçalho da
+// exportação e futuras estatísticas.
 public enum TipoProva
 {
     P1,
@@ -75,10 +65,17 @@ public enum TipoProva
     Atividade,
 }
 
-// Como a imagem de uma questão deve ficar posicionada no documento exportado.
-// Nullable no QuestaoImagem (não este enum) — null significa "usar o padrão
-// do sistema" (Centralizado), evitando precisar de um defaultValue de coluna
-// pra um enum-com-conversão (fonte do bug de migração já visto antes aqui).
+// Diferente de TipoProva (só rótulo): muda de verdade o POOL de questões elegíveis e as
+// regras de distribuição (ver GeradorProvaService). Curso = todas as Disciplinas, usado pro "Simulado ENADE".
+public enum TipoEscopoProva
+{
+    Disciplina = 1,
+    Multidisciplinar = 2,
+    Curso = 3,
+}
+
+// Nullable no QuestaoImagem: null = usar o padrão do sistema (Centralizado),
+// evitando defaultValue de coluna pra um enum-com-conversão.
 public enum AlinhamentoImagem
 {
     Esquerda,
@@ -86,11 +83,8 @@ public enum AlinhamentoImagem
     Direita,
 }
 
-// Como a instituição divide o ano letivo — decide se Turma/Prova pedem só
-// "Semestre" (1º/2º) ou também "Bimestre" (1º/2º DENTRO de cada semestre,
-// ex.: "2026/1º semestre/2º bimestre"). Fica na Instituição (não em Curso ou
-// Turma) porque é uma característica institucional, igual o calendário
-// acadêmico — todo Curso da mesma Instituição segue o mesmo sistema.
+// Decide se Turma/Prova pedem só "Semestre" ou também "Bimestre" dentro dele. Fica
+// na Instituição porque todo Curso dela segue o mesmo calendário.
 public enum SistemaPeriodos
 {
     Semestral,
@@ -109,8 +103,7 @@ public static class SistemaPeriodosExtensions
 
 public static class TipoProvaExtensions
 {
-    // Rótulo em português pra exibição — centralizado aqui porque é usado em
-    // vários lugares (ProvaForm, cabeçalho da exportação DOCX/PDF).
+    // Centralizado aqui porque é usado em vários lugares (ProvaForm, exportação).
     public static string Rotulo(this TipoProva tipo) => tipo switch
     {
         TipoProva.P1 => "P1",
@@ -124,11 +117,8 @@ public static class TipoProvaExtensions
     };
 }
 
-// Rótulos em português pra exibição no histórico de edição (QuestaoHistorico)
-// — QuestaoList.razor/QuestaoForm.razor já têm switch-expressions parecidos
-// espalhados pra exibição normal (dropdowns, badges); esses aqui existem à
-// parte, centralizados, especificamente pra QuestaoService montar as linhas
-// "Média → Difícil" do histórico sem depender de código de UI.
+// Existe à parte (não reusa os switches de QuestaoList/QuestaoForm) pra QuestaoService
+// montar linhas "Média → Difícil" do histórico sem depender de código de UI.
 public static class DificuldadeExtensions
 {
     public static string Rotulo(this Dificuldade dificuldade) => dificuldade switch
@@ -167,9 +157,8 @@ public static class NivelBloomExtensions
 
 public static class TipoQuestaoExtensions
 {
-    // Centraliza o rótulo em português — antes só existia como switch-expression
-    // privado duplicado em QuestaoList.razor/QuestaoImportar.razor; ProvaForm.razor
-    // (cards de questão disponível, resumo do blueprint) usa esta versão central.
+    // Antes duplicado como switch privado em QuestaoList/QuestaoImportar; agora
+    // centralizado, ProvaForm também usa esta versão.
     public static string Rotulo(this TipoQuestao tipo) => tipo switch
     {
         TipoQuestao.MultiplaEscolha => "Múltipla escolha",
@@ -198,11 +187,26 @@ public static class OrigemQuestaoExtensions
     };
 }
 
-// Natureza/origem de uma Matriz de Referência (ver MatrizReferencia) — só
-// classificação/rotulagem, não muda nenhum comportamento do sistema (mesma
-// ideia de OrigemQuestao acima). Deixado propositalmente com "Outro" no
-// final pra caber matriz de referência que não se encaixe nos tipos comuns,
-// sem precisar de migração pra passar a aceitar um novo tipo específico.
+// Só relevante quando Questao.Origem == Enade: "Formação Geral" (D1, comum a todos os
+// cursos) vs "Componente Específico" (D2, núcleo técnico da Área) — recorte ortogonal a AreaCurso/OrigemQuestao.
+public enum SecaoEnade
+{
+    FormacaoGeral,
+    ComponenteEspecifico,
+}
+
+public static class SecaoEnadeExtensions
+{
+    public static string Rotulo(this SecaoEnade secao) => secao switch
+    {
+        SecaoEnade.FormacaoGeral => "Formação Geral",
+        SecaoEnade.ComponenteEspecifico => "Componente Específico",
+        _ => secao.ToString(),
+    };
+}
+
+// Só classificação/rotulagem, não muda comportamento. "Outro" no final cobre matriz
+// que não se encaixe nos tipos comuns, sem precisar de migração.
 public enum TipoMatrizReferencia
 {
     ENADE,
@@ -224,23 +228,14 @@ public static class TipoMatrizReferenciaExtensions
         _ => tipo.ToString(),
     };
 
-    // Escopo duplo (2ª rodada de revisão, ver MatrizReferencia) — único ponto
-    // de verdade de "qual Tipo é nacional/AreaCurso vs. institucional/Curso",
-    // reusado por MatrizReferenciaService (validação/autorização/listagens) E
-    // pelas telas (MatrizForm/MatrizImportarCompleta) pra decidir qual
-    // seletor mostrar, sem duplicar essa regra em dois lugares que podem
-    // divergir.
+    // Único ponto de verdade de "qual Tipo é nacional/AreaCurso vs. institucional/Curso",
+    // reusado por MatrizReferenciaService e pelas telas (MatrizForm etc).
     public static bool EhEscopoNacional(this TipoMatrizReferencia tipo) =>
         tipo is TipoMatrizReferencia.ENADE or TipoMatrizReferencia.DCN;
 }
 
-// Ciclo de vida de uma Matriz de Referência (item 21/22 do pedido —
-// versionamento é obrigatório): Rascunho é uma matriz ainda em montagem
-// (não aparece pro professor vincular questões nem no gerador); Ativa é a
-// edição vigente daquele Tipo pro curso (aparece por padrão no gerador);
-// Historica é uma edição superada por uma mais nova, mas MANTIDA — questões
-// já classificadas com ela continuam válidas e visíveis (ver item 21: nunca
-// sobrescrever uma matriz antiga só porque surgiu uma edição nova).
+// Rascunho: matriz em montagem, não aparece pro professor vincular. Ativa: edição
+// vigente. Historica: edição superada, mas MANTIDA — questões classificadas continuam válidas.
 public enum StatusMatrizReferencia
 {
     Rascunho,
@@ -258,8 +253,7 @@ public static class StatusMatrizReferenciaExtensions
         _ => status.ToString(),
     };
 
-    // Cor do badge (mesma paleta Bootstrap já usada em Questao.Ativa/
-    // qualidade da questão em outras telas do sistema).
+    // Mesma paleta Bootstrap já usada em Questao.Ativa/qualidade da questão.
     public static string CorBadge(this StatusMatrizReferencia status) => status switch
     {
         StatusMatrizReferencia.Rascunho => "secondary",
@@ -269,13 +263,8 @@ public static class StatusMatrizReferenciaExtensions
     };
 }
 
-// Grupo/natureza de um item dentro de uma Matriz de Referência (ver
-// ItemMatrizReferencia) — é o que separa "Perfil do Concluinte" de
-// "Competências" e "Conteúdos" na tela, mesmo eles morando na mesma tabela
-// (flat, sem hierarquia — ver comentário em ItemMatrizReferencia). Deixado
-// com "Outro" no final de propósito (item 3 do pedido: "a enum deve
-// permitir expansão futura") — uma matriz que precise de um grupo que não
-// se encaixe nos cinco típicos ainda tem onde cair, sem migração.
+// Separa "Perfil do Concluinte" de "Competências"/"Conteúdos" na tela, mesmo morando na
+// mesma tabela flat. "Outro" no final cobre grupos que não se encaixem, sem migração.
 public enum TipoItemMatriz
 {
     PerfilConcluinte,
@@ -299,8 +288,7 @@ public static class TipoItemMatrizExtensions
         _ => tipo.ToString(),
     };
 
-    // Rótulo no plural — usado como título de cada grupo nas telas de
-    // gestão/vínculo ("COMPETÊNCIAS", "CONTEÚDOS"...), ver item 8 do pedido.
+    // Usado como título de cada grupo nas telas de gestão/vínculo.
     public static string RotuloPlural(this TipoItemMatriz tipo) => tipo switch
     {
         TipoItemMatriz.PerfilConcluinte => "Perfil do Concluinte",
@@ -310,5 +298,66 @@ public static class TipoItemMatrizExtensions
         TipoItemMatriz.ObjetoConhecimento => "Objetos de Conhecimento",
         TipoItemMatriz.Outro => "Outros",
         _ => tipo.ToString(),
+    };
+}
+
+// Aberta aceita novas tentativas; Encerrada (manual, pelo professor) bloqueia novos acessos
+// mesmo dentro do prazo — diferente de DataLimite vencida, que é checada à parte.
+public enum StatusAplicacaoProva
+{
+    Aberta,
+    Encerrada,
+}
+
+public static class StatusAplicacaoProvaExtensions
+{
+    public static string Rotulo(this StatusAplicacaoProva status) => status switch
+    {
+        StatusAplicacaoProva.Aberta => "Aberta",
+        StatusAplicacaoProva.Encerrada => "Encerrada",
+        _ => status.ToString(),
+    };
+}
+
+// EmAndamento: aluno ainda respondendo. Enviada: terminou (normal ou por encerramento
+// forçado), já corrigida automaticamente, mas a nota fica escondida do aluno até o professor
+// revisar. Liberada: professor liberou a nota pro aluno ver.
+public enum StatusRespostaProvaOnline
+{
+    EmAndamento,
+    Enviada,
+    Liberada,
+}
+
+public static class StatusRespostaProvaOnlineExtensions
+{
+    public static string Rotulo(this StatusRespostaProvaOnline status) => status switch
+    {
+        StatusRespostaProvaOnline.EmAndamento => "Em andamento",
+        StatusRespostaProvaOnline.Enviada => "Aguardando liberação",
+        StatusRespostaProvaOnline.Liberada => "Liberada",
+        _ => status.ToString(),
+    };
+}
+
+// Por que a tentativa terminou. Nulo enquanto EmAndamento; EnviadoPeloAluno é o caminho
+// normal (botão Enviar), os demais são o encerramento forçado do anti-cola — detecção via JS
+// de blur/visibilitychange/fullscreenchange, nunca 100% à prova de burla, só resposta ao que
+// o navegador consegue detectar.
+public enum MotivoEncerramento
+{
+    EnviadoPeloAluno,
+    PerdaDeFoco,
+    SaidaDeTelaCheia,
+}
+
+public static class MotivoEncerramentoExtensions
+{
+    public static string Rotulo(this MotivoEncerramento motivo) => motivo switch
+    {
+        MotivoEncerramento.EnviadoPeloAluno => "Enviado pelo aluno",
+        MotivoEncerramento.PerdaDeFoco => "Encerrado — saiu da tela/trocou de janela",
+        MotivoEncerramento.SaidaDeTelaCheia => "Encerrado — saiu da tela cheia",
+        _ => motivo.ToString(),
     };
 }
