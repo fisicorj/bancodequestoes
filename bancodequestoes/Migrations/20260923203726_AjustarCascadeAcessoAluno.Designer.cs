@@ -3,6 +3,7 @@ using System;
 using BancoQuestoes.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BancoQuestoes.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260923203726_AjustarCascadeAcessoAluno")]
+    partial class AjustarCascadeAcessoAluno
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -279,78 +282,6 @@ namespace BancoQuestoes.Migrations
                     b.HasIndex("DisciplinaId");
 
                     b.ToTable("Assuntos");
-                });
-
-            modelBuilder.Entity("BancoQuestoes.Models.CartaoAlunoAplicacao", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("AlunoId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("CartaoRespostaAplicacaoId")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime?>("CorrigidoEm")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<decimal?>("NotaTotal")
-                        .HasColumnType("numeric");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Token")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AlunoId");
-
-                    b.HasIndex("Token")
-                        .IsUnique();
-
-                    b.HasIndex("CartaoRespostaAplicacaoId", "AlunoId")
-                        .IsUnique();
-
-                    b.ToTable("CartoesAlunoAplicacao");
-                });
-
-            modelBuilder.Entity("BancoQuestoes.Models.CartaoRespostaAplicacao", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<DateTime>("CriadoEm")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CriadoPorId")
-                        .HasColumnType("text");
-
-                    b.Property<int>("ProvaId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("TurmaId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CriadoPorId");
-
-                    b.HasIndex("ProvaId");
-
-                    b.HasIndex("TurmaId");
-
-                    b.ToTable("CartoesRespostaAplicacao");
                 });
 
             modelBuilder.Entity("BancoQuestoes.Models.ConfiguracaoIa", b =>
@@ -1009,44 +940,6 @@ namespace BancoQuestoes.Migrations
                     b.ToTable("QuestoesItensMatriz", (string)null);
                 });
 
-            modelBuilder.Entity("BancoQuestoes.Models.RespostaCartaoQuestao", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<bool>("Ambigua")
-                        .HasColumnType("boolean");
-
-                    b.Property<int>("CartaoAlunoAplicacaoId")
-                        .HasColumnType("integer");
-
-                    b.Property<bool>("Correta")
-                        .HasColumnType("boolean");
-
-                    b.Property<char?>("LetraConfirmada")
-                        .HasColumnType("character(1)");
-
-                    b.Property<char?>("LetraDetectada")
-                        .HasColumnType("character(1)");
-
-                    b.Property<int>("Ordem")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("QuestaoId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CartaoAlunoAplicacaoId");
-
-                    b.HasIndex("QuestaoId");
-
-                    b.ToTable("RespostasCartaoQuestao");
-                });
-
             modelBuilder.Entity("BancoQuestoes.Models.RespostaLacunaOnline", b =>
                 {
                     b.Property<int>("Id")
@@ -1560,50 +1453,6 @@ namespace BancoQuestoes.Migrations
                     b.Navigation("Disciplina");
                 });
 
-            modelBuilder.Entity("BancoQuestoes.Models.CartaoAlunoAplicacao", b =>
-                {
-                    b.HasOne("BancoQuestoes.Models.Aluno", "Aluno")
-                        .WithMany()
-                        .HasForeignKey("AlunoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("BancoQuestoes.Models.CartaoRespostaAplicacao", "CartaoRespostaAplicacao")
-                        .WithMany("Cartoes")
-                        .HasForeignKey("CartaoRespostaAplicacaoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Aluno");
-
-                    b.Navigation("CartaoRespostaAplicacao");
-                });
-
-            modelBuilder.Entity("BancoQuestoes.Models.CartaoRespostaAplicacao", b =>
-                {
-                    b.HasOne("BancoQuestoes.Models.ApplicationUser", "CriadoPor")
-                        .WithMany()
-                        .HasForeignKey("CriadoPorId");
-
-                    b.HasOne("BancoQuestoes.Models.Prova", "Prova")
-                        .WithMany()
-                        .HasForeignKey("ProvaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("BancoQuestoes.Models.Turma", "Turma")
-                        .WithMany()
-                        .HasForeignKey("TurmaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CriadoPor");
-
-                    b.Navigation("Prova");
-
-                    b.Navigation("Turma");
-                });
-
             modelBuilder.Entity("BancoQuestoes.Models.Curso", b =>
                 {
                     b.HasOne("BancoQuestoes.Models.AreaCurso", "AreaCurso")
@@ -1859,25 +1708,6 @@ namespace BancoQuestoes.Migrations
                     b.Navigation("Questao");
                 });
 
-            modelBuilder.Entity("BancoQuestoes.Models.RespostaCartaoQuestao", b =>
-                {
-                    b.HasOne("BancoQuestoes.Models.CartaoAlunoAplicacao", "CartaoAlunoAplicacao")
-                        .WithMany("Respostas")
-                        .HasForeignKey("CartaoAlunoAplicacaoId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("BancoQuestoes.Models.Questao", "Questao")
-                        .WithMany()
-                        .HasForeignKey("QuestaoId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CartaoAlunoAplicacao");
-
-                    b.Navigation("Questao");
-                });
-
             modelBuilder.Entity("BancoQuestoes.Models.RespostaLacunaOnline", b =>
                 {
                     b.HasOne("BancoQuestoes.Models.RespostaQuestaoOnline", "RespostaQuestaoOnline")
@@ -2115,16 +1945,6 @@ namespace BancoQuestoes.Migrations
             modelBuilder.Entity("BancoQuestoes.Models.Assunto", b =>
                 {
                     b.Navigation("Questoes");
-                });
-
-            modelBuilder.Entity("BancoQuestoes.Models.CartaoAlunoAplicacao", b =>
-                {
-                    b.Navigation("Respostas");
-                });
-
-            modelBuilder.Entity("BancoQuestoes.Models.CartaoRespostaAplicacao", b =>
-                {
-                    b.Navigation("Cartoes");
                 });
 
             modelBuilder.Entity("BancoQuestoes.Models.Disciplina", b =>

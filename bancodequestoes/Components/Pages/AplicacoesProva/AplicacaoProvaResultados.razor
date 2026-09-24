@@ -16,8 +16,11 @@ else if (aplicacao is null)
 }
 else
 {
-    <PageHeader Titulo="@($"Resultados — {aplicacao.Prova?.Titulo}")" Subtitulo="@($"Turma {aplicacao.Turma?.Rotulo} — código de acesso {aplicacao.CodigoAcesso}")" />
-    <p><a href="aplicacoes-prova" class="btn btn-sm btn-link px-0">&laquo; Voltar às aplicações</a></p>
+    <PageHeader Titulo="@($"Resultados — {aplicacao.Prova?.Titulo}")" Subtitulo="@($"Turma {aplicacao.Turma?.Rotulo}")" />
+    <p>
+        <a href="aplicacoes-prova" class="btn btn-sm btn-link px-0">&laquo; Voltar às aplicações</a>
+        <a href="@($"aplicacoes-prova/{Id}/codigos")" class="btn btn-sm btn-link">Ver códigos de acesso</a>
+    </p>
 
     @if (sucesso is not null)
     {

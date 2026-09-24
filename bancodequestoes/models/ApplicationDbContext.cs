@@ -49,9 +49,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Aluno> Alunos => Set<Aluno>();
     public DbSet<TurmaAluno> TurmasAlunos => Set<TurmaAluno>();
     public DbSet<AplicacaoProva> AplicacoesProva => Set<AplicacaoProva>();
+    public DbSet<AcessoAlunoAplicacao> AcessosAlunoAplicacao => Set<AcessoAlunoAplicacao>();
     public DbSet<RespostaProvaOnline> RespostasProvaOnline => Set<RespostaProvaOnline>();
     public DbSet<RespostaQuestaoOnline> RespostasQuestaoOnline => Set<RespostaQuestaoOnline>();
     public DbSet<RespostaLacunaOnline> RespostasLacunaOnline => Set<RespostaLacunaOnline>();
+
+    public DbSet<CartaoRespostaAplicacao> CartoesRespostaAplicacao => Set<CartaoRespostaAplicacao>();
+    public DbSet<CartaoAlunoAplicacao> CartoesAlunoAplicacao => Set<CartaoAlunoAplicacao>();
+    public DbSet<RespostaCartaoQuestao> RespostasCartaoQuestao => Set<RespostaCartaoQuestao>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -480,8 +485,30 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
         // CriadoPorId sem configuração explícita (mesmo padrão de Turma/Prova.CriadoPorId):
         // FK opcional, convenção implícita do EF já é SetNull.
 
+        // AcessoAlunoAplicacao: um código de acesso POR ALUNO (não mais um único código
+        // compartilhado pela turma inteira). Cascade na AplicacaoProva (diferente de
+        // RespostaProvaOnline abaixo!) — o código em si não é dado de aluno nenhum, é só
+        // gerado automaticamente pra todo mundo matriculado na hora de criar a aplicação,
+        // então excluir a aplicação apaga os códigos junto sem bloquear a exclusão.
+        builder.Entity<AcessoAlunoAplicacao>()
+            .HasOne(a => a.AplicacaoProva)
+            .WithMany(a => a.Acessos)
+            .HasForeignKey(a => a.AplicacaoProvaId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<AcessoAlunoAplicacao>()
+            .HasOne(a => a.Aluno)
+            .WithMany()
+            .HasForeignKey(a => a.AlunoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Só um código por Aluno em cada AplicacaoProva.
+        builder.Entity<AcessoAlunoAplicacao>()
+            .HasIndex(a => new { a.AplicacaoProvaId, a.AlunoId })
+            .IsUnique();
+
         // Código de acesso é o que o aluno digita — precisa ser único no sistema todo.
-        builder.Entity<AplicacaoProva>()
+        builder.Entity<AcessoAlunoAplicacao>()
             .HasIndex(a => a.CodigoAcesso)
             .IsUnique();
 
@@ -525,5 +552,66 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             .WithMany(r => r.RespostasLacunas)
             .HasForeignKey(r => r.RespostaQuestaoOnlineId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        // --- Cartão resposta (leitura de bolhas de prova impressa) ---
+
+        builder.Entity<CartaoAlunoAplicacao>()
+            .Property(c => c.Status)
+            .HasConversion<string>();
+
+        // Restrict nos dois lados: mesmo raciocínio de AplicacaoProva.Prova/Turma —
+        // Prova/Turma com aplicação de cartão resposta não pode ser excluída silenciosamente.
+        builder.Entity<CartaoRespostaAplicacao>()
+            .HasOne(c => c.Prova)
+            .WithMany()
+            .HasForeignKey(c => c.ProvaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.Entity<CartaoRespostaAplicacao>()
+            .HasOne(c => c.Turma)
+            .WithMany()
+            .HasForeignKey(c => c.TurmaId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Cascade (não Restrict!): mesmo raciocínio do AcessoAlunoAplicacao da prova online —
+        // o cartão em si (token/QR) é gerado automaticamente pra todo mundo matriculado na
+        // hora de criar a aplicação, então excluir a aplicação apaga os cartões junto.
+        builder.Entity<CartaoAlunoAplicacao>()
+            .HasOne(c => c.CartaoRespostaAplicacao)
+            .WithMany(c => c.Cartoes)
+            .HasForeignKey(c => c.CartaoRespostaAplicacaoId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<CartaoAlunoAplicacao>()
+            .HasOne(c => c.Aluno)
+            .WithMany()
+            .HasForeignKey(c => c.AlunoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Só um cartão por Aluno em cada CartaoRespostaAplicacao.
+        builder.Entity<CartaoAlunoAplicacao>()
+            .HasIndex(c => new { c.CartaoRespostaAplicacaoId, c.AlunoId })
+            .IsUnique();
+
+        // Token é o que o QR Code carrega — precisa ser único no sistema todo, mesma lógica
+        // do CodigoAcesso da prova online.
+        builder.Entity<CartaoAlunoAplicacao>()
+            .HasIndex(c => c.Token)
+            .IsUnique();
+
+        // Cascade: a resposta de uma questão só existe em função do cartão do aluno (mesmo
+        // padrão de RespostaQuestaoOnline->RespostaProvaOnline); Restrict na Questao pra não
+        // perder histórico de leitura numa exclusão silenciosa da questão.
+        builder.Entity<RespostaCartaoQuestao>()
+            .HasOne(r => r.CartaoAlunoAplicacao)
+            .WithMany(c => c.Respostas)
+            .HasForeignKey(r => r.CartaoAlunoAplicacaoId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.Entity<RespostaCartaoQuestao>()
+            .HasOne(r => r.Questao)
+            .WithMany()
+            .HasForeignKey(r => r.QuestaoId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

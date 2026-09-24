@@ -1,0 +1,76 @@
+@page "/aplicacoes-prova/{Id:int}/codigos"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject AplicacaoProvaService AplicacaoProvaService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Códigos de acesso</PageTitle>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (aplicacao is null)
+{
+    <div class="alert alert-danger">Aplicação não encontrada.</div>
+}
+else
+{
+    <PageHeader Titulo="@($"Códigos de acesso — {aplicacao.Prova?.Titulo}")" Subtitulo="@($"Turma {aplicacao.Turma?.Rotulo} — cada aluno tem um código próprio; não é possível responder no lugar de outro colega só com o código.")" />
+    <p><a href="aplicacoes-prova" class="btn btn-sm btn-link px-0">&laquo; Voltar às aplicações</a></p>
+
+    <p class="text-muted small">
+        Endereço pra responder: <code>@BaseUrl/responder/{código}</code> — distribua a lista abaixo, ou peça pro aluno acessar
+        <code>@BaseUrl/responder</code> e digitar o próprio código.
+    </p>
+
+    @if (acessos.Count == 0)
+    {
+        <p><em>Nenhum código gerado — a turma não tinha alunos matriculados no momento da criação.</em></p>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Aluno</th>
+                    <th>Código</th>
+                    <th>Link direto</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var a in acessos)
+                {
+                    <tr>
+                        <td>@a.Aluno?.Nome</td>
+                        <td><code class="fs-5">@a.CodigoAcesso</code></td>
+                        <td><code>@BaseUrl/responder/@a.CodigoAcesso</code></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <p class="text-muted small">Use Ctrl+P (ou Cmd+P) pra imprimir esta página e entregar os códigos impressos, se preferir.</p>
+    }
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private AplicacaoProva? aplicacao;
+    private List<AcessoAlunoAplicacao> acessos = new();
+    private bool carregando = true;
+
+    private string BaseUrl => NavigationManager.BaseUri.TrimEnd('/');
+
+    protected override async Task OnInitializedAsync()
+    {
+        aplicacao = await AplicacaoProvaService.ObterAsync(Id);
+        if (aplicacao is not null)
+        {
+            acessos = await AplicacaoProvaService.ListarAcessosAsync(Id);
+        }
+
+        carregando = false;
+    }
+}

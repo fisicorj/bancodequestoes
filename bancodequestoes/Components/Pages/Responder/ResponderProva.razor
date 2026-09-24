@@ -3,7 +3,6 @@
 @implements IAsyncDisposable
 @inject AplicacaoProvaService AplicacaoProvaService
 @inject RespostaProvaOnlineService RespostaProvaOnlineService
-@inject AlunoService AlunoService
 @inject IJSRuntime JS
 
 <PageTitle>Responder prova</PageTitle>
@@ -13,14 +12,14 @@
 {
     <p><em>Carregando...</em></p>
 }
-else if (aplicacao is null)
+else if (acesso is null)
 {
     <div class="alert alert-danger mt-4">Código de acesso inválido.</div>
 }
 else if (tentativa is null)
 {
     <div class="form-card mt-4">
-        <h3>@aplicacao.Prova?.Titulo</h3>
+        <h3>@aplicacao!.Prova?.Titulo</h3>
         <p class="text-muted">Turma: @aplicacao.Turma?.Rotulo</p>
 
         @if (aplicacao.Status != StatusAplicacaoProva.Aberta)
@@ -31,24 +30,29 @@ else if (tentativa is null)
         {
             <div class="alert alert-warning">O prazo pra responder essa prova já passou.</div>
         }
+        else if (!confirmado)
+        {
+            @if (erro is not null)
+            {
+                <div class="alert alert-danger">@erro</div>
+            }
+
+            <p class="fs-5">Você é <strong>@acesso.Aluno?.Nome</strong>?</p>
+            <p class="text-muted">Confira se o nome acima é o seu antes de continuar — esse código é pessoal e a tentativa vai ficar registrada em seu nome.</p>
+
+            <button type="button" class="btn btn-primary" @onclick="() => confirmado = true">Sim, é meu nome</button>
+            <a class="btn btn-outline-secondary" href="/responder">Não sou eu</a>
+        }
         else
         {
-            <p>Selecione seu nome na lista abaixo pra começar. A prova entra em tela cheia e é encerrada automaticamente se você sair dela ou trocar de janela — só uma tentativa é permitida.</p>
+            <p>A prova entra em tela cheia e é encerrada automaticamente se você sair dela ou trocar de janela — só uma tentativa é permitida.</p>
 
             @if (erro is not null)
             {
                 <div class="alert alert-danger">@erro</div>
             }
 
-            <select class="form-select mb-3" @bind="alunoSelecionadoId">
-                <option value="0">Selecione seu nome...</option>
-                @foreach (var a in alunosDisponiveis)
-                {
-                    <option value="@a.Id">@a.Nome</option>
-                }
-            </select>
-
-            <button type="button" class="btn btn-primary" @onclick="ComecarAsync" disabled="@(alunoSelecionadoId == 0)">
+            <button type="button" class="btn btn-primary" @onclick="ComecarAsync">
                 Começar a prova (tela cheia)
             </button>
         }
@@ -83,7 +87,7 @@ else if (tentativa.Status != StatusRespostaProvaOnline.EmAndamento)
 else
 {
     <div class="form-card mt-4">
-        <h5>@aplicacao.Prova?.Titulo</h5>
+        <h5>@aplicacao!.Prova?.Titulo</h5>
 
         @foreach (var q in questoes)
         {
@@ -157,9 +161,9 @@ else
     [Parameter]
     public string Codigo { get; set; } = "";
 
-    private AplicacaoProva? aplicacao;
-    private List<Aluno> alunosDisponiveis = new();
-    private int alunoSelecionadoId;
+    private AcessoAlunoAplicacao? acesso;
+    private AplicacaoProva? aplicacao => acesso?.AplicacaoProva;
+    private bool confirmado;
     private RespostaProvaOnline? tentativa;
     private List<QuestaoOnlineExibicao> questoes = new();
     private readonly Dictionary<int, Dictionary<int, string>> lacunasEditadas = new();
@@ -170,13 +174,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        aplicacao = await AplicacaoProvaService.ObterPorCodigoAsync(Codigo.Trim().ToUpperInvariant());
-        if (aplicacao is not null)
-        {
-            var matriculas = await AlunoService.ListarMatriculasDaTurmaAsync(aplicacao.TurmaId);
-            alunosDisponiveis = matriculas.Where(m => m.Ativa).Select(m => m.Aluno!).OrderBy(a => a.Nome).ToList();
-        }
-
+        acesso = await AplicacaoProvaService.ObterAcessoPorCodigoAsync(Codigo.Trim().ToUpperInvariant());
         carregando = false;
     }
 
@@ -199,7 +197,7 @@ else
         erro = null;
         try
         {
-            var iniciada = await RespostaProvaOnlineService.IniciarOuRetomarAsync(aplicacao!.Id, alunoSelecionadoId);
+            var iniciada = await RespostaProvaOnlineService.IniciarOuRetomarAsync(acesso!.AplicacaoProvaId, acesso.AlunoId);
             tentativa = await RespostaProvaOnlineService.ObterParaResponderAsync(iniciada.Id);
             questoes = await RespostaProvaOnlineService.ObterQuestoesParaExibicaoAsync(iniciada.Id);
 

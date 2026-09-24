@@ -97,6 +97,7 @@ builder.Services.AddScoped<IImportadorProvaEnadeService, ImportadorProvaEnadeSer
 builder.Services.AddScoped<AlunoService>();
 builder.Services.AddScoped<AplicacaoProvaService>();
 builder.Services.AddScoped<RespostaProvaOnlineService>();
+builder.Services.AddScoped<CartaoRespostaService>();
 
 // Configuração de IA de verdade mora no banco (ConfiguracaoIa); appsettings
 // "Ollama" só alimenta os valores iniciais da primeira leitura.
@@ -263,6 +264,32 @@ app.MapGet("/provas/{id:int}/gabarito-comentado.docx", async (int id, HttpContex
     }
     var bytes = ExportacaoService.GerarGabaritoComentadoDocx(prova);
     return Results.File(bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ExportacaoService.NomeArquivoSeguro(prova.Titulo) + "-gabarito-comentado.docx");
+}).RequireAuthorization();
+
+app.MapGet("/cartoes-resposta/{id:int}/cartoes.pdf", async (int id, CartaoRespostaService cartaoRespostaService) =>
+{
+    try
+    {
+        var (nomeArquivo, bytes) = await cartaoRespostaService.GerarPdfLoteAsync(id);
+        return Results.File(bytes, "application/pdf", nomeArquivo + ".pdf");
+    }
+    catch (OperacaoInvalidaException)
+    {
+        return Results.NotFound();
+    }
+}).RequireAuthorization();
+
+app.MapGet("/cartoes-resposta/cartao/{cartaoId:int}/cartao.pdf", async (int cartaoId, CartaoRespostaService cartaoRespostaService) =>
+{
+    try
+    {
+        var (nomeArquivo, bytes) = await cartaoRespostaService.GerarPdfUnicoAsync(cartaoId);
+        return Results.File(bytes, "application/pdf", nomeArquivo + ".pdf");
+    }
+    catch (OperacaoInvalidaException)
+    {
+        return Results.NotFound();
+    }
 }).RequireAuthorization();
 
 app.MapGet("/provas/{id:int}/gabarito-comentado.pdf", async (int id, HttpContext http, ExportacaoService exportacaoService) =>

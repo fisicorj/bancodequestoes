@@ -1,0 +1,177 @@
+@page "/cartoes-resposta/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject CartaoRespostaService CartaoRespostaService
+@inject ILogger<CartaoRespostaDetalhe> Logger
+
+<PageTitle>Cartão Resposta — Aplicação</PageTitle>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (aplicacao is null)
+{
+    <div class="alert alert-danger">Aplicação não encontrada.</div>
+}
+else
+{
+    <PageHeader Titulo="@($"Cartão Resposta — {aplicacao.Prova?.Titulo}")" Subtitulo="@($"Turma {aplicacao.Turma?.Rotulo}")" />
+    <p><a href="cartoes-resposta" class="btn btn-sm btn-link px-0">&laquo; Voltar</a></p>
+
+    @if (sucesso is not null)
+    {
+        <div class="alert alert-success">@sucesso</div>
+    }
+
+    <div class="form-card mb-4">
+        <h5>1. Imprima os cartões</h5>
+        <p class="text-muted small">Cada aluno tem um QR Code próprio no cartão — não precisa organizar a ordem ao entregar nem ao fotografar de volta.</p>
+        <a class="btn btn-primary" href="@($"cartoes-resposta/{Id}/cartoes.pdf")" target="_blank">Baixar PDF com todos os cartões (@cartoes.Count)</a>
+    </div>
+
+    <div class="form-card mb-4">
+        <h5>2. Envie as fotos dos cartões preenchidos</h5>
+        <p class="text-muted small">Pode selecionar várias fotos de uma vez — cada uma é identificada pelo próprio QR Code, não precisa dizer de qual aluno é.</p>
+
+        @if (erroUpload is not null)
+        {
+            <div class="alert alert-danger">@erroUpload</div>
+        }
+
+        <InputFile multiple OnChange="OnFotosSelecionadasAsync" accept="image/*" class="form-control" disabled="@processando" />
+
+        @if (processando)
+        {
+            <p class="text-muted small mt-2"><em>Processando fotos...</em></p>
+        }
+
+        @if (resultadosUpload.Count > 0)
+        {
+            <ul class="list-group mt-3">
+                @foreach (var r in resultadosUpload)
+                {
+                    <li class="list-group-item @(r.Ok ? "list-group-item-success" : "list-group-item-danger") small">
+                        <strong>@r.NomeArquivo:</strong> @r.Mensagem
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+
+    <div class="form-card">
+        <h5>3. Confira e feche a correção</h5>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Aluno</th>
+                    <th>Status</th>
+                    <th>Nota</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var c in cartoes)
+                {
+                    <tr>
+                        <td>@c.Aluno?.Nome</td>
+                        <td><span class="badge bg-@c.Status.CorBadge()">@c.Status.Rotulo()</span></td>
+                        <td>@(c.NotaTotal?.ToString("0.##") ?? "—")</td>
+                        <td>
+                            @if (c.Status != StatusCartaoAluno.PendenteEnvio)
+                            {
+                                <a class="btn btn-sm btn-secondary" href="@($"cartoes-resposta/cartao/{c.Id}")">
+                                    @(c.Status == StatusCartaoAluno.Confirmado ? "Ver" : "Conferir")
+                                </a>
+                            }
+                            <a class="btn btn-sm btn-outline-secondary" href="@($"cartoes-resposta/cartao/{c.Id}/cartao.pdf")" target="_blank">Reimprimir</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private CartaoRespostaAplicacao? aplicacao;
+    private List<CartaoAlunoAplicacao> cartoes = new();
+    private bool carregando = true;
+    private bool processando;
+    private string? sucesso;
+    private string? erroUpload;
+    private List<(string NomeArquivo, bool Ok, string Mensagem)> resultadosUpload = new();
+
+    private const long TamanhoMaximoFoto = 15 * 1024 * 1024;
+    private const int MaximoFotosPorEnvio = 60;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        aplicacao = await CartaoRespostaService.ObterAsync(Id);
+        if (aplicacao is not null)
+        {
+            cartoes = await CartaoRespostaService.ListarCartoesAsync(Id);
+        }
+        carregando = false;
+    }
+
+    private async Task OnFotosSelecionadasAsync(InputFileChangeEventArgs e)
+    {
+        erroUpload = null;
+        sucesso = null;
+        resultadosUpload = new();
+
+        var arquivos = e.GetMultipleFiles(MaximoFotosPorEnvio);
+        if (arquivos.Count == 0)
+        {
+            return;
+        }
+
+        processando = true;
+        StateHasChanged();
+
+        foreach (var arquivo in arquivos)
+        {
+            if (arquivo.Size == 0)
+            {
+                resultadosUpload.Add((arquivo.Name, false, "Arquivo vazio."));
+                continue;
+            }
+
+            if (arquivo.Size > TamanhoMaximoFoto)
+            {
+                resultadosUpload.Add((arquivo.Name, false, $"Passa do tamanho máximo permitido ({TamanhoMaximoFoto / 1024 / 1024} MB)."));
+                continue;
+            }
+
+            try
+            {
+                using var ms = new MemoryStream();
+                await arquivo.OpenReadStream(TamanhoMaximoFoto).CopyToAsync(ms);
+                var alunoNome = await CartaoRespostaService.ProcessarFotoAsync(Id, ms.ToArray());
+                resultadosUpload.Add((arquivo.Name, true, $"Lido com sucesso — aluno: {alunoNome}."));
+            }
+            catch (OperacaoInvalidaException ex)
+            {
+                resultadosUpload.Add((arquivo.Name, false, ex.Message));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning(ex, "Falha ao processar foto de cartão resposta \"{Arquivo}\"", arquivo.Name);
+                resultadosUpload.Add((arquivo.Name, false, "Não foi possível processar essa imagem (verifique se é uma foto válida)."));
+            }
+        }
+
+        processando = false;
+        sucesso = $"{resultadosUpload.Count(r => r.Ok)} de {resultadosUpload.Count} foto(s) lida(s) com sucesso.";
+        await CarregarAsync();
+    }
+}

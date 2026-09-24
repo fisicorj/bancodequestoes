@@ -115,6 +115,22 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- Leitura de cartão resposta (correção por foto de prova impressa via múltipla
+         escolha). QRCoder: gera o QR Code de cada cartão (PngByteQRCode é puro
+         gerenciado, sem System.Drawing/dependência nativa); MIT. -->
+    <PackageReference Include="QRCoder" Version="1.8.0" />
+    <!-- ZXing.Net: decodifica o QR Code na foto enviada — usado com RGBLuminanceSource
+         a partir de bytes de pixel (ImageSharp abaixo), sem depender de System.Drawing
+         (que é Windows-only). Apache 2.0. -->
+    <PackageReference Include="ZXing.Net" Version="0.16.11" />
+    <!-- SixLabors.ImageSharp: correção de perspectiva da foto (o aluno não tira foto
+         perfeitamente reta) e medição de escurecimento de cada bolha. Fixado em 2.1.12
+         (não a versão mais nova, 4.x) DE PROPÓSITO: a partir da 3.0.0 a licença virou
+         "Six Labors Split License" (paga acima de certo faturamento da empresa que usa);
+         2.1.12 é a última versão ainda sob Apache 2.0, mesmo critério de licença já
+         aplicado a PdfPig/PDFtoImage neste projeto (evitar dependência comercial
+         obrigatória). -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.12" />
   </ItemGroup>
 
 </Project>
