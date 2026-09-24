@@ -41,7 +41,7 @@ public class RespostaProvaOnlineServiceTests
         db.Provas.Add(prova);
         await db.SaveChangesAsync();
 
-        var aplicacao = new AplicacaoProva { ProvaId = prova.Id, TurmaId = turma.Id, CodigoAcesso = "ABC123" };
+        var aplicacao = new AplicacaoProva { ProvaId = prova.Id, TurmaId = turma.Id };
         db.AplicacoesProva.Add(aplicacao);
         await db.SaveChangesAsync();
 

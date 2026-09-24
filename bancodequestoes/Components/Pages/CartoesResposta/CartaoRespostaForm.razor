@@ -1,16 +1,16 @@
-@page "/aplicacoes-prova/novo"
+@page "/cartoes-resposta/novo"
 @attribute [Authorize]
 @rendermode InteractiveServer
 @using System.Security.Claims
-@inject AplicacaoProvaService AplicacaoProvaService
+@inject CartaoRespostaService CartaoRespostaService
 @inject ProvaService ProvaService
 @inject CursoService CursoService
 @inject AuthenticationStateProvider AuthProvider
 @inject NavigationManager NavigationManager
 
-<PageTitle>Aplicar prova online</PageTitle>
+<PageTitle>Aplicar prova com cartão resposta</PageTitle>
 
-<PageHeader Titulo="Aplicar prova online" Subtitulo="Gera um código de acesso que os alunos matriculados na turma escolhida usam pra responder, sem precisar de login." />
+<PageHeader Titulo="Aplicar prova com cartão resposta" Subtitulo="Gera um cartão com QR Code por aluno matriculado, pra imprimir, aplicar no papel e depois corrigir fotografando os cartões preenchidos. Só funciona com provas 100% múltipla escolha." />
 
 @if (erro is not null)
 {
@@ -23,11 +23,11 @@
 }
 else if (provas.Count == 0)
 {
-    <p><em>Cadastre uma prova antes de aplicá-la online.</em> <a href="provas/novo">Criar prova</a></p>
+    <p><em>Cadastre uma prova antes.</em> <a href="provas/novo">Criar prova</a></p>
 }
 else if (turmas.Count == 0)
 {
-    <p><em>Cadastre uma turma antes de aplicar uma prova online.</em> <a href="turmas/novo">Criar turma</a></p>
+    <p><em>Cadastre uma turma antes.</em> <a href="turmas/novo">Criar turma</a></p>
 }
 else
 {
@@ -43,7 +43,7 @@ else
                                 <option value="@p.Id">@p.Titulo</option>
                             }
                         </InputSelect>
-                        <label for="ProvaId">Prova</label>
+                        <label for="ProvaId">Prova (só múltipla escolha)</label>
                     </div>
 
                     <div class="form-floating mb-3">
@@ -54,21 +54,11 @@ else
                                 <option value="@t.Id">@t.Rotulo</option>
                             }
                         </InputSelect>
-                        <label for="TurmaId">Turma (só alunos matriculados nela podem responder)</label>
+                        <label for="TurmaId">Turma (um cartão por aluno matriculado nela)</label>
                     </div>
 
-                    <div class="form-floating mb-3">
-                        <InputDate Type="InputDateType.DateTimeLocal" @bind-Value="dataLimiteLocal" id="DataLimite" class="form-control" />
-                        <label for="DataLimite">Prazo final (opcional)</label>
-                    </div>
-
-                    <div class="form-floating mb-3">
-                        <InputNumber @bind-Value="modelo.TempoLimiteMinutos" id="TempoLimite" class="form-control" placeholder="Tempo limite" />
-                        <label for="TempoLimite">Tempo limite em minutos por tentativa (opcional)</label>
-                    </div>
-
-                    <button type="submit" class="btn btn-primary">Gerar código de acesso</button>
-                    <a href="aplicacoes-prova" class="btn btn-link">Cancelar</a>
+                    <button type="submit" class="btn btn-primary">Gerar cartões</button>
+                    <a href="cartoes-resposta" class="btn btn-link">Cancelar</a>
                 </EditForm>
             </div>
         </div>
@@ -79,8 +69,7 @@ else
     [SupplyParameterFromQuery(Name = "provaId")]
     private int? ProvaIdInicial { get; set; }
 
-    private AplicacaoProvaInput modelo = new();
-    private DateTime? dataLimiteLocal;
+    private CartaoRespostaInput modelo = new();
     private List<Prova> provas = new();
     private List<Turma> turmas = new();
     private string? meuId;
@@ -110,9 +99,8 @@ else
 
         try
         {
-            modelo.DataLimite = dataLimiteLocal?.ToUniversalTime();
-            var aplicacao = await AplicacaoProvaService.CriarAsync(modelo, meuId);
-            NavigationManager.NavigateTo($"aplicacoes-prova/{aplicacao.Id}/codigos?msg={Uri.EscapeDataString("Aplicação criada — os códigos individuais de cada aluno já foram gerados.")}");
+            var aplicacao = await CartaoRespostaService.CriarAsync(modelo, meuId);
+            NavigationManager.NavigateTo($"cartoes-resposta/{aplicacao.Id}?msg={Uri.EscapeDataString("Cartões gerados — baixe o PDF pra imprimir e distribuir aos alunos.")}");
         }
         catch (OperacaoInvalidaException ex)
         {

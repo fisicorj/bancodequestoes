@@ -1,0 +1,140 @@
+@page "/cartoes-resposta/cartao/{Id:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@inject CartaoRespostaService CartaoRespostaService
+
+<PageTitle>Conferência do cartão resposta</PageTitle>
+
+@if (carregando)
+{
+    <p><em>Carregando...</em></p>
+}
+else if (cartao is null)
+{
+    <div class="alert alert-danger">Cartão não encontrado.</div>
+}
+else
+{
+    <PageHeader Titulo="@($"Conferência — {cartao.Aluno?.Nome}")" Subtitulo="@($"{cartao.CartaoRespostaAplicacao?.Prova?.Titulo} — Turma {cartao.CartaoRespostaAplicacao?.Turma?.Rotulo}")" />
+    <p><a href="@($"cartoes-resposta/{cartao.CartaoRespostaAplicacaoId}")" class="btn btn-sm btn-link px-0">&laquo; Voltar à aplicação</a></p>
+
+    @if (erro is not null)
+    {
+        <div class="alert alert-danger">@erro</div>
+    }
+
+    @if (cartao.Status == StatusCartaoAluno.Confirmado)
+    {
+        <div class="alert alert-success">
+            Correção confirmada — nota <strong>@cartao.NotaTotal?.ToString("0.##")</strong>.
+        </div>
+    }
+    else if (cartao.Respostas.Any(r => r.Ambigua))
+    {
+        <div class="alert alert-warning">
+            A leitura automática não conseguiu decidir algumas respostas (destacadas abaixo) — escolha manualmente antes de confirmar.
+        </div>
+    }
+
+    <div class="form-card">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Questão</th>
+                    <th>Detectada</th>
+                    <th>Confirmar</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var r in cartao.Respostas.OrderBy(r => r.Ordem))
+                {
+                    var quantidadeAlternativas = quantidadePorQuestao.GetValueOrDefault(r.QuestaoId, 5);
+                    <tr class="@(r.Ambigua ? "table-warning" : "")">
+                        <td>@(r.Ordem + 1)</td>
+                        <td>@(r.LetraDetectada?.ToString() ?? "—")</td>
+                        <td>
+                            @if (cartao.Status == StatusCartaoAluno.Confirmado)
+                            {
+                                @(r.LetraConfirmada?.ToString() ?? "—")
+                            }
+                            else
+                            {
+                                <div class="btn-group btn-group-sm" role="group">
+                                    @for (var alt = 0; alt < quantidadeAlternativas; alt++)
+                                    {
+                                        var letra = (char)('A' + alt);
+                                        <input type="radio" class="btn-check" name="@($"r{r.Id}")" id="@($"r{r.Id}_{letra}")"
+                                               checked="@(r.LetraConfirmada == letra)" @onchange="() => ConfirmarAsync(r.Id, letra)" />
+                                        <label class="btn btn-outline-primary" for="@($"r{r.Id}_{letra}")">@letra</label>
+                                    }
+                                    <input type="radio" class="btn-check" name="@($"r{r.Id}")" id="@($"r{r.Id}_none")"
+                                           checked="@(r.LetraConfirmada is null)" @onchange="() => ConfirmarAsync(r.Id, null)" />
+                                    <label class="btn btn-outline-secondary" for="@($"r{r.Id}_none")">Nenhuma</label>
+                                </div>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @if (cartao.Status != StatusCartaoAluno.Confirmado)
+        {
+            <button type="button" class="btn btn-success" @onclick="ConfirmarCartaoAsync">Confirmar correção</button>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private CartaoAlunoAplicacao? cartao;
+    private Dictionary<int, int> quantidadePorQuestao = new();
+    private bool carregando = true;
+    private string? erro;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        cartao = await CartaoRespostaService.ObterCartaoDetalheAsync(Id);
+        if (cartao is not null)
+        {
+            var questoes = await CartaoRespostaService.ObterQuestoesAsync(cartao.CartaoRespostaAplicacaoId);
+            quantidadePorQuestao = questoes.ToDictionary(q => q.QuestaoId, q => q.QuantidadeAlternativas);
+        }
+        carregando = false;
+    }
+
+    private async Task ConfirmarAsync(int respostaId, char? letra)
+    {
+        erro = null;
+        try
+        {
+            await CartaoRespostaService.ConfirmarRespostaAsync(respostaId, letra);
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private async Task ConfirmarCartaoAsync()
+    {
+        erro = null;
+        try
+        {
+            await CartaoRespostaService.ConfirmarCartaoAsync(Id);
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+}

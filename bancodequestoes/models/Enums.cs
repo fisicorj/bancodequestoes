@@ -361,3 +361,32 @@ public static class MotivoEncerramentoExtensions
         _ => motivo.ToString(),
     };
 }
+
+// PendenteEnvio: cartão gerado, aluno ainda não fotografado. Enviado: foto processada
+// (letras detectadas), mas ainda não confirmada na tela de conferência — nota não conta
+// ainda. Confirmado: professor conferiu/corrigiu e a nota é definitiva.
+public enum StatusCartaoAluno
+{
+    PendenteEnvio,
+    Enviado,
+    Confirmado,
+}
+
+public static class StatusCartaoAlunoExtensions
+{
+    public static string Rotulo(this StatusCartaoAluno status) => status switch
+    {
+        StatusCartaoAluno.PendenteEnvio => "Aguardando foto",
+        StatusCartaoAluno.Enviado => "Aguardando conferência",
+        StatusCartaoAluno.Confirmado => "Confirmado",
+        _ => status.ToString(),
+    };
+
+    public static string CorBadge(this StatusCartaoAluno status) => status switch
+    {
+        StatusCartaoAluno.PendenteEnvio => "secondary",
+        StatusCartaoAluno.Enviado => "warning text-dark",
+        StatusCartaoAluno.Confirmado => "success",
+        _ => "secondary",
+    };
+}

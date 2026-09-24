@@ -1,14 +1,14 @@
-@page "/aplicacoes-prova"
+@page "/cartoes-resposta"
 @attribute [Authorize]
 @rendermode InteractiveServer
-@inject AplicacaoProvaService AplicacaoProvaService
+@inject CartaoRespostaService CartaoRespostaService
 @inject IJSRuntime JS
 
-<PageTitle>Provas Online</PageTitle>
+<PageTitle>Cartão Resposta</PageTitle>
 
-<PageHeader Titulo="Provas Online" Subtitulo="Aplicações de provas pra os alunos responderem online, com correção automática.">
+<PageHeader Titulo="Cartão Resposta" Subtitulo="Correção de provas impressas por foto do cartão resposta preenchido — múltipla escolha.">
     <Acao>
-        <a class="btn btn-primary" href="aplicacoes-prova/novo">+ Aplicar prova online</a>
+        <a class="btn btn-primary" href="cartoes-resposta/novo">+ Aplicar com cartão resposta</a>
     </Acao>
 </PageHeader>
 
@@ -28,7 +28,7 @@
 }
 else if (aplicacoes.Count == 0)
 {
-    <p><em>Nenhuma prova aplicada online ainda.</em></p>
+    <p><em>Nenhuma aplicação de cartão resposta ainda.</em></p>
 }
 else
 {
@@ -40,8 +40,7 @@ else
             <tr>
                 <th>Prova</th>
                 <th>Turma</th>
-                <th>Status</th>
-                <th>Prazo</th>
+                <th>Criada em</th>
                 <th></th>
             </tr>
         </thead>
@@ -51,23 +50,9 @@ else
                 <tr>
                     <td>@a.Prova?.Titulo</td>
                     <td>@a.Turma?.Rotulo</td>
+                    <td>@a.CriadoEm.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
                     <td>
-                        @if (a.Status == StatusAplicacaoProva.Aberta)
-                        {
-                            <span class="badge bg-success">Aberta</span>
-                        }
-                        else
-                        {
-                            <span class="badge bg-secondary">Encerrada</span>
-                        }
-                    </td>
-                    <td>@(a.DataLimite is { } d ? d.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "—")</td>
-                    <td>
-                        <a class="btn btn-sm btn-outline-primary" href="@($"aplicacoes-prova/{a.Id}/codigos")">Códigos</a>
-                        <a class="btn btn-sm btn-secondary" href="@($"aplicacoes-prova/{a.Id}")">Resultados</a>
-                        <button class="btn btn-sm btn-outline-secondary" @onclick="() => AlternarStatusAsync(a)">
-                            @(a.Status == StatusAplicacaoProva.Aberta ? "Encerrar" : "Reabrir")
-                        </button>
+                        <a class="btn btn-sm btn-secondary" href="@($"cartoes-resposta/{a.Id}")">Abrir</a>
                         <button class="btn btn-sm btn-danger" @onclick="() => ConfirmarExcluirAsync(a)">Excluir</button>
                     </td>
                 </tr>
@@ -79,7 +64,7 @@ else
 }
 
 @code {
-    private List<AplicacaoProva>? aplicacoes;
+    private List<CartaoRespostaAplicacao>? aplicacoes;
     private string? erro;
     private string? sucesso;
 
@@ -104,20 +89,12 @@ else
 
     private async Task CarregarAsync()
     {
-        var resultado = await AplicacaoProvaService.ListarAsync(filtroProvaId: 0, filtroTurmaId: 0, pagina, TamanhoPagina);
+        var resultado = await CartaoRespostaService.ListarAsync(pagina, TamanhoPagina);
         aplicacoes = resultado.Itens;
         totalRegistros = resultado.Total;
     }
 
-    private async Task AlternarStatusAsync(AplicacaoProva a)
-    {
-        erro = null;
-        sucesso = null;
-        await AplicacaoProvaService.AlternarStatusAsync(a);
-        sucesso = a.Status == StatusAplicacaoProva.Aberta ? "Aplicação reaberta." : "Aplicação encerrada.";
-    }
-
-    private async Task ConfirmarExcluirAsync(AplicacaoProva a)
+    private async Task ConfirmarExcluirAsync(CartaoRespostaAplicacao a)
     {
         var confirmado = await JS.InvokeAsync<bool>("confirm", $"Excluir a aplicação de \"{a.Prova?.Titulo}\" na turma \"{a.Turma?.Rotulo}\"? Essa ação não pode ser desfeita.");
         if (confirmado)
@@ -126,7 +103,7 @@ else
             sucesso = null;
             try
             {
-                await AplicacaoProvaService.ExcluirAsync(a);
+                await CartaoRespostaService.ExcluirAsync(a);
                 sucesso = "Aplicação excluída com sucesso.";
                 await CarregarAsync();
             }
