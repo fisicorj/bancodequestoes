@@ -56,7 +56,7 @@ public class CartaoRespostaServiceTests
         db.Questoes.Add(questao);
         await db.SaveChangesAsync();
 
-        var prova = new Prova { Titulo = "Prova 1" };
+        var prova = new Prova { Titulo = "Prova 1", CriadoPorId = "prof-1" };
         prova.ProvaQuestoes.Add(new ProvaQuestao { QuestaoId = questao.Id, Ordem = 0, Valor = 10m });
         db.Provas.Add(prova);
         await db.SaveChangesAsync();
@@ -116,7 +116,7 @@ public class CartaoRespostaServiceTests
         questao.Alternativas.Add(new AlternativaQuestao { Letra = 'A', Texto = "Alt A" });
         db.Questoes.Add(questao);
         await db.SaveChangesAsync();
-        var prova = new Prova { Titulo = "Prova 1" };
+        var prova = new Prova { Titulo = "Prova 1", CriadoPorId = "prof-1" };
         prova.ProvaQuestoes.Add(new ProvaQuestao { QuestaoId = questao.Id, Ordem = 0 });
         db.Provas.Add(prova);
         await db.SaveChangesAsync();
@@ -125,6 +125,18 @@ public class CartaoRespostaServiceTests
 
         await Assert.ThrowsAsync<OperacaoInvalidaException>(
             () => servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1"));
+    }
+
+    [Fact]
+    public async Task CriarAsync_ProvaDeOutroProfessor_Lanca()
+    {
+        using var db = TestDbFactory.Criar();
+        var (prova, turma, _) = await SeedProvaETurmaAsync(db);
+
+        var servico = new CartaoRespostaService(db);
+
+        await Assert.ThrowsAsync<OperacaoInvalidaException>(
+            () => servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-2"));
     }
 
     [Fact]
@@ -143,6 +155,35 @@ public class CartaoRespostaServiceTests
     }
 
     [Fact]
+    public async Task ExcluirAsync_SemLeitura_Remove()
+    {
+        using var db = TestDbFactory.Criar();
+        var (prova, turma, _) = await SeedProvaETurmaAsync(db);
+        var servico = new CartaoRespostaService(db);
+        var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
+
+        await servico.ExcluirAsync(aplicacao);
+
+        Assert.Null(await db.CartoesRespostaAplicacao.FindAsync(aplicacao.Id));
+    }
+
+    [Fact]
+    public async Task ExcluirAsync_ComCartaoJaLido_Lanca()
+    {
+        // CartaoAlunoAplicacao é Cascade nessa FK — sem essa checagem de negócio, excluir a
+        // aplicação apagaria em cascata uma leitura/correção já feita, sem aviso nenhum.
+        using var db = TestDbFactory.Criar();
+        var (prova, turma, questaoId) = await SeedProvaETurmaAsync(db);
+        var servico = new CartaoRespostaService(db);
+        var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
+        var cartao = (await servico.ListarCartoesAsync(aplicacao.Id))[0];
+        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = ('A', false) }, "prof-1");
+
+        await Assert.ThrowsAsync<OperacaoInvalidaException>(() => servico.ExcluirAsync(aplicacao));
+        Assert.NotNull(await db.CartoesRespostaAplicacao.FindAsync(aplicacao.Id));
+    }
+
+    [Fact]
     public async Task RegistrarLeituraAsync_RespostaCorreta_StatusEnviadoENotaProvisoria()
     {
         using var db = TestDbFactory.Criar();
@@ -151,7 +192,7 @@ public class CartaoRespostaServiceTests
         var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
         var cartao = (await servico.ListarCartoesAsync(aplicacao.Id))[0];
 
-        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = ('A', false) });
+        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = ('A', false) }, "prof-1");
 
         var atualizado = await servico.ObterCartaoDetalheAsync(cartao.Id);
         Assert.Equal(StatusCartaoAluno.Enviado, atualizado!.Status);
@@ -169,7 +210,7 @@ public class CartaoRespostaServiceTests
         var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
         var cartao = (await servico.ListarCartoesAsync(aplicacao.Id))[0];
 
-        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = (null, true) });
+        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = (null, true) }, "prof-1");
 
         var atualizado = await servico.ObterCartaoDetalheAsync(cartao.Id);
         Assert.True(atualizado!.Respostas.Single().Ambigua);
@@ -184,9 +225,9 @@ public class CartaoRespostaServiceTests
         var servico = new CartaoRespostaService(db);
         var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
         var cartao = (await servico.ListarCartoesAsync(aplicacao.Id))[0];
-        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = (null, true) });
+        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = (null, true) }, "prof-1");
 
-        await Assert.ThrowsAsync<OperacaoInvalidaException>(() => servico.ConfirmarCartaoAsync(cartao.Id));
+        await Assert.ThrowsAsync<OperacaoInvalidaException>(() => servico.ConfirmarCartaoAsync(cartao.Id, "prof-1"));
     }
 
     [Fact]
@@ -197,19 +238,98 @@ public class CartaoRespostaServiceTests
         var servico = new CartaoRespostaService(db);
         var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
         var cartao = (await servico.ListarCartoesAsync(aplicacao.Id))[0];
-        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = (null, true) });
+        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = (null, true) }, "prof-1");
         var respostaId = (await servico.ObterCartaoDetalheAsync(cartao.Id))!.Respostas.Single().Id;
 
         // Aluno respondeu 'B' de verdade (gabarito é 'A') — professor resolve a ambiguidade
         // escolhendo a letra certa que enxergou no cartão físico.
-        await servico.ConfirmarRespostaAsync(respostaId, 'B');
-        await servico.ConfirmarCartaoAsync(cartao.Id);
+        await servico.ConfirmarRespostaAsync(respostaId, 'B', "prof-1");
+        await servico.ConfirmarCartaoAsync(cartao.Id, "prof-1");
 
         var confirmado = await servico.ObterCartaoDetalheAsync(cartao.Id);
         Assert.Equal(StatusCartaoAluno.Confirmado, confirmado!.Status);
         Assert.Equal(0m, confirmado.NotaTotal);
         Assert.False(confirmado.Respostas.Single().Correta);
         Assert.NotNull(confirmado.CorrigidoEm);
+    }
+
+    [Fact]
+    public async Task GerarCartaoAsync_ChamadoDuasVezes_NaoDuplicaToken()
+    {
+        using var db = TestDbFactory.Criar();
+        var (prova, turma, _) = await SeedProvaETurmaAsync(db);
+        var servico = new CartaoRespostaService(db);
+        var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
+        var cartaoExistente = (await servico.ListarCartoesAsync(aplicacao.Id))[0];
+
+        var primeiro = await servico.GerarCartaoAsync(aplicacao.Id, cartaoExistente.AlunoId, "prof-1");
+        var segundo = await servico.GerarCartaoAsync(aplicacao.Id, cartaoExistente.AlunoId, "prof-1");
+
+        Assert.Equal(primeiro.Id, segundo.Id);
+        Assert.Equal(primeiro.Token, segundo.Token);
+    }
+
+    [Fact]
+    public async Task GerarCartaoAsync_AlunoNovo_CriaCartaoComTokenDe10Caracteres()
+    {
+        using var db = TestDbFactory.Criar();
+        var (prova, turma, _) = await SeedProvaETurmaAsync(db);
+        var servico = new CartaoRespostaService(db);
+        var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
+
+        var novoAluno = new Aluno { Nome = "Pedro" };
+        db.Alunos.Add(novoAluno);
+        await db.SaveChangesAsync();
+        db.TurmasAlunos.Add(new TurmaAluno { TurmaId = turma.Id, AlunoId = novoAluno.Id, Ativa = true });
+        await db.SaveChangesAsync();
+
+        var cartao = await servico.GerarCartaoAsync(aplicacao.Id, novoAluno.Id, "prof-1");
+
+        Assert.Equal(10, cartao.Token.Length);
+        var cartoes = await servico.ListarCartoesAsync(aplicacao.Id);
+        Assert.Equal(2, cartoes.Count);
+    }
+
+    [Fact]
+    public async Task GerarCartaoAsync_ChamadoPorOutroProfessor_Lanca()
+    {
+        // Achado baixo da auditoria: os métodos de mutação confiavam só na checagem de posse
+        // feita na página Razor — o Service em si não revalidava. Esse teste chama o Service
+        // direto com um meuId de outro professor, sem passar pela tela.
+        using var db = TestDbFactory.Criar();
+        var (prova, turma, _) = await SeedProvaETurmaAsync(db);
+        var servico = new CartaoRespostaService(db);
+        var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
+        var cartaoExistente = (await servico.ListarCartoesAsync(aplicacao.Id))[0];
+
+        await Assert.ThrowsAsync<OperacaoInvalidaException>(
+            () => servico.GerarCartaoAsync(aplicacao.Id, cartaoExistente.AlunoId, "prof-2"));
+    }
+
+    [Fact]
+    public async Task ConfirmarCartaoAsync_ChamadoPorOutroProfessor_Lanca()
+    {
+        using var db = TestDbFactory.Criar();
+        var (prova, turma, questaoId) = await SeedProvaETurmaAsync(db);
+        var servico = new CartaoRespostaService(db);
+        var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
+        var cartao = (await servico.ListarCartoesAsync(aplicacao.Id))[0];
+        await servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = ('A', false) }, "prof-1");
+
+        await Assert.ThrowsAsync<OperacaoInvalidaException>(() => servico.ConfirmarCartaoAsync(cartao.Id, "prof-2"));
+    }
+
+    [Fact]
+    public async Task RegistrarLeituraAsync_ChamadoPorOutroProfessor_Lanca()
+    {
+        using var db = TestDbFactory.Criar();
+        var (prova, turma, questaoId) = await SeedProvaETurmaAsync(db);
+        var servico = new CartaoRespostaService(db);
+        var aplicacao = await servico.CriarAsync(new CartaoRespostaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1");
+        var cartao = (await servico.ListarCartoesAsync(aplicacao.Id))[0];
+
+        await Assert.ThrowsAsync<OperacaoInvalidaException>(
+            () => servico.RegistrarLeituraAsync(cartao.Id, new() { [questaoId] = ('A', false) }, "prof-2"));
     }
 
     [Fact]
@@ -254,7 +374,7 @@ public class CartaoRespostaServiceTests
         questao2.Alternativas.Add(new AlternativaQuestao { Letra = 'A', Texto = "Alt A" });
         db.Questoes.Add(questao2);
         await db.SaveChangesAsync();
-        var prova2 = new Prova { Titulo = "Prova 2" };
+        var prova2 = new Prova { Titulo = "Prova 2", CriadoPorId = "prof-1" };
         prova2.ProvaQuestoes.Add(new ProvaQuestao { QuestaoId = questao2.Id, Ordem = 0 });
         db.Provas.Add(prova2);
         await db.SaveChangesAsync();

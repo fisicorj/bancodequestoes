@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace BancoQuestoes.Services;
 
 // Confere se um upload declarado como imagem é REALMENTE uma imagem, olhando os primeiros
@@ -34,8 +36,36 @@ public static class ValidadorImagem
         {
             return "image/bmp";
         }
+        if (EhHeic(conteudo))
+        {
+            // ImageSharp não decodifica HEIC/HEIF (formato padrão de foto do iPhone) — mas é
+            // uma imagem de verdade, não um upload malicioso, então deixa passar aqui pra cair
+            // no tratamento específico (mensagem amigável) em LeitorCartaoRespostaService, em
+            // vez de ser barrado como "arquivo inválido" já nessa checagem de assinatura.
+            return "image/heic";
+        }
         return null; // assinatura não reconhecida como imagem — chamador deve rejeitar o upload
     }
 
     public static bool EhImagemValida(byte[] conteudo) => DetectarContentType(conteudo) is not null;
+
+    // HEIC/HEIF é um contêiner ISO BMFF (mesma família do MP4): 4 bytes de tamanho da caixa,
+    // depois "ftyp" e uma "major brand" de 4 letras que identifica o formato específico.
+    private static readonly string[] MarcasHeic = { "heic", "heix", "hevc", "hevx", "heim", "heis", "hevm", "hevs", "mif1", "msf1" };
+
+    private static bool EhHeic(byte[] conteudo)
+    {
+        if (conteudo.Length < 12)
+        {
+            return false;
+        }
+
+        if (conteudo[4] != 'f' || conteudo[5] != 't' || conteudo[6] != 'y' || conteudo[7] != 'p')
+        {
+            return false;
+        }
+
+        var marca = System.Text.Encoding.ASCII.GetString(conteudo, 8, 4);
+        return MarcasHeic.Contains(marca);
+    }
 }

@@ -2,7 +2,10 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject AplicacaoProvaService AplicacaoProvaService
+@inject AlunoService AlunoService
 @inject NavigationManager NavigationManager
+@inject AuthenticationStateProvider AuthProvider
+@using System.Security.Claims
 
 <PageTitle>Códigos de acesso</PageTitle>
 
@@ -13,6 +16,11 @@
 else if (aplicacao is null)
 {
     <div class="alert alert-danger">Aplicação não encontrada.</div>
+}
+else if (acessoNegado)
+{
+    <div class="alert alert-danger">@erro</div>
+    <p><a href="aplicacoes-prova">Voltar às aplicações</a></p>
 }
 else
 {
@@ -51,6 +59,31 @@ else
         </table>
         <p class="text-muted small">Use Ctrl+P (ou Cmd+P) pra imprimir esta página e entregar os códigos impressos, se preferir.</p>
     }
+
+    @if (alunosSemCodigo.Count > 0)
+    {
+        <div class="form-card mt-4">
+            <h5>Matriculados depois — sem código ainda</h5>
+            <p class="text-muted small">Esses alunos foram matriculados na turma depois que essa aplicação foi criada, então não receberam código automaticamente. Gere um pra cada um.</p>
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Aluno</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var aluno in alunosSemCodigo)
+                    {
+                        <tr>
+                            <td>@aluno.Nome</td>
+                            <td><button class="btn btn-sm btn-primary" @onclick="() => GerarCodigoAsync(aluno.Id)">Gerar código</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
 
 @code {
@@ -59,18 +92,54 @@ else
 
     private AplicacaoProva? aplicacao;
     private List<AcessoAlunoAplicacao> acessos = new();
+    private List<Aluno> alunosSemCodigo = new();
     private bool carregando = true;
+    private bool acessoNegado;
+    private string? erro;
 
     private string BaseUrl => NavigationManager.BaseUri.TrimEnd('/');
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
         aplicacao = await AplicacaoProvaService.ObterAsync(Id);
         if (aplicacao is not null)
         {
-            acessos = await AplicacaoProvaService.ListarAcessosAsync(Id);
+            if (aplicacao.CriadoPorId != meuId)
+            {
+                erro = "Você não tem permissão para ver esta aplicação.";
+                acessoNegado = true;
+            }
+            else
+            {
+                await CarregarAcessosEPendentesAsync();
+            }
         }
 
         carregando = false;
+    }
+
+    private async Task CarregarAcessosEPendentesAsync()
+    {
+        acessos = await AplicacaoProvaService.ListarAcessosAsync(Id);
+
+        // Achado médio da auditoria: aluno matriculado depois da aplicação criada não
+        // recebia código automaticamente — aqui detecta quem está ativo na turma mas ainda
+        // não tem um AcessoAlunoAplicacao, pra oferecer gerar na hora.
+        var matriculas = await AlunoService.ListarMatriculasDaTurmaAsync(aplicacao!.TurmaId);
+        var idsComAcesso = acessos.Select(a => a.AlunoId).ToHashSet();
+        alunosSemCodigo = matriculas
+            .Where(m => m.Ativa && !idsComAcesso.Contains(m.AlunoId))
+            .Select(m => m.Aluno!)
+            .OrderBy(a => a.Nome)
+            .ToList();
+    }
+
+    private async Task GerarCodigoAsync(int alunoId)
+    {
+        await AplicacaoProvaService.GerarAcessoAsync(Id, alunoId);
+        await CarregarAcessosEPendentesAsync();
     }
 }

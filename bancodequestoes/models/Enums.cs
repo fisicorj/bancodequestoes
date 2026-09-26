@@ -349,6 +349,12 @@ public enum MotivoEncerramento
     EnviadoPeloAluno,
     PerdaDeFoco,
     SaidaDeTelaCheia,
+
+    // Fix 4: TempoLimiteMinutos era só decorativo, nunca aplicado — esse motivo cobre tanto o
+    // auto-envio pelo cronômetro no navegador (UX) quanto o fechamento forçado pelo servidor
+    // quando o prazo já estourou e o aluno tenta salvar ou recarregar a prova (fonte de
+    // verdade, não burlável só desligando o JS).
+    TempoEsgotado,
 }
 
 public static class MotivoEncerramentoExtensions
@@ -358,6 +364,7 @@ public static class MotivoEncerramentoExtensions
         MotivoEncerramento.EnviadoPeloAluno => "Enviado pelo aluno",
         MotivoEncerramento.PerdaDeFoco => "Encerrado — saiu da tela/trocou de janela",
         MotivoEncerramento.SaidaDeTelaCheia => "Encerrado — saiu da tela cheia",
+        MotivoEncerramento.TempoEsgotado => "Encerrado — tempo esgotado",
         _ => motivo.ToString(),
     };
 }

@@ -14,11 +14,15 @@ public class AplicacaoProvaService(ApplicationDbContext db)
     // unicidade mesmo assim.
     private const string AlfabetoCodigo = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
-    public async Task<PaginaResultado<AplicacaoProva>> ListarAsync(int filtroProvaId, int filtroTurmaId, int pagina, int tamanhoPagina)
+    // Aplicações são privadas por professor, mesmo critério de Prova (item 18) — sem esse
+    // filtro, qualquer professor logado listava/via aplicações de outro, inclusive notas e
+    // códigos de acesso de alunos de outra turma/instituição (IDOR corrigido aqui).
+    public async Task<PaginaResultado<AplicacaoProva>> ListarAsync(string? meuId, int filtroProvaId, int filtroTurmaId, int pagina, int tamanhoPagina)
     {
         var query = db.AplicacoesProva
             .Include(a => a.Prova)
             .Include(a => a.Turma)
+            .Where(a => a.CriadoPorId == meuId)
             .AsQueryable();
 
         if (filtroProvaId != 0)
@@ -46,6 +50,18 @@ public class AplicacaoProvaService(ApplicationDbContext db)
             .Include(a => a.Prova)
             .Include(a => a.Turma)
             .FirstOrDefaultAsync(a => a.Id == id);
+
+    // Checagem de posse (mesmo padrão de ExportacaoService.EhDonoDaProvaAsync) — usada tanto
+    // pelas páginas de resultados/códigos quanto pelos endpoints de download em Program.cs.
+    public async Task<bool> EhDonoAsync(int aplicacaoId, string? meuId)
+    {
+        var criadorId = await db.AplicacoesProva
+            .Where(a => a.Id == aplicacaoId)
+            .Select(a => a.CriadoPorId)
+            .FirstOrDefaultAsync();
+
+        return criadorId is not null && criadorId == meuId;
+    }
 
     // Códigos individuais já gerados pra essa aplicação — o professor usa isso pra distribuir
     // (copiar/imprimir) um código por aluno.
@@ -80,9 +96,27 @@ public class AplicacaoProvaService(ApplicationDbContext db)
             throw new OperacaoInvalidaException("Selecione uma turma.");
         }
 
+        // Achado médio da auditoria: o dropdown do formulário só lista provas do próprio
+        // professor, mas isso é só front-end — sem essa checagem no Service, um ProvaId de
+        // outro professor passava direto e a aplicação online expunha o enunciado/gabarito
+        // alheio pros alunos via /responder (mesmo critério de posse do item 18).
+        var provaEhDoProfessor = await db.Provas.AnyAsync(p => p.Id == modelo.ProvaId && p.CriadoPorId == criadoPorId);
+        if (!provaEhDoProfessor)
+        {
+            throw new OperacaoInvalidaException("Prova não encontrada.");
+        }
+
         if (modelo.TempoLimiteMinutos is < 1)
         {
             throw new OperacaoInvalidaException("O tempo limite, se informado, precisa ser de pelo menos 1 minuto.");
+        }
+
+        // Achado baixo da auditoria: nada impedia criar a aplicação já com o prazo no
+        // passado — a prova nascia encerrada (RespostaProvaOnlineService.IniciarOuRetomarAsync
+        // rejeita de cara "prazo já passou"), sem nenhum aviso na hora de criar.
+        if (modelo.DataLimite is { } dataLimite && dataLimite <= DateTime.UtcNow)
+        {
+            throw new OperacaoInvalidaException("O prazo final precisa ser no futuro.");
         }
 
         // v1 só corrige automaticamente 4 tipos (ver TiposAutoCorrigiveis) — bloquear aqui
@@ -174,6 +208,21 @@ public class AplicacaoProvaService(ApplicationDbContext db)
 
     public async Task ExcluirAsync(AplicacaoProva aplicacao)
     {
+        const string mensagemBloqueio =
+            "Não foi possível excluir essa aplicação: já existem tentativas de aluno vinculadas a ela. Encerre-a em vez de excluir.";
+
+        // Checa dependentes ANTES de tentar excluir, em vez de descobrir só ao capturar a
+        // exceção do EF (a versão antiga comparava ex.Message.Contains("severed"), frágil a
+        // mudança de texto/versão do EF Core). Isso cobre também o caso em que as
+        // RespostaProvaOnline já estavam rastreadas neste DbContext (ex.: usuário visitou a
+        // tela de resultados antes de excluir) — se estão rastreadas é porque já existem no
+        // banco, então essa query já as encontra.
+        var temTentativas = await db.RespostasProvaOnline.AnyAsync(r => r.AplicacaoProvaId == aplicacao.Id);
+        if (temTentativas)
+        {
+            throw new OperacaoInvalidaException(mensagemBloqueio);
+        }
+
         try
         {
             db.AplicacoesProva.Remove(aplicacao);
@@ -181,18 +230,9 @@ public class AplicacaoProvaService(ApplicationDbContext db)
         }
         catch (DbUpdateException)
         {
-            throw new OperacaoInvalidaException(
-                "Não foi possível excluir essa aplicação: já existem tentativas de aluno vinculadas a ela. Encerre-a em vez de excluir.");
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("severed", StringComparison.OrdinalIgnoreCase))
-        {
-            // Mesmo caso do DbUpdateException acima, só que detectado pelo EF ANTES de
-            // bater no banco: acontece quando as RespostaProvaOnline dessa aplicação já
-            // estavam rastreadas neste DbContext (ex.: usuário visitou a tela de
-            // resultados antes de tentar excluir) — o Restrict de RespostaProvaOnline
-            // vira essa exceção em vez de DbUpdateException nesse cenário específico.
-            throw new OperacaoInvalidaException(
-                "Não foi possível excluir essa aplicação: já existem tentativas de aluno vinculadas a ela. Encerre-a em vez de excluir.");
+            // Rede de segurança pra corrida (tentativa criada entre a checagem acima e o
+            // SaveChangesAsync) — cenário raro, mas evita vazar uma DbUpdateException crua.
+            throw new OperacaoInvalidaException(mensagemBloqueio);
         }
     }
 
