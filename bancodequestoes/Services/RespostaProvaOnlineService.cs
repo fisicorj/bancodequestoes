@@ -68,8 +68,12 @@ public class RespostaProvaOnlineService(ApplicationDbContext db)
 
     // Carrega tudo que a tela de resposta precisa: questões (com Ordem/Valor via
     // ProvaQuestao), alternativas de múltipla escolha, e as respostas já salvas.
-    public Task<RespostaProvaOnline?> ObterParaResponderAsync(int id) =>
-        db.RespostasProvaOnline
+    // Fix 4: também é o ponto onde uma tentativa cujo prazo já estourou é fechada
+    // automaticamente — cobre o caso de o aluno só recarregar a página sem tentar salvar nada,
+    // que CarregarParaEdicaoAsync (abaixo) não pegaria sozinho.
+    public async Task<RespostaProvaOnline?> ObterParaResponderAsync(int id)
+    {
+        var tentativa = await db.RespostasProvaOnline
             .Include(r => r.AplicacaoProva)
                 .ThenInclude(a => a!.Prova)
                     .ThenInclude(p => p!.ProvaQuestoes)
@@ -77,6 +81,22 @@ public class RespostaProvaOnlineService(ApplicationDbContext db)
             .Include(r => r.Respostas)
                 .ThenInclude(rq => rq.RespostasLacunas)
             .FirstOrDefaultAsync(r => r.Id == id);
+
+        if (tentativa is not null && TempoEsgotado(tentativa))
+        {
+            await EnviarAsync(tentativa.Id, MotivoEncerramento.TempoEsgotado);
+        }
+
+        return tentativa;
+    }
+
+    // Única fonte de verdade do limite de tempo: compara IniciadoEm (gravado no servidor, não
+    // vem do cliente) contra AplicacaoProva.TempoLimiteMinutos — nunca burlável desligando o
+    // cronômetro em JS, que é só UX (auto-envio) e não faz parte dessa checagem.
+    private static bool TempoEsgotado(RespostaProvaOnline tentativa) =>
+        tentativa.Status == StatusRespostaProvaOnline.EmAndamento
+        && tentativa.AplicacaoProva!.TempoLimiteMinutos is { } minutos
+        && DateTime.UtcNow > tentativa.IniciadoEm.AddMinutes(minutos);
 
     public async Task SalvarMultiplaEscolhaAsync(int respostaQuestaoOnlineId, char? letra)
     {
@@ -115,7 +135,10 @@ public class RespostaProvaOnlineService(ApplicationDbContext db)
 
     private async Task<RespostaQuestaoOnline> CarregarParaEdicaoAsync(int respostaQuestaoOnlineId, bool incluirLacunas = false)
     {
-        var query = db.RespostasQuestaoOnline.Include(r => r.RespostaProvaOnline).AsQueryable();
+        var query = db.RespostasQuestaoOnline
+            .Include(r => r.RespostaProvaOnline)
+                .ThenInclude(rp => rp!.AplicacaoProva)
+            .AsQueryable();
         if (incluirLacunas)
         {
             query = query.Include(r => r.RespostasLacunas);
@@ -127,6 +150,14 @@ public class RespostaProvaOnlineService(ApplicationDbContext db)
         if (resposta.RespostaProvaOnline!.Status != StatusRespostaProvaOnline.EmAndamento)
         {
             throw new OperacaoInvalidaException("Essa tentativa já foi enviada — não é mais possível alterar respostas.");
+        }
+
+        // Fix 4: bloqueia autosave depois do prazo mesmo sem a tela recarregar — sem isso, o
+        // aluno continuaria respondendo indefinidamente enquanto não desse F5.
+        if (TempoEsgotado(resposta.RespostaProvaOnline))
+        {
+            await EnviarAsync(resposta.RespostaProvaOnline.Id, MotivoEncerramento.TempoEsgotado);
+            throw new OperacaoInvalidaException("O tempo para responder essa prova esgotou — sua tentativa foi enviada automaticamente com o que já estava salvo.");
         }
 
         return resposta;
@@ -153,6 +184,13 @@ public class RespostaProvaOnlineService(ApplicationDbContext db)
             .Where(pq => pq.ProvaId == tentativa.AplicacaoProva!.ProvaId)
             .ToDictionaryAsync(pq => pq.QuestaoId, pq => pq.Valor);
 
+        // Achado baixo da auditoria (mesmo padrão de N+1 do M5 em CartaoRespostaService):
+        // CorrigirQuestaoAsync fazia até 2 queries POR QUESTÃO dentro deste loop (uma pro
+        // TipoQuestao, outra pra entidade tipada) — uma prova de 30 questões virava ~60
+        // queries só pra corrigir uma tentativa enviada. Carrega o gabarito de todas as
+        // questões de uma vez (uma query por tipo presente), corrige em memória.
+        var gabaritos = await CarregarGabaritosAsync(tentativa.Respostas.Select(r => r.QuestaoId).ToList());
+
         decimal notaTotal = 0;
         foreach (var resposta in tentativa.Respostas)
         {
@@ -160,7 +198,7 @@ public class RespostaProvaOnlineService(ApplicationDbContext db)
             // ponto por padrão — só pra sempre existir uma nota numérica, mesmo em provas que
             // nunca usaram o sistema de pontuação por questão.
             var peso = valoresPorQuestao.GetValueOrDefault(resposta.QuestaoId) ?? 1m;
-            var correta = await CorrigirQuestaoAsync(resposta);
+            var correta = CorrigirQuestao(resposta, gabaritos);
 
             resposta.Correta = correta;
             resposta.PontuacaoObtida = correta ? peso : 0;
@@ -176,41 +214,91 @@ public class RespostaProvaOnlineService(ApplicationDbContext db)
         return tentativa;
     }
 
-    // Compara a resposta do aluno contra o gabarito de acordo com o TipoQuestao — só os 4
-    // tipos de TiposAutoCorrigiveis chegam aqui (garantido na criação da AplicacaoProva).
-    private async Task<bool> CorrigirQuestaoAsync(RespostaQuestaoOnline resposta)
+    // Carrega o gabarito de todas as questões informadas de uma vez, uma query por tipo de
+    // questão presente (no máximo 5: uma pro TipoQuestao + uma por tipo tipado distinto) —
+    // usado por EnviarAsync pra corrigir a tentativa inteira sem uma query por questão.
+    private async Task<Dictionary<int, GabaritoQuestao>> CarregarGabaritosAsync(List<int> idsQuestoes)
     {
-        var tipo = await db.Questoes
-            .Where(q => q.Id == resposta.QuestaoId)
-            .Select(q => q.TipoQuestao)
-            .FirstOrDefaultAsync();
+        var tiposPorId = await db.Questoes
+            .Where(q => idsQuestoes.Contains(q.Id))
+            .Select(q => new { q.Id, q.TipoQuestao })
+            .ToDictionaryAsync(q => q.Id, q => q.TipoQuestao);
 
-        switch (tipo)
+        var resultado = new Dictionary<int, GabaritoQuestao>();
+
+        var idsMultiplaEscolha = tiposPorId.Where(kv => kv.Value == TipoQuestao.MultiplaEscolha).Select(kv => kv.Key).ToList();
+        if (idsMultiplaEscolha.Count > 0)
+        {
+            var questoes = await db.Set<QuestaoMultiplaEscolha>().Where(q => idsMultiplaEscolha.Contains(q.Id)).ToListAsync();
+            foreach (var q in questoes)
+            {
+                resultado[q.Id] = new GabaritoQuestao { Tipo = TipoQuestao.MultiplaEscolha, RespostaCorretaMultiplaEscolha = q.RespostaCorreta };
+            }
+        }
+
+        var idsCertoErrado = tiposPorId.Where(kv => kv.Value == TipoQuestao.CertoErrado).Select(kv => kv.Key).ToList();
+        if (idsCertoErrado.Count > 0)
+        {
+            var questoes = await db.Set<QuestaoCertoErrado>().Where(q => idsCertoErrado.Contains(q.Id)).ToListAsync();
+            foreach (var q in questoes)
+            {
+                resultado[q.Id] = new GabaritoQuestao { Tipo = TipoQuestao.CertoErrado, RespostaCorretaCertoErrado = q.RespostaCorreta };
+            }
+        }
+
+        var idsNumerica = tiposPorId.Where(kv => kv.Value == TipoQuestao.Numerica).Select(kv => kv.Key).ToList();
+        if (idsNumerica.Count > 0)
+        {
+            var questoes = await db.Set<QuestaoNumerica>().Where(q => idsNumerica.Contains(q.Id)).ToListAsync();
+            foreach (var q in questoes)
+            {
+                resultado[q.Id] = new GabaritoQuestao { Tipo = TipoQuestao.Numerica, RespostaEsperadaNumerica = q.RespostaEsperada, ToleranciaNumerica = q.Tolerancia };
+            }
+        }
+
+        var idsLacunas = tiposPorId.Where(kv => kv.Value == TipoQuestao.Lacunas).Select(kv => kv.Key).ToList();
+        if (idsLacunas.Count > 0)
+        {
+            var questoes = await db.Set<QuestaoLacunas>().Include(q => q.Lacunas).Where(q => idsLacunas.Contains(q.Id)).ToListAsync();
+            foreach (var q in questoes)
+            {
+                resultado[q.Id] = new GabaritoQuestao
+                {
+                    Tipo = TipoQuestao.Lacunas,
+                    Lacunas = q.Lacunas.Select(l => (l.Ordem, l.RespostaEsperada)).ToList(),
+                };
+            }
+        }
+
+        return resultado;
+    }
+
+    // Compara a resposta do aluno contra o gabarito já carregado em memória (CarregarGabaritosAsync)
+    // — só os 4 tipos de TiposAutoCorrigiveis chegam aqui (garantido na criação da AplicacaoProva).
+    private static bool CorrigirQuestao(RespostaQuestaoOnline resposta, Dictionary<int, GabaritoQuestao> gabaritos)
+    {
+        if (!gabaritos.TryGetValue(resposta.QuestaoId, out var gabarito))
+        {
+            // Não deveria acontecer — QuestaoId sempre vem de um ProvaQuestao válido.
+            return false;
+        }
+
+        switch (gabarito.Tipo)
         {
             case TipoQuestao.MultiplaEscolha:
-            {
-                var questao = await db.Set<QuestaoMultiplaEscolha>().FirstAsync(q => q.Id == resposta.QuestaoId);
                 return resposta.RespostaMultiplaEscolha is { } letra
-                    && char.ToUpperInvariant(letra) == char.ToUpperInvariant(questao.RespostaCorreta);
-            }
+                    && char.ToUpperInvariant(letra) == char.ToUpperInvariant(gabarito.RespostaCorretaMultiplaEscolha);
 
             case TipoQuestao.CertoErrado:
-            {
-                var questao = await db.Set<QuestaoCertoErrado>().FirstAsync(q => q.Id == resposta.QuestaoId);
-                return resposta.RespostaCertoErrado == questao.RespostaCorreta;
-            }
+                return resposta.RespostaCertoErrado == gabarito.RespostaCorretaCertoErrado;
 
             case TipoQuestao.Numerica:
-            {
-                var questao = await db.Set<QuestaoNumerica>().FirstAsync(q => q.Id == resposta.QuestaoId);
                 return resposta.RespostaNumerica is { } valor
-                    && Math.Abs(valor - questao.RespostaEsperada) <= questao.Tolerancia;
-            }
+                    && Math.Abs(valor - gabarito.RespostaEsperadaNumerica) <= gabarito.ToleranciaNumerica;
 
             case TipoQuestao.Lacunas:
             {
-                var questao = await db.Set<QuestaoLacunas>().Include(q => q.Lacunas).FirstAsync(q => q.Id == resposta.QuestaoId);
-                if (questao.Lacunas.Count == 0)
+                if (gabarito.Lacunas.Count == 0)
                 {
                     return false;
                 }
@@ -218,7 +306,7 @@ public class RespostaProvaOnlineService(ApplicationDbContext db)
                 // Tudo ou nada: todas as lacunas certas pra pontuar a questão inteira (padrão
                 // combinado com o professor na falta de uma regra de pontuação parcial).
                 var todasCertas = true;
-                foreach (var lacuna in questao.Lacunas)
+                foreach (var lacuna in gabarito.Lacunas)
                 {
                     var respostaAluno = resposta.RespostasLacunas.FirstOrDefault(r => r.Ordem == lacuna.Ordem);
                     var certa = respostaAluno is not null
@@ -239,6 +327,18 @@ public class RespostaProvaOnlineService(ApplicationDbContext db)
                 // Não deveria acontecer — AplicacaoProvaService bloqueia tipos fora da lista.
                 return false;
         }
+    }
+
+    // Snapshot em memória do gabarito de uma questão — evita reconsultar o banco por questão
+    // dentro do loop de correção (ver CarregarGabaritosAsync/CorrigirQuestao acima).
+    private sealed class GabaritoQuestao
+    {
+        public TipoQuestao Tipo { get; init; }
+        public char RespostaCorretaMultiplaEscolha { get; init; }
+        public bool RespostaCorretaCertoErrado { get; init; }
+        public decimal RespostaEsperadaNumerica { get; init; }
+        public decimal ToleranciaNumerica { get; init; }
+        public List<(int Ordem, string RespostaEsperada)> Lacunas { get; init; } = new();
     }
 
     // --- Correção manual do professor ---

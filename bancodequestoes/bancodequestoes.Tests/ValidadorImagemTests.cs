@@ -80,4 +80,29 @@ public class ValidadorImagemTests
     {
         Assert.Equal(esperado, ValidadorImagem.EhImagemValida(conteudo));
     }
+
+    // Foto de iPhone (cartão resposta) — precisa passar na validação mesmo sem o ImageSharp
+    // conseguir decodificar depois (ver comentário em ValidadorImagem.EhHeic).
+    [Theory]
+    [InlineData("heic")]
+    [InlineData("mif1")]
+    public void DetectarContentType_Heic_Reconhece(string marca)
+    {
+        var bytes = new byte[12];
+        bytes[0] = 0x00; bytes[1] = 0x00; bytes[2] = 0x00; bytes[3] = 0x18;
+        "ftyp"u8.ToArray().CopyTo(bytes, 4);
+        System.Text.Encoding.ASCII.GetBytes(marca).CopyTo(bytes, 8);
+
+        Assert.Equal("image/heic", ValidadorImagem.DetectarContentType(bytes));
+    }
+
+    [Fact]
+    public void DetectarContentType_FtypComMarcaDesconhecida_NaoReconhece()
+    {
+        var bytes = new byte[12];
+        "ftyp"u8.ToArray().CopyTo(bytes, 4);
+        "zzzz"u8.ToArray().CopyTo(bytes, 8);
+
+        Assert.Null(ValidadorImagem.DetectarContentType(bytes));
+    }
 }

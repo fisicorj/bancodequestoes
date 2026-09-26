@@ -321,6 +321,89 @@ public class RespostaProvaOnlineServiceTests
         Assert.NotNull(enviada.LiberadoEm);
     }
 
+    // Fix 4: TempoLimiteMinutos era só decorativo (nunca aplicado) — os 3 testes abaixo cobrem
+    // as duas checagens que passaram a existir: no autosave (CarregarParaEdicaoAsync) e ao
+    // recarregar a tela (ObterParaResponderAsync). Forçar o prazo é só voltar IniciadoEm no
+    // tempo, já que a checagem compara contra DateTime.UtcNow real, sem depender de nada vindo
+    // do cliente.
+    [Fact]
+    public async Task SalvarMultiplaEscolhaAsync_TempoEsgotado_EnviaAutomaticamenteELanca()
+    {
+        using var db = TestDbFactory.Criar();
+        var assunto = await SeedAssuntoAsync(db);
+        var (aplicacao, aluno, _) = await SeedCenarioAsync(db, TestSeed.Questao("Q1", assunto.Id));
+        aplicacao.TempoLimiteMinutos = 30;
+        await db.SaveChangesAsync();
+
+        var servico = new RespostaProvaOnlineService(db);
+        var tentativa = await servico.IniciarOuRetomarAsync(aplicacao.Id, aluno.Id);
+        tentativa.IniciadoEm = DateTime.UtcNow.AddMinutes(-31);
+        await db.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<OperacaoInvalidaException>(() => servico.SalvarMultiplaEscolhaAsync(tentativa.Respostas[0].Id, 'A'));
+
+        var recarregada = await servico.ObterParaResponderAsync(tentativa.Id);
+        Assert.Equal(StatusRespostaProvaOnline.Enviada, recarregada!.Status);
+        Assert.Equal(MotivoEncerramento.TempoEsgotado, recarregada.MotivoEncerramento);
+    }
+
+    [Fact]
+    public async Task ObterParaResponderAsync_TempoEsgotado_FechaAutomaticamente()
+    {
+        using var db = TestDbFactory.Criar();
+        var assunto = await SeedAssuntoAsync(db);
+        var (aplicacao, aluno, _) = await SeedCenarioAsync(db, TestSeed.Questao("Q1", assunto.Id));
+        aplicacao.TempoLimiteMinutos = 30;
+        await db.SaveChangesAsync();
+
+        var servico = new RespostaProvaOnlineService(db);
+        var tentativa = await servico.IniciarOuRetomarAsync(aplicacao.Id, aluno.Id);
+        tentativa.IniciadoEm = DateTime.UtcNow.AddMinutes(-31);
+        await db.SaveChangesAsync();
+
+        var recarregada = await servico.ObterParaResponderAsync(tentativa.Id);
+
+        Assert.Equal(StatusRespostaProvaOnline.Enviada, recarregada!.Status);
+        Assert.Equal(MotivoEncerramento.TempoEsgotado, recarregada.MotivoEncerramento);
+    }
+
+    [Fact]
+    public async Task ObterParaResponderAsync_DentroDoPrazo_NaoFecha()
+    {
+        using var db = TestDbFactory.Criar();
+        var assunto = await SeedAssuntoAsync(db);
+        var (aplicacao, aluno, _) = await SeedCenarioAsync(db, TestSeed.Questao("Q1", assunto.Id));
+        aplicacao.TempoLimiteMinutos = 30;
+        await db.SaveChangesAsync();
+
+        var servico = new RespostaProvaOnlineService(db);
+        var tentativa = await servico.IniciarOuRetomarAsync(aplicacao.Id, aluno.Id);
+        tentativa.IniciadoEm = DateTime.UtcNow.AddMinutes(-5);
+        await db.SaveChangesAsync();
+
+        var recarregada = await servico.ObterParaResponderAsync(tentativa.Id);
+
+        Assert.Equal(StatusRespostaProvaOnline.EmAndamento, recarregada!.Status);
+    }
+
+    [Fact]
+    public async Task ObterParaResponderAsync_SemTempoLimite_NuncaFecha()
+    {
+        using var db = TestDbFactory.Criar();
+        var assunto = await SeedAssuntoAsync(db);
+        var (aplicacao, aluno, _) = await SeedCenarioAsync(db, TestSeed.Questao("Q1", assunto.Id));
+        // TempoLimiteMinutos fica nulo (padrão) — sem limite, nunca deve fechar sozinho.
+
+        var servico = new RespostaProvaOnlineService(db);
+        var tentativa = await servico.IniciarOuRetomarAsync(aplicacao.Id, aluno.Id);
+        tentativa.IniciadoEm = DateTime.UtcNow.AddDays(-1);
+        await db.SaveChangesAsync();
+
+        var recarregada = await servico.ObterParaResponderAsync(tentativa.Id);
+
+        Assert.Equal(StatusRespostaProvaOnline.EmAndamento, recarregada!.Status);
+    }
+
     [Fact]
     public async Task ObterQuestoesParaExibicaoAsync_MultiplaEscolha_NaoExpoeGabarito()
     {

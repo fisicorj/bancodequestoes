@@ -6,6 +6,7 @@ using BancoQuestoes.Services;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using PdfSharp.Fonts;
 using System.Runtime.Versioning;
@@ -114,6 +115,31 @@ builder.Services.AddScoped<RascunhoQuestaoIaService>();
 // trava estática global pela thread-safety do PDFium).
 builder.Services.AddSingleton<IPaginaPdfRenderizador, PaginaEnadeRenderizador>();
 
+// Achado médio da auditoria: /responder/{codigo} é o ÚNICO endpoint público sem login do
+// sistema (o código tem ~1,3 bilhão de combinações, mas nada impedia um script tentar
+// milhares por segundo). O limitador é GLOBAL mas só aplica janela de verdade quando o path
+// começa com "/responder" — qualquer outra rota cai no "sem-limite" (NoLimiter), então isso
+// não afeta o resto do sistema, que já exige login.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(http =>
+    {
+        if (!http.Request.Path.StartsWithSegments("/responder"))
+        {
+            return System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("sem-limite");
+        }
+
+        var chave = http.Connection.RemoteIpAddress?.ToString() ?? "desconhecido";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(chave, _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 30,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        });
+    });
+});
+
 var app = builder.Build();
 
 // --- Pipeline HTTP (middlewares) --- a ordem importa: cada "app.Use..." é
@@ -128,6 +154,7 @@ if (!app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseStaticFiles();
 app.UseAntiforgery();
+app.UseRateLimiter();
 
 // Precisa vir ANTES de MapRazorComponents: primeiro identifica/autentica
 // o usuário, depois autoriza o acesso à rota, só então renderiza o componente.
@@ -266,8 +293,13 @@ app.MapGet("/provas/{id:int}/gabarito-comentado.docx", async (int id, HttpContex
     return Results.File(bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ExportacaoService.NomeArquivoSeguro(prova.Titulo) + "-gabarito-comentado.docx");
 }).RequireAuthorization();
 
-app.MapGet("/cartoes-resposta/{id:int}/cartoes.pdf", async (int id, CartaoRespostaService cartaoRespostaService) =>
+app.MapGet("/cartoes-resposta/{id:int}/cartoes.pdf", async (int id, HttpContext http, CartaoRespostaService cartaoRespostaService) =>
 {
+    var meuId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (!await cartaoRespostaService.EhDonoAsync(id, meuId))
+    {
+        return Results.NotFound();
+    }
     try
     {
         var (nomeArquivo, bytes) = await cartaoRespostaService.GerarPdfLoteAsync(id);
@@ -279,8 +311,13 @@ app.MapGet("/cartoes-resposta/{id:int}/cartoes.pdf", async (int id, CartaoRespos
     }
 }).RequireAuthorization();
 
-app.MapGet("/cartoes-resposta/cartao/{cartaoId:int}/cartao.pdf", async (int cartaoId, CartaoRespostaService cartaoRespostaService) =>
+app.MapGet("/cartoes-resposta/cartao/{cartaoId:int}/cartao.pdf", async (int cartaoId, HttpContext http, CartaoRespostaService cartaoRespostaService) =>
 {
+    var meuId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (!await cartaoRespostaService.EhDonoDoCartaoAsync(cartaoId, meuId))
+    {
+        return Results.NotFound();
+    }
     try
     {
         var (nomeArquivo, bytes) = await cartaoRespostaService.GerarPdfUnicoAsync(cartaoId);

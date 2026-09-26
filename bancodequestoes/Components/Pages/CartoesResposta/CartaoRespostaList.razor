@@ -2,7 +2,9 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject CartaoRespostaService CartaoRespostaService
+@inject AuthenticationStateProvider AuthProvider
 @inject IJSRuntime JS
+@using System.Security.Claims
 
 <PageTitle>Cartão Resposta</PageTitle>
 
@@ -67,6 +69,7 @@ else
     private List<CartaoRespostaAplicacao>? aplicacoes;
     private string? erro;
     private string? sucesso;
+    private string? meuId;
 
     private const int TamanhoPagina = 20;
     private int pagina = 1;
@@ -77,6 +80,9 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
         sucesso = Msg;
         await CarregarAsync();
     }
@@ -89,7 +95,7 @@ else
 
     private async Task CarregarAsync()
     {
-        var resultado = await CartaoRespostaService.ListarAsync(pagina, TamanhoPagina);
+        var resultado = await CartaoRespostaService.ListarAsync(meuId, pagina, TamanhoPagina);
         aplicacoes = resultado.Itens;
         totalRegistros = resultado.Total;
     }

@@ -1,6 +1,7 @@
 @page "/responder/{Codigo}"
 @rendermode InteractiveServer
 @implements IAsyncDisposable
+@using System.Globalization
 @inject AplicacaoProvaService AplicacaoProvaService
 @inject RespostaProvaOnlineService RespostaProvaOnlineService
 @inject IJSRuntime JS
@@ -62,7 +63,7 @@ else if (tentativa.Status != StatusRespostaProvaOnline.EmAndamento)
 {
     <div class="form-card mt-4 text-center">
         <h3>Prova enviada</h3>
-        @if (tentativa.MotivoEncerramento is MotivoEncerramento.PerdaDeFoco or MotivoEncerramento.SaidaDeTelaCheia)
+        @if (tentativa.MotivoEncerramento is MotivoEncerramento.PerdaDeFoco or MotivoEncerramento.SaidaDeTelaCheia or MotivoEncerramento.TempoEsgotado)
         {
             <div class="alert alert-warning">
                 Sua tentativa foi encerrada automaticamente (@tentativa.MotivoEncerramento.Value.Rotulo().ToLowerInvariant()).
@@ -87,7 +88,13 @@ else if (tentativa.Status != StatusRespostaProvaOnline.EmAndamento)
 else
 {
     <div class="form-card mt-4">
-        <h5>@aplicacao!.Prova?.Titulo</h5>
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">@aplicacao!.Prova?.Titulo</h5>
+            @if (aplicacao.TempoLimiteMinutos is not null)
+            {
+                <span class="badge bg-dark fs-6">⏱ <span id="cronometro-prova">--:--</span></span>
+            }
+        </div>
 
         @foreach (var q in questoes)
         {
@@ -206,6 +213,15 @@ else
                 dotNetRef = DotNetObjectReference.Create(this);
                 await JS.InvokeVoidAsync("provaOnline.iniciar", dotNetRef);
                 monitoramentoAtivo = true;
+
+                // Cronômetro é só UX (auto-envio) — o prazo de verdade é sempre conferido no
+                // servidor (ver TempoEsgotado em RespostaProvaOnlineService), então mesmo sem
+                // esse JS rodar a tentativa é fechada automaticamente na próxima ação do aluno.
+                if (aplicacao!.TempoLimiteMinutos is { } minutos)
+                {
+                    var prazo = tentativa.IniciadoEm.AddMinutes(minutos);
+                    await JS.InvokeVoidAsync("provaOnline.cronometro.iniciar", dotNetRef, prazo.ToString("o"), "cronometro-prova");
+                }
             }
         }
         catch (OperacaoInvalidaException ex)
@@ -228,7 +244,12 @@ else
 
     private async Task SalvarNumericaAsync(int respostaQuestaoOnlineId, string? texto)
     {
-        var valor = decimal.TryParse(texto, out var v) ? v : (decimal?)null;
+        // Achado médio da auditoria: sem InvariantCulture, se a thread do servidor rodar com
+        // cultura pt-BR (onde "." é separador de milhar), o parse do valor que o <input
+        // type="number"> sempre manda com "." decimal podia falhar ou interpretar errado,
+        // zerando a resposta do aluno sem nenhum aviso — mesmo padrão já usado no
+        // GiftParser/PadraoRespostaEnadeParser.
+        var valor = decimal.TryParse(texto, NumberStyles.Any, CultureInfo.InvariantCulture, out var v) ? v : (decimal?)null;
         await RespostaProvaOnlineService.SalvarNumericaAsync(respostaQuestaoOnlineId, valor);
         await RecarregarTentativaAsync();
     }
@@ -276,6 +297,12 @@ else
     [JSInvokable]
     public async Task OnSaiuTelaCheia() => await EncerrarForcadoAsync(MotivoEncerramento.SaidaDeTelaCheia);
 
+    // Chamado pelo cronômetro em JS quando o prazo visualmente zera — só dispara o envio;
+    // quem decide se o tempo realmente esgotou é o servidor (EnviarAsync roda a correção
+    // normalmente e RespostaProvaOnlineService não confia em nada que venha do cliente aqui).
+    [JSInvokable]
+    public async Task OnTempoEsgotado() => await EncerrarForcadoAsync(MotivoEncerramento.TempoEsgotado);
+
     private async Task EncerrarForcadoAsync(MotivoEncerramento motivo)
     {
         if (tentativa is null || tentativa.Status != StatusRespostaProvaOnline.EmAndamento)
@@ -285,6 +312,7 @@ else
 
         tentativa = await RespostaProvaOnlineService.EnviarAsync(tentativa.Id, motivo);
         monitoramentoAtivo = false;
+        await JS.InvokeVoidAsync("provaOnline.cronometro.parar");
         await InvokeAsync(StateHasChanged);
     }
 
@@ -295,6 +323,7 @@ else
             monitoramentoAtivo = false;
             await JS.InvokeVoidAsync("provaOnline.parar");
         }
+        await JS.InvokeVoidAsync("provaOnline.cronometro.parar");
     }
 
     public async ValueTask DisposeAsync()

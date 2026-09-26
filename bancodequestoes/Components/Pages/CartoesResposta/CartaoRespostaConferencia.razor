@@ -2,6 +2,8 @@
 @attribute [Authorize]
 @rendermode InteractiveServer
 @inject CartaoRespostaService CartaoRespostaService
+@inject AuthenticationStateProvider AuthProvider
+@using System.Security.Claims
 
 <PageTitle>Conferência do cartão resposta</PageTitle>
 
@@ -12,6 +14,11 @@
 else if (cartao is null)
 {
     <div class="alert alert-danger">Cartão não encontrado.</div>
+}
+else if (acessoNegado)
+{
+    <div class="alert alert-danger">@erroAcesso</div>
+    <p><a href="cartoes-resposta">Voltar</a></p>
 }
 else
 {
@@ -27,7 +34,9 @@ else
     {
         <div class="alert alert-success">
             Correção confirmada — nota <strong>@cartao.NotaTotal?.ToString("0.##")</strong>.
+            <button type="button" class="btn btn-sm btn-outline-warning ms-2" @onclick="ReabrirAsync">Reabrir correção</button>
         </div>
+        <p class="text-muted small">Reabrir permite refazer a conferência ou reenviar a foto — a nota atual fica em espera até confirmar de novo.</p>
     }
     else if (cartao.Respostas.Any(r => r.Ambigua))
     {
@@ -92,10 +101,16 @@ else
     private CartaoAlunoAplicacao? cartao;
     private Dictionary<int, int> quantidadePorQuestao = new();
     private bool carregando = true;
+    private bool acessoNegado;
     private string? erro;
+    private string? erroAcesso;
+    private string? meuId;
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
         await CarregarAsync();
     }
 
@@ -104,8 +119,16 @@ else
         cartao = await CartaoRespostaService.ObterCartaoDetalheAsync(Id);
         if (cartao is not null)
         {
-            var questoes = await CartaoRespostaService.ObterQuestoesAsync(cartao.CartaoRespostaAplicacaoId);
-            quantidadePorQuestao = questoes.ToDictionary(q => q.QuestaoId, q => q.QuantidadeAlternativas);
+            if (cartao.CartaoRespostaAplicacao!.CriadoPorId != meuId)
+            {
+                erroAcesso = "Você não tem permissão para ver este cartão.";
+                acessoNegado = true;
+            }
+            else
+            {
+                var questoes = await CartaoRespostaService.ObterQuestoesAsync(cartao.CartaoRespostaAplicacaoId);
+                quantidadePorQuestao = questoes.ToDictionary(q => q.QuestaoId, q => q.QuantidadeAlternativas);
+            }
         }
         carregando = false;
     }
@@ -115,7 +138,7 @@ else
         erro = null;
         try
         {
-            await CartaoRespostaService.ConfirmarRespostaAsync(respostaId, letra);
+            await CartaoRespostaService.ConfirmarRespostaAsync(respostaId, letra, meuId);
             await CarregarAsync();
         }
         catch (OperacaoInvalidaException ex)
@@ -129,7 +152,21 @@ else
         erro = null;
         try
         {
-            await CartaoRespostaService.ConfirmarCartaoAsync(Id);
+            await CartaoRespostaService.ConfirmarCartaoAsync(Id, meuId);
+            await CarregarAsync();
+        }
+        catch (OperacaoInvalidaException ex)
+        {
+            erro = ex.Message;
+        }
+    }
+
+    private async Task ReabrirAsync()
+    {
+        erro = null;
+        try
+        {
+            await CartaoRespostaService.ReabrirCartaoAsync(Id, meuId);
             await CarregarAsync();
         }
         catch (OperacaoInvalidaException ex)

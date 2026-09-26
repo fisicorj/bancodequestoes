@@ -40,12 +40,38 @@ public class AplicacaoProvaServiceTests
         db.Questoes.Add(questao);
         await db.SaveChangesAsync();
 
-        var prova = new Prova { Titulo = "Prova 1" };
+        var prova = new Prova { Titulo = "Prova 1", CriadoPorId = "prof-1" };
         prova.ProvaQuestoes.Add(new ProvaQuestao { QuestaoId = questao.Id, Ordem = 0 });
         db.Provas.Add(prova);
         await db.SaveChangesAsync();
 
         return (prova, turma);
+    }
+
+    [Fact]
+    public async Task CriarAsync_DataLimiteNoPassado_Lanca()
+    {
+        using var db = TestDbFactory.Criar();
+        var (prova, turma) = await SeedProvaETurmaAsync(db);
+        var servico = new AplicacaoProvaService(db);
+
+        await Assert.ThrowsAsync<OperacaoInvalidaException>(() => servico.CriarAsync(
+            new AplicacaoProvaInput { ProvaId = prova.Id, TurmaId = turma.Id, DataLimite = DateTime.UtcNow.AddMinutes(-1) },
+            "prof-1"));
+    }
+
+    [Fact]
+    public async Task CriarAsync_DataLimiteNoFuturo_Cria()
+    {
+        using var db = TestDbFactory.Criar();
+        var (prova, turma) = await SeedProvaETurmaAsync(db);
+        var servico = new AplicacaoProvaService(db);
+
+        var aplicacao = await servico.CriarAsync(
+            new AplicacaoProvaInput { ProvaId = prova.Id, TurmaId = turma.Id, DataLimite = DateTime.UtcNow.AddDays(1) },
+            "prof-1");
+
+        Assert.NotNull(aplicacao.DataLimite);
     }
 
     [Fact]
@@ -104,7 +130,7 @@ public class AplicacaoProvaServiceTests
         var questao = TestSeed.Questao("Q1", assunto.Id);
         db.Questoes.Add(questao);
         await db.SaveChangesAsync();
-        var prova = new Prova { Titulo = "Prova 1" };
+        var prova = new Prova { Titulo = "Prova 1", CriadoPorId = "prof-1" };
         prova.ProvaQuestoes.Add(new ProvaQuestao { QuestaoId = questao.Id, Ordem = 0 });
         db.Provas.Add(prova);
         await db.SaveChangesAsync();
@@ -113,6 +139,20 @@ public class AplicacaoProvaServiceTests
 
         await Assert.ThrowsAsync<OperacaoInvalidaException>(
             () => servico.CriarAsync(new AplicacaoProvaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-1"));
+    }
+
+    [Fact]
+    public async Task CriarAsync_ProvaDeOutroProfessor_Lanca()
+    {
+        using var db = TestDbFactory.Criar();
+        var (prova, turma) = await SeedProvaETurmaAsync(db);
+
+        var servico = new AplicacaoProvaService(db);
+
+        // Prova foi semeada com CriadoPorId "prof-1" — "prof-2" tentando aplicar
+        // é o achado médio da auditoria (posse não checada em CriarAsync).
+        await Assert.ThrowsAsync<OperacaoInvalidaException>(
+            () => servico.CriarAsync(new AplicacaoProvaInput { ProvaId = prova.Id, TurmaId = turma.Id }, "prof-2"));
     }
 
     [Fact]
@@ -176,9 +216,10 @@ public class AplicacaoProvaServiceTests
     [Fact]
     public async Task ExcluirAsync_ComTentativaDeAlunoJaRastreadaNoContexto_Lanca()
     {
-        // Simula o cenário real que causava InvalidOperationException (relação
-        // "severed") em vez da mensagem amigável: a RespostaProvaOnline já está tracked
-        // neste DbContext (ex.: o usuário abriu a tela de resultados antes de excluir).
+        // Cenário que antes só era pego de forma incidental (InvalidOperationException
+        // "severed" do EF, por já estar tracked neste DbContext — ex.: usuário abriu a
+        // tela de resultados antes de excluir); agora ExcluirAsync checa a existência de
+        // tentativas ANTES de tentar remover, então lança a mensagem amigável direto.
         using var db = TestDbFactory.Criar();
         var (prova, turma) = await SeedProvaETurmaAsync(db);
         var servico = new AplicacaoProvaService(db);

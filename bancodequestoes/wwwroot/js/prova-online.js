@@ -58,5 +58,49 @@ window.provaOnline = {
         if (document.fullscreenElement && document.exitFullscreen) {
             document.exitFullscreen().catch(function () { });
         }
+    },
+
+    // Cronômetro de UX pro TempoLimiteMinutos: só atualiza o texto na tela e avisa o
+    // componente Blazor quando zera, pra ele chamar o envio automático. A fonte de verdade do
+    // prazo é sempre o servidor (RespostaProvaOnlineService.TempoEsgotado) — esse timer não
+    // "aplica" limite nenhum sozinho, então desligar o JS não dá mais tempo de verdade.
+    cronometro: {
+        _intervalo: null,
+
+        iniciar: function (dotNetRef, prazoUtcIso, elementId) {
+            this.parar();
+            var prazo = new Date(prazoUtcIso).getTime();
+            var elemento = document.getElementById(elementId);
+
+            var atualizar = function () {
+                var restanteMs = prazo - Date.now();
+                if (restanteMs <= 0) {
+                    if (elemento) {
+                        elemento.textContent = "00:00";
+                    }
+                    window.provaOnline.cronometro.parar();
+                    dotNetRef.invokeMethodAsync('OnTempoEsgotado');
+                    return;
+                }
+
+                var totalSegundos = Math.floor(restanteMs / 1000);
+                var minutos = Math.floor(totalSegundos / 60);
+                var segundos = totalSegundos % 60;
+                if (elemento) {
+                    elemento.textContent =
+                        (minutos < 10 ? "0" : "") + minutos + ":" + (segundos < 10 ? "0" : "") + segundos;
+                }
+            };
+
+            atualizar();
+            this._intervalo = setInterval(atualizar, 1000);
+        },
+
+        parar: function () {
+            if (this._intervalo) {
+                clearInterval(this._intervalo);
+                this._intervalo = null;
+            }
+        }
     }
 };

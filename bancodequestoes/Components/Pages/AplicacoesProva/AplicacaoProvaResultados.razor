@@ -3,6 +3,8 @@
 @rendermode InteractiveServer
 @inject AplicacaoProvaService AplicacaoProvaService
 @inject RespostaProvaOnlineService RespostaProvaOnlineService
+@inject AuthenticationStateProvider AuthProvider
+@using System.Security.Claims
 
 <PageTitle>Resultados da aplicação</PageTitle>
 
@@ -13,6 +15,11 @@
 else if (aplicacao is null)
 {
     <div class="alert alert-danger">Aplicação não encontrada.</div>
+}
+else if (acessoNegado)
+{
+    <div class="alert alert-danger">@erro</div>
+    <p><a href="aplicacoes-prova">Voltar às aplicações</a></p>
 }
 else
 {
@@ -117,14 +124,27 @@ else
     private Dictionary<int, RespostaProvaOnline> detalhes = new();
     private HashSet<int> detalhesExpandidos = new();
     private bool carregando = true;
+    private bool acessoNegado;
     private string? sucesso;
+    private string? erro;
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthProvider.GetAuthenticationStateAsync();
+        var meuId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
         aplicacao = await AplicacaoProvaService.ObterAsync(Id);
         if (aplicacao is not null)
         {
-            tentativas = await RespostaProvaOnlineService.ListarPorAplicacaoAsync(Id);
+            if (aplicacao.CriadoPorId != meuId)
+            {
+                erro = "Você não tem permissão para ver esta aplicação.";
+                acessoNegado = true;
+            }
+            else
+            {
+                tentativas = await RespostaProvaOnlineService.ListarPorAplicacaoAsync(Id);
+            }
         }
 
         carregando = false;
